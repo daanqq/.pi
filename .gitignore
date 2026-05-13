@@ -1,0 +1,31 @@
+# Secrets / local auth
+agent/auth.json
+**/auth.json
+*.key
+*.pem
+.env
+.env.*
+
+# Runtime state
+agent/sessions/
+memory/
+session-search/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Local editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Package/cache noise
+node_modules/
+.cache/
+tmp/
+temp/
+*.log

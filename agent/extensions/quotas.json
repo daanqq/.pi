@@ -1,0 +1,8 @@
+{
+  "configVersion": "0.2.4",
+  "quotasCommand": false,
+  "providerCommands": true,
+  "usageStatus": true,
+  "quotaWarnings": true,
+  "deferToSynthetic": true
+}

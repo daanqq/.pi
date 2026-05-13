@@ -1,0 +1,28 @@
+{
+  "lastChangelogVersion": "0.74.0",
+  "defaultThinkingLevel": "low",
+  "defaultProvider": "openai-codex",
+  "defaultModel": "gpt-5.5",
+  "packages": [
+    "npm:pi-web-access",
+    "npm:pi-rtk-optimizer",
+    "npm:pi-total-recall",
+    "npm:@latentminds/pi-quotas"
+  ],
+  "hideThinkingBlock": false,
+  "theme": "alabaster",
+  "quietStartup": true,
+  "compaction": {
+    "enabled": true
+  },
+  "enabledModels": [
+    "openai-codex/gpt-5.5",
+    "openai-codex/gpt-5.4",
+    "openai-codex/gpt-5.4-mini",
+    "deepseek/deepseek-v4-flash",
+    "deepseek/deepseek-v4-pro"
+  ],
+  "transport": "auto",
+  "collapseChangelog": false,
+  "treeFilterMode": "default"
+}
