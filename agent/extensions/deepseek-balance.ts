@@ -87,7 +87,7 @@ function formatFooterBalance(ctx: ExtensionContext, data: DeepSeekBalanceRespons
   const preferred = balances.find((info) => info.currency === "USD") ?? balances[0];
   if (!preferred) return theme.fg("warning", "deepseek balance unavailable");
 
-  return `${theme.fg("dim", "API Balance: ")}${theme.fg("success", formatAmount(preferred.currency, preferred.total_balance))}`;
+  return theme.fg("success", formatAmount(preferred.currency, preferred.total_balance));
 }
 
 async function fetchDeepSeekBalance(apiKey: string): Promise<DeepSeekBalanceResponse> {
