@@ -6,8 +6,7 @@
   "packages": [
     "npm:pi-web-access",
     "npm:pi-rtk-optimizer",
-    "npm:pi-total-recall",
-    "npm:@latentminds/pi-quotas"
+    "npm:pi-total-recall"
   ],
   "hideThinkingBlock": false,
   "theme": "alabaster",
@@ -24,5 +23,24 @@
   ],
   "transport": "auto",
   "collapseChangelog": false,
-  "treeFilterMode": "default"
+  "treeFilterMode": "default",
+  "steeringMode": "one-at-a-time",
+  "terminal": {
+    "showTerminalProgress": true,
+    "clearOnShrink": false
+  },
+  "editorPaddingX": 0,
+  "showHardwareCursor": false,
+  "images": {
+    "autoResize": true,
+    "blockImages": false
+  },
+  "enableSkillCommands": true,
+  "autocompleteMaxVisible": 5,
+  "followUpMode": "one-at-a-time",
+  "enableInstallTelemetry": true,
+  "doubleEscapeAction": "tree",
+  "warnings": {
+    "anthropicExtraUsage": false
+  }
 }

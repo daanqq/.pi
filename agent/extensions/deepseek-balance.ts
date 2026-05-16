@@ -72,16 +72,11 @@ function formatBalance(data: DeepSeekBalanceResponse) {
   return `DeepSeek account: ${availability}\n${balances}`;
 }
 
-function formatFooterBalance(ctx: ExtensionContext, data: DeepSeekBalanceResponse) {
+function formatFooterBalance(ctx: Pick<ExtensionContext, "ui">, data: DeepSeekBalanceResponse) {
   const theme = ctx.ui.theme;
 
-  if (data.error?.message) {
-    return theme.fg("warning", "deepseek balance unavailable");
-  }
-
-  if (data.is_available === false) {
-    return `${theme.fg("dim", "deepseek:")}${theme.fg("warning", " unavailable")}`;
-  }
+  if (data.error?.message) return theme.fg("warning", "deepseek balance unavailable");
+  if (data.is_available === false) return theme.fg("warning", "unavailable");
 
   const balances = data.balance_infos ?? [];
   const preferred = balances.find((info) => info.currency === "USD") ?? balances[0];
@@ -107,11 +102,7 @@ async function fetchDeepSeekBalance(apiKey: string): Promise<DeepSeekBalanceResp
   }
 
   if (!response.ok && !data.error?.message) {
-    return {
-      error: {
-        message: `HTTP ${response.status} ${response.statusText}`.trim(),
-      },
-    };
+    return { error: { message: `HTTP ${response.status} ${response.statusText}`.trim() } };
   }
 
   return data;

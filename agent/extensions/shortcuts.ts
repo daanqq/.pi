@@ -1,20 +1,9 @@
-import { dirname, join } from "node:path";
 import type {
   ExtensionAPI,
   ExtensionCommandContext,
 } from "@mariozechner/pi-coding-agent";
 
-const PI_QUOTAS_COMMANDS_PATH = join(
-  dirname(dirname(process.execPath)),
-  "lib",
-  "node_modules",
-  "@latentminds",
-  "pi-quotas",
-  "src",
-  "extensions",
-  "command-quotas",
-  "command.ts",
-);
+const CODEX_QUOTAS_EXTENSION_PATH = new URL("./codex-quotas.ts", import.meta.url).href;
 
 type CommandOptions = Parameters<ExtensionAPI["registerCommand"]>[1];
 
@@ -23,8 +12,8 @@ async function runCapturedCommand(
   args: string,
   ctx: ExtensionCommandContext,
 ): Promise<boolean> {
-  const commandModule = (await import(PI_QUOTAS_COMMANDS_PATH)) as {
-    registerQuotasCommands: (pi: ExtensionAPI) => void;
+  const commandModule = (await import(CODEX_QUOTAS_EXTENSION_PATH)) as {
+    default: (pi: ExtensionAPI) => void;
   };
 
   let handler: CommandOptions["handler"] | undefined;
@@ -32,9 +21,12 @@ async function runCapturedCommand(
     registerCommand(name: string, options: CommandOptions) {
       if (name === commandName) handler = options.handler;
     },
-  } as ExtensionAPI;
+    on() {
+      // Ignore lifecycle hooks while capturing the command handler.
+    },
+  } as unknown as ExtensionAPI;
 
-  commandModule.registerQuotasCommands(capturePi);
+  commandModule.default(capturePi);
 
   if (!handler) return false;
   await handler(args, ctx);

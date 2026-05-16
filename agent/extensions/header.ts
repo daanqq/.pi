@@ -16,17 +16,16 @@ const PALETTE: Rgb[] = [DEEP_BLUE, BLUE, SKY, ICE, SKY, BLUE];
 type Rgb = [number, number, number];
 
 const TITLE_LINES = [
-  "   ███████████████████████████╗  ",
-  "   ╚══██████╔════════██████╔══╝  ",
-  "      ██████║        ██████║     ",
-  "      ██████║        ██████║     ",
-  "      ██████║        ██████║     ",
-  "      ██████║        ██████║     ",
-  "      ██████║        ██████║     ",
-  "      ██████║     ████████████╗  ",
-  "   ████████████╗  ╚═══════════╝  ",
-  "   ╚═══════════╝                 ",
-]
+  "███████████████     ",
+  "███████████████     ",
+  "█████     █████     ",
+  "█████     █████     ",
+  "██████████     █████",
+  "██████████     █████",
+  "█████          █████",
+  "█████          █████",
+  "                    "
+];
 
 function mix(a: number, b: number, t: number) {
   return Math.round(a + (b - a) * t);
@@ -91,7 +90,7 @@ export default function (pi: ExtensionAPI) {
       requestRender = () => tui.requestRender();
       return {
         render(width: number) {
-          return renderHeader(width, 0, `${currentModelId} · ${projectName()}`);
+          return renderHeader(width, 0, `${currentModelId} • ${projectName()}`);
         },
         invalidate() {
           tui.requestRender();
