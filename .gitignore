@@ -1,6 +1,6 @@
 # Secrets / local auth
 agent/auth.json
-**/auth.json
+**/auth.json**
 *.key
 *.pem
 .env
