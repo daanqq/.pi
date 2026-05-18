@@ -3,7 +3,7 @@ import type {
   ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
 
-const RIGHT_STATUS_ORDER = ["tps", "codex-quotas", "deepseek-balance"] as const;
+const RIGHT_STATUS_ORDER = ["generation-stats", "codex-quotas", "deepseek-balance"] as const;
 const RIGHT_STATUS_IDS = new Set<string>(RIGHT_STATUS_ORDER);
 
 function stripAnsi(text: string) {
@@ -104,7 +104,7 @@ function installFooter(pi: ExtensionAPI, ctx: ExtensionContext) {
         let rightSideWithoutProvider = modelName;
         if (ctx.model?.reasoning) {
           const thinkingLevel = pi.getThinkingLevel();
-          rightSideWithoutProvider = thinkingLevel === "off" ? `${modelName} • thinking off` : `${modelName} • ${thinkingLevel}`;
+          rightSideWithoutProvider = thinkingLevel === "off" ? `${modelName} thinking off` : `${modelName} ${thinkingLevel}`;
         }
 
         let rightSide = theme.fg("dim", rightSideWithoutProvider);
@@ -114,7 +114,7 @@ function installFooter(pi: ExtensionAPI, ctx: ExtensionContext) {
           .map((key) => extensionStatuses.get(key))
           .filter((text): text is string => Boolean(text))
           .map((text) => sanitizeStatusText(text));
-        if (rightStatuses.length > 0) rightSide = `${rightStatuses.join(theme.fg("dim", " • "))}${theme.fg("dim", " • ")}${rightSide}`;
+        if (rightStatuses.length > 0) rightSide = `${rightStatuses.join("  ")}  ${rightSide}`;
 
         const rightSideWidth = visibleWidth(rightSide);
         const totalNeeded = statsLeftWidth + 2 + rightSideWidth;

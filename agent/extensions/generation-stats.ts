@@ -1,8 +1,7 @@
 /**
- * TPS Tracker Extension
+ * Generation Stats Extension
  *
- * Tracks tokens per second during model generation and reports
- * final TPS statistics at the end of each agent run.
+ * Tracks generation metrics like tokens per second and time to first token.
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
@@ -18,15 +17,21 @@ export default function (pi: ExtensionAPI) {
 	let totalOutputTokens = 0;
 	/** Cumulative time (ms) spent actually streaming output deltas (excludes tool execution and first-token latency). */
 	let totalStreamMs = 0;
+	/** Timestamp when the current agent run started. */
+	let agentStart: number | null = null;
+	/** Time from user request submission to the first streamed output delta in this agent run. */
+	let requestTtftMs: number | null = null;
 
 	pi.on("agent_start", async (_event, ctx) => {
 		totalOutputTokens = 0;
 		totalStreamMs = 0;
+		agentStart = Date.now();
+		requestTtftMs = null;
 		messageStart = null;
 		streamStart = null;
 		estimatedStreamedTokens = 0;
 		const theme = ctx.ui.theme;
-		ctx.ui.setStatus("tps", theme.fg("accent", "generating..."));
+		ctx.ui.setStatus("generation-stats", theme.fg("accent", "generating..."));
 	});
 
 	pi.on("message_start", async (event) => {
@@ -48,7 +53,10 @@ export default function (pi: ExtensionAPI) {
 		if (!isOutputDelta) return;
 
 		const now = Date.now();
-		streamStart ??= now;
+		if (streamStart === null) {
+			streamStart = now;
+			requestTtftMs ??= agentStart === null ? null : Math.max(0, now - agentStart);
+		}
 		estimatedStreamedTokens += Math.max(0, streamEvent.delta.length / 4);
 
 		const elapsed = (now - streamStart) / 1000;
@@ -58,7 +66,8 @@ export default function (pi: ExtensionAPI) {
 		if (elapsed > 0 && currentTokens > 0) {
 			const tps = Math.round(currentTokens / elapsed);
 			const theme = ctx.ui.theme;
-			ctx.ui.setStatus("tps", theme.fg("accent", `${tps} tok/s`));
+			const ttftLabel = requestTtftMs === null ? "" : `  ${theme.fg("accent", `${(requestTtftMs / 1000).toFixed(1)}ttft`)}`;
+			ctx.ui.setStatus("generation-stats", `${theme.fg("accent", `${tps}tps`)}${ttftLabel}`);
 		}
 	});
 
@@ -89,11 +98,15 @@ export default function (pi: ExtensionAPI) {
 		const theme = ctx.ui.theme;
 		const icon = theme.fg("success", "✓");
 		const tpsLabel = tps > 0
-			? theme.fg("accent", `${tps} tok/s`)
+			? theme.fg("accent", `${tps}tps`)
 			: theme.fg("dim", "N/A");
-		const detail = theme.fg("dim", `${totalOutputTokens} tokens in ${elapsed.toFixed(1)}s streaming`);
+		const ttftLabel = requestTtftMs !== null
+			? theme.fg("accent", `${(requestTtftMs / 1000).toFixed(1)}ttft`)
+			: "";
+		const detail = theme.fg("accent", `${totalOutputTokens} tokens in ${elapsed.toFixed(1)}s`);
+		const parts = [tpsLabel, ttftLabel, detail].filter(Boolean);
 
-		ctx.ui.notify(`${icon} ${tpsLabel}  ${detail}`, "info");
-		ctx.ui.setStatus("tps", tpsLabel);
+		ctx.ui.notify(`${icon} ${parts.join("  ")}`, "info");
+		ctx.ui.setStatus("generation-stats", `${tpsLabel}${ttftLabel ? ` ${ttftLabel}` : ""}`);
 	});
 }
