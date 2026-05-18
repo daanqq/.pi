@@ -205,10 +205,9 @@ function formatFooterStatus(ctx: Pick<ExtensionContext, "ui">, result: CodexQuot
 
   const windows = result.windows.map((window) => {
     const color = quotaColor(window.remainingPercent);
-    const label = theme.fg("dim", `${window.label}:`);
+    const left = theme.fg("dim", `${resetText(window.resetsAt)}:`);
     const value = theme.fg(color, `${Math.round(window.remainingPercent)}%`);
-    const reset = theme.fg("dim", ` ${resetText(window.resetsAt)}`);
-    return `${label}${value}${reset}`;
+    return `${left}${value}`;
   });
 
   return windows.join(" ");
