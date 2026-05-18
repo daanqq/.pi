@@ -3,7 +3,8 @@ import type {
   ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
 
-const RIGHT_STATUS_IDS = new Set(["codex-quotas", "deepseek-balance"]);
+const RIGHT_STATUS_ORDER = ["tps", "codex-quotas", "deepseek-balance"] as const;
+const RIGHT_STATUS_IDS = new Set<string>(RIGHT_STATUS_ORDER);
 
 function stripAnsi(text: string) {
   return text.replace(/\x1b\[[0-9;]*m/g, "");
@@ -108,11 +109,12 @@ function installFooter(pi: ExtensionAPI, ctx: ExtensionContext) {
 
         let rightSide = theme.fg("dim", rightSideWithoutProvider);
 
-        const rightStatuses = Array.from(footerData.getExtensionStatuses().entries())
-          .filter(([key]) => RIGHT_STATUS_IDS.has(key))
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([, text]) => sanitizeStatusText(text));
-        if (rightStatuses.length > 0) rightSide = `${rightStatuses.join("  ")}${theme.fg("dim", " • ")}${rightSide}`;
+        const extensionStatuses = footerData.getExtensionStatuses();
+        const rightStatuses = RIGHT_STATUS_ORDER
+          .map((key) => extensionStatuses.get(key))
+          .filter((text): text is string => Boolean(text))
+          .map((text) => sanitizeStatusText(text));
+        if (rightStatuses.length > 0) rightSide = `${rightStatuses.join(theme.fg("dim", " • "))}${theme.fg("dim", " • ")}${rightSide}`;
 
         const rightSideWidth = visibleWidth(rightSide);
         const totalNeeded = statsLeftWidth + 2 + rightSideWidth;
@@ -134,7 +136,7 @@ function installFooter(pi: ExtensionAPI, ctx: ExtensionContext) {
           theme.fg("dim", statsLine),
         ];
 
-        const statusLine = Array.from(footerData.getExtensionStatuses().entries())
+        const statusLine = Array.from(extensionStatuses.entries())
           .filter(([key]) => !RIGHT_STATUS_IDS.has(key))
           .sort(([a], [b]) => a.localeCompare(b))
           .map(([, text]) => sanitizeStatusText(text))
