@@ -6,6 +6,12 @@ Personal configuration repository for the `pi` coding agent.
 
 - Default provider/model: `openai-codex/gpt-5.5`
 - Default thinking level: `low`
+- Enabled models:
+  - `openai-codex/gpt-5.5`
+  - `openai-codex/gpt-5.4`
+  - `openai-codex/gpt-5.4-mini`
+  - `deepseek/deepseek-v4-flash`
+  - `deepseek/deepseek-v4-pro`
 - Theme: `alabaster`
 - Quiet startup enabled
 - Built-in compaction enabled
@@ -41,7 +47,11 @@ Personal configuration repository for the `pi` coding agent.
 | `codex-quotas.ts` | Fetches ChatGPT/Codex subscription quota from `chatgpt.com/backend-api/wham/usage`, caches it, refreshes it on session/model/turn events, and exposes footer status for Codex models. Uses `openai-codex` OAuth from pi auth and falls back to `~/.codex/auth.json` for account id. | `/codex:quotas` |
 | `compact.ts` | Automatically compacts context before agent start when context usage exceeds `256000` tokens. | — |
 | `deepseek-balance.ts` | Shows DeepSeek account balance for DeepSeek models and refreshes it on session/model/turn events. Requires `DEEPSEEK_PI_API_KEY`. | `/deepseek:balance` |
+| `default-reasoning.ts` | Applies model-specific thinking defaults on manual model selection: DeepSeek → `high`, `gpt-5.4-mini` → `medium`, other GPT models → `low`, non-reasoning models → `off`. Skips restored session selections. | — |
+| `generation-stats.ts` | Tracks assistant generation speed during an agent run: live tokens/sec, time to first token, final output tokens, and final streaming summary. Keeps the footer/status entry active without showing `done`. | — |
 | `header.ts` | Replaces the built-in header with a blue gradient block logo showing the selected model and project name. | `/flow-title`, `/flow-title-builtin` |
-| `right-status-footer.ts` | Installs a custom footer with cwd, git branch, session name, token/cost/context stats, model/thinking level, and moves selected extension statuses (`codex-quotas`, `deepseek-balance`) to the right side. | — |
+| `prompt-audit.ts` | Logs the initial pi prompt breakdown and the serialized provider request payload to `~/.pi/logs/prompt-audit` for prompt/token auditing. Supports one-shot, persistent, environment-enabled, and status modes. | `/prompt-audit [once\|on\|off\|status]`, `PI_PROMPT_AUDIT=1` |
+| `right-status-footer.ts` | Installs a custom footer with cwd, git branch, session name, token/cost/context stats, model/thinking level, and moves selected extension statuses (`codex-quotas`, `deepseek-balance`, `generation-stats`) to the right side. | — |
 | `shortcuts.ts` | Adds quit aliases and a status shortcut that delegates to the Codex quota command. | `/exit`, `/q`, `/e`, `/status` |
 | `skill-dollar.ts` | Adds inline `$skill-name` skill selection: autocomplete after `$`, resolves selected skills, injects their `SKILL.md` content into the next turn, and warns on unknown/unreadable skills. | `$<skill-name>` inline syntax |
+| `zsh.ts` | Runs user bash commands through interactive zsh (`PI_USER_BASH=1 zsh -ic ...`) so local shell setup is available while preserving pi's local bash operations. Honors `PI_USER_BASH_SHELL` before falling back to `$SHELL` or `/bin/zsh`. | — |
