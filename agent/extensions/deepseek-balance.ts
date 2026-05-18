@@ -4,12 +4,11 @@ import { join } from "node:path";
 import type {
   ExtensionAPI,
   ExtensionContext,
-  ExtensionCommandContext,
 } from "@mariozechner/pi-coding-agent";
 
 const BALANCE_URL = "https://api.deepseek.com/user/balance";
-const API_KEY_ENV = "DEEPSEEK_PI_API_KEY";
 const PROVIDER_ID = "deepseek";
+const AUTH_PATH = join(homedir(), ".pi", "agent", "auth.json");
 const STATUS_ID = "deepseek-balance";
 const REFRESH_INTERVAL_MS = 60_000;
 
@@ -34,20 +33,17 @@ function isDeepSeekContext(ctx: ExtensionContext) {
   return ctx.model?.provider === "deepseek" || ctx.model?.id?.startsWith("deepseek/");
 }
 
-async function getDeepSeekApiKey(ctx: ExtensionContext | ExtensionCommandContext) {
-  const fromAuthStorage = await ctx.modelRegistry.authStorage.getApiKey(PROVIDER_ID);
-  if (fromAuthStorage) return fromAuthStorage;
-
+function getDeepSeekApiKey() {
   try {
-    const authPath = join(homedir(), ".pi", "agent", "auth.json");
-    const data = JSON.parse(readFileSync(authPath, "utf8")) as Record<string, any>;
-    const key = data?.[PROVIDER_ID]?.key;
+    const data = JSON.parse(readFileSync(AUTH_PATH, "utf8")) as Record<string, any>;
+    const credential = data?.[PROVIDER_ID];
+    const key = credential?.key ?? credential?.apiKey ?? credential?.token;
     if (typeof key === "string" && key.length > 0) return key;
   } catch {
-    // Ignore and fall back to the legacy environment variable below.
+    // Missing or malformed auth file is handled by the caller.
   }
 
-  return process.env[API_KEY_ENV];
+  return undefined;
 }
 
 function parseAmount(value: string | undefined) {
@@ -138,7 +134,7 @@ function createBalanceRefresher() {
   async function update(ctx: ExtensionContext): Promise<void> {
     if (!ctx.hasUI || !isDeepSeekContext(ctx)) return;
 
-    const apiKey = await getDeepSeekApiKey(ctx);
+    const apiKey = getDeepSeekApiKey();
     if (!apiKey) {
       ctx.ui.setStatus(STATUS_ID, ctx.ui.theme.fg("warning", "set deepseek auth"));
       return;
@@ -214,7 +210,7 @@ export default function deepSeekBalanceExtension(pi: ExtensionAPI) {
   pi.registerCommand("deepseek:balance", {
     description: "Check DeepSeek API balance using ~/.pi/agent/auth.json",
     handler: async (_args, ctx) => {
-      const apiKey = await getDeepSeekApiKey(ctx);
+      const apiKey = getDeepSeekApiKey();
       if (!apiKey) {
         ctx.ui.notify("Set deepseek.key in ~/.pi/agent/auth.json to check DeepSeek balance", "error");
         return;
