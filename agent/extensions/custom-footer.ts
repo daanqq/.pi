@@ -16,9 +16,34 @@ function visibleWidth(text: string) {
 
 function truncateToWidth(text: string, width: number, ellipsis = "...") {
   if (visibleWidth(text) <= width) return text;
-  const plain = stripAnsi(text);
+
   const max = Math.max(0, width - visibleWidth(ellipsis));
-  return plain.slice(0, max) + ellipsis;
+  const ansiPattern = /\x1b\[[0-9;]*m/g;
+  let result = "";
+  let visible = 0;
+  let index = 0;
+  let sawAnsi = false;
+
+  for (const match of text.matchAll(ansiPattern)) {
+    const ansiIndex = match.index ?? 0;
+    const plain = text.slice(index, ansiIndex);
+    const take = Math.max(0, Math.min(plain.length, max - visible));
+    result += plain.slice(0, take);
+    visible += take;
+    if (visible >= max) break;
+
+    result += match[0];
+    sawAnsi = true;
+    index = ansiIndex + match[0].length;
+  }
+
+  if (visible < max) {
+    const plain = text.slice(index);
+    const take = Math.max(0, Math.min(plain.length, max - visible));
+    result += plain.slice(0, take);
+  }
+
+  return result + ellipsis + (sawAnsi ? "\x1b[0m" : "");
 }
 
 function sanitizeStatusText(text: string) {
@@ -31,6 +56,10 @@ function formatTokens(count: number) {
   if (count < 1000000) return `${Math.round(count / 1000)}k`;
   if (count < 10000000) return `${(count / 1000000).toFixed(1)}M`;
   return `${Math.round(count / 1000000)}M`;
+}
+
+function footerText(theme: { fg(color: "text", text: string): string }, text: string) {
+  return theme.fg("text", text);
 }
 
 function installFooter(pi: ExtensionAPI, ctx: ExtensionContext) {
@@ -70,14 +99,14 @@ function installFooter(pi: ExtensionAPI, ctx: ExtensionContext) {
         if (sessionName) pwd = `${pwd} • ${sessionName}`;
 
         const statsParts: string[] = [];
-        if (totalInput) statsParts.push(`↑${formatTokens(totalInput)}`);
-        if (totalOutput) statsParts.push(`↓${formatTokens(totalOutput)}`);
-        if (totalCacheRead) statsParts.push(`R${formatTokens(totalCacheRead)}`);
-        if (totalCacheWrite) statsParts.push(`W${formatTokens(totalCacheWrite)}`);
+        if (totalInput) statsParts.push(footerText(theme, `↑${formatTokens(totalInput)}`));
+        if (totalOutput) statsParts.push(footerText(theme, `↓${formatTokens(totalOutput)}`));
+        if (totalCacheRead) statsParts.push(footerText(theme, `R${formatTokens(totalCacheRead)}`));
+        if (totalCacheWrite) statsParts.push(footerText(theme, `W${formatTokens(totalCacheWrite)}`));
 
         const usingSubscription = ctx.model ? ctx.modelRegistry.isUsingOAuth(ctx.model) : false;
         if (totalCost || usingSubscription) {
-          statsParts.push(`$${totalCost.toFixed(3)}${usingSubscription ? " (sub)" : ""}`);
+          statsParts.push(footerText(theme, `$${totalCost.toFixed(3)}${usingSubscription ? " (sub)" : ""}`));
         }
 
         const contextUsage = ctx.getContextUsage();
@@ -90,7 +119,7 @@ function installFooter(pi: ExtensionAPI, ctx: ExtensionContext) {
             ? theme.fg("error", contextDisplay)
             : contextPercentValue > 70
               ? theme.fg("warning", contextDisplay)
-              : contextDisplay,
+              : footerText(theme, contextDisplay),
         );
 
         let statsLeft = statsParts.join(" ");
@@ -107,7 +136,7 @@ function installFooter(pi: ExtensionAPI, ctx: ExtensionContext) {
           rightSideWithoutProvider = thinkingLevel === "off" ? `${modelName} thinking off` : `${modelName} ${thinkingLevel}`;
         }
 
-        let rightSide = theme.fg("dim", rightSideWithoutProvider);
+        let rightSide = footerText(theme, rightSideWithoutProvider);
 
         const extensionStatuses = footerData.getExtensionStatuses();
         const rightStatuses = RIGHT_STATUS_ORDER
@@ -132,8 +161,8 @@ function installFooter(pi: ExtensionAPI, ctx: ExtensionContext) {
         }
 
         const lines = [
-          truncateToWidth(theme.fg("dim", pwd), width, theme.fg("dim", "...")),
-          theme.fg("dim", statsLine),
+          truncateToWidth(footerText(theme, pwd), width, footerText(theme, "...")),
+          statsLine,
         ];
 
         const statusLine = Array.from(extensionStatuses.entries())
@@ -141,7 +170,7 @@ function installFooter(pi: ExtensionAPI, ctx: ExtensionContext) {
           .sort(([a], [b]) => a.localeCompare(b))
           .map(([, text]) => sanitizeStatusText(text))
           .join(" ");
-        if (statusLine) lines.push(truncateToWidth(statusLine, width, theme.fg("dim", "...")));
+        if (statusLine) lines.push(truncateToWidth(statusLine, width, footerText(theme, "...")));
 
         return lines;
       },
