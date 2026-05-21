@@ -64,4 +64,11 @@ export default function (pi: ExtensionAPI) {
       }
     },
   });
+
+  pi.registerCommand("n", {
+    description: "Alias for /new",
+    handler: async (_args, ctx) => {
+      await ctx.newSession();
+    },
+  });
 }
