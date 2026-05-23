@@ -1,12 +1,11 @@
 {
-  "lastChangelogVersion": "0.74.0",
+  "lastChangelogVersion": "0.75.5",
   "defaultThinkingLevel": "low",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.5",
   "packages": [
     "npm:pi-web-access",
-    "npm:pi-rtk-optimizer",
-    "npm:pi-total-recall"
+    "npm:pi-rtk-optimizer"
   ],
   "hideThinkingBlock": false,
   "theme": "alabaster",
