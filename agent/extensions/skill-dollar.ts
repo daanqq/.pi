@@ -19,6 +19,7 @@ const MAX_SUGGESTIONS = 100;
 const SKILL_TOKEN_BEFORE_CURSOR = /(?:^|[\s([{])\$([a-z0-9-]*)$/;
 const SKILL_MARKER = /(?:^|[\s([{])\$([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)/g;
 const SKILL_AUTOCOMPLETE_CONTEXT = /(?:^|[\s([{])\$[a-z0-9-]*$/;
+const TRAILING_SKILL_TOKEN_WITH_SPACES = /(?:^|[\s([{])\$([a-z0-9-]*)\s*$/;
 
 function getSkills(pi: ExtensionAPI): SkillInfo[] {
 	return pi
@@ -65,12 +66,15 @@ function createSkillAutocompleteProvider(pi: ExtensionAPI, current: Autocomplete
 			const beforeCursor = currentLine.slice(0, cursorCol);
 			const match = beforeCursor.match(SKILL_TOKEN_BEFORE_CURSOR);
 			const query = match?.[1];
+			const skills = getSkills(pi);
 
 			if (query === undefined) {
+				const trailingSkillToken = beforeCursor.match(TRAILING_SKILL_TOKEN_WITH_SPACES);
+				const completedQuery = trailingSkillToken?.[1];
+				if (completedQuery !== undefined && !skills.some((skill) => skill.name === completedQuery)) return null;
 				return current.getSuggestions(lines, cursorLine, cursorCol, options);
 			}
 
-			const skills = getSkills(pi);
 			const exactSkill = skills.some((skill) => skill.name === query);
 			if (exactSkill && !options.force) return null;
 
@@ -107,6 +111,11 @@ function createSkillAutocompleteProvider(pi: ExtensionAPI, current: Autocomplete
 			const currentLine = lines[cursorLine] ?? "";
 			const beforeCursor = currentLine.slice(0, cursorCol);
 			if (SKILL_AUTOCOMPLETE_CONTEXT.test(beforeCursor)) return true;
+
+			const trailingSkillToken = beforeCursor.match(TRAILING_SKILL_TOKEN_WITH_SPACES);
+			const query = trailingSkillToken?.[1];
+			if (query !== undefined && !getSkills(pi).some((skill) => skill.name === query)) return false;
+
 			return current.shouldTriggerFileCompletion?.(lines, cursorLine, cursorCol) ?? true;
 		},
 	};
