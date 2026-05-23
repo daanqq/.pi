@@ -17,7 +17,7 @@
     },
     "sourceCodeFiltering": "none",
     "smartTruncate": {
-      "enabled": false,
+      "enabled": true,
       "maxLines": 220
     },
     "aggregateTestOutput": true,
