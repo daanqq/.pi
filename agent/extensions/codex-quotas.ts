@@ -292,7 +292,8 @@ export default function (pi: ExtensionAPI) {
     description: "Show Codex subscription quota",
     handler: async (_args, ctx) => {
       const result = await fetchCodexQuota(ctx, { force: true });
-      ctx.ui.notify(formatCommandOutput(result), result.success ? "info" : "warning");
+      const outputColor = result.success ? "success" : "warning";
+      ctx.ui.notify(ctx.ui.theme.fg(outputColor, formatCommandOutput(result)), result.success ? "info" : "warning");
       if (ctx.hasUI && isCodexContext(ctx)) ctx.ui.setStatus(EXTENSION_ID, formatFooterStatus(ctx, result));
     },
   });
