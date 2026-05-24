@@ -217,17 +217,12 @@ function formatCommandOutput(result: CodexQuotaResult): string {
   if (!result.success) return `Codex subscription quota unavailable\n\n${result.error.kind}: ${result.error.message}`;
   if (result.windows.length === 0) return "Codex subscription quota unavailable\n\nNo subscription quota windows found in response.";
 
-  return [
-    "Codex subscription quota",
+  return result.windows.flatMap((window) => [
+    `${window.label} window`,
+    `  remaining: ${Math.round(window.remainingPercent)}%`,
+    `  resets: in ${resetText(window.resetsAt)}`,
     "",
-    ...result.windows.flatMap((window) => [
-      `${window.label} window`,
-      `  remaining: ${Math.round(window.remainingPercent)}%`,
-      `  used: ${Math.round(window.usedPercent)}%`,
-      `  resets: in ${resetText(window.resetsAt)}`,
-      "",
-    ]),
-  ].join("\n").trimEnd();
+  ]).join("\n").trimEnd();
 }
 
 function createRefresher() {
