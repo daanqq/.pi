@@ -12,7 +12,7 @@ type CodexWindow = {
 };
 
 type CodexQuotaResult =
-  | { success: true; windows: CodexWindow[]; fetchedAt: number }
+  | { success: true; windows: CodexWindow[]; subscriptionMail?: string; fetchedAt: number }
   | { success: false; error: { kind: "config" | "http" | "timeout" | "cancelled" | "network"; message: string }; fetchedAt: number };
 
 const EXTENSION_ID = "codex-quotas";
@@ -67,6 +67,15 @@ function percentLeftToUsedPercent(limit: any): number {
 function clampPercent(value: number): number {
   if (!Number.isFinite(value)) return 0;
   return Math.max(0, Math.min(100, value));
+}
+
+function looksLikeEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function parseSubscriptionMail(data: any): string | undefined {
+  const email = typeof data?.email === "string" ? data.email.trim() : "";
+  return looksLikeEmail(email) ? email : undefined;
 }
 
 function parseCodexWindows(data: any): CodexWindow[] {
@@ -136,7 +145,7 @@ async function fetchCodexQuotaRaw(
     }
 
     const data = await response.json();
-    return { success: true, windows: parseCodexWindows(data), fetchedAt };
+    return { success: true, windows: parseCodexWindows(data), subscriptionMail: parseSubscriptionMail(data), fetchedAt };
   } catch (error) {
     const isAbort = combined.aborted || (error instanceof DOMException && error.name === "AbortError");
     if (isAbort) {
@@ -217,12 +226,14 @@ function formatCommandOutput(result: CodexQuotaResult): string {
   if (!result.success) return `Codex subscription quota unavailable\n\n${result.error.kind}: ${result.error.message}`;
   if (result.windows.length === 0) return "Codex subscription quota unavailable\n\nNo subscription quota windows found in response.";
 
-  return result.windows.flatMap((window) => [
+  const lines = result.subscriptionMail ? [`subscription mail: ${result.subscriptionMail}`, ""] : [];
+  lines.push(...result.windows.flatMap((window) => [
     `${window.label} window`,
     `  remaining: ${Math.round(window.remainingPercent)}%`,
     `  resets: in ${resetText(window.resetsAt)}`,
     "",
-  ]).join("\n").trimEnd();
+  ]));
+  return lines.join("\n").trimEnd();
 }
 
 function createRefresher() {
