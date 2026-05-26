@@ -18,6 +18,7 @@ type CodexQuotaResult =
 const EXTENSION_ID = "codex-quotas";
 const REFRESH_INTERVAL_MS = 60_000;
 const FETCH_TIMEOUT_MS = 15_000;
+const FETCH_RETRY_DELAYS_MS = [2_000, 5_000];
 const CACHE_TTL_MS = 60_000;
 const CODEX_PROVIDER = "openai-codex";
 
@@ -76,6 +77,31 @@ function looksLikeEmail(value: string): boolean {
 function parseSubscriptionMail(data: any): string | undefined {
   const email = typeof data?.email === "string" ? data.email.trim() : "";
   return looksLikeEmail(email) ? email : undefined;
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (ms <= 0) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(resolve, ms);
+    timer.unref?.();
+    signal?.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        reject(signal.reason instanceof Error ? signal.reason : new DOMException("Retry cancelled", "AbortError"));
+      },
+      { once: true },
+    );
+  });
+}
+
+function shouldRetryQuotaResult(result: CodexQuotaResult): boolean {
+  if (result.success) return false;
+  if (result.error.kind === "network" || result.error.kind === "timeout") return true;
+  if (result.error.kind !== "http") return false;
+  const statusMatch = result.error.message.match(/(?:^|\b)HTTP\s+(\d{3})(?:\b|$)/i);
+  const status = statusMatch ? Number(statusMatch[1]) : undefined;
+  return status === 429 || (status != null && status >= 500);
 }
 
 function parseCodexWindows(data: any): CodexWindow[] {
@@ -137,9 +163,10 @@ async function fetchCodexQuotaRaw(
 
     if (!response.ok) {
       const body = await response.text().catch(() => "");
+      const message = body || response.statusText || `HTTP ${response.status}`;
       return {
         success: false,
-        error: { kind: "http", message: body || response.statusText || `HTTP ${response.status}` },
+        error: { kind: "http", message: message.includes(`HTTP ${response.status}`) ? message : `HTTP ${response.status}: ${message}` },
         fetchedAt,
       };
     }
@@ -174,14 +201,23 @@ async function fetchCodexQuota(
   if (!options?.force && cache.result && cache.fetchedAt && now - cache.fetchedAt < CACHE_TTL_MS) return cache.result;
   if (!options?.force && cache.inFlight) return cache.inFlight;
 
-  const promise = fetchCodexQuotaRaw(await getCodexAccessToken(ctx), getCodexAccountId(ctx), options?.signal)
-    .then((result) => {
-      cache = { result, fetchedAt: Date.now() };
-      return result;
-    })
-    .finally(() => {
-      delete cache.inFlight;
-    });
+  const promise = (async () => {
+    const accessToken = await getCodexAccessToken(ctx);
+    const accountId = getCodexAccountId(ctx);
+    let result = await fetchCodexQuotaRaw(accessToken, accountId, options?.signal);
+
+    for (const delayMs of FETCH_RETRY_DELAYS_MS) {
+      if (!shouldRetryQuotaResult(result) || options?.signal?.aborted) break;
+      await sleep(delayMs, options?.signal).catch(() => undefined);
+      if (options?.signal?.aborted) break;
+      result = await fetchCodexQuotaRaw(accessToken, accountId, options?.signal);
+    }
+
+    cache = { result, fetchedAt: Date.now() };
+    return result;
+  })().finally(() => {
+    delete cache.inFlight;
+  });
 
   cache = { ...cache, inFlight: promise };
   return promise;
