@@ -3,8 +3,30 @@ import type {
   ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
 
-const RIGHT_STATUS_ORDER = ["generation-stats", "codex-quotas", "deepseek-balance"] as const;
+const RIGHT_STATUS_ORDER = ["generation-stats", "codex-quotas", "deepseek-balance", "openrouter-balance"] as const;
 const RIGHT_STATUS_IDS = new Set<string>(RIGHT_STATUS_ORDER);
+
+type FooterThemeColor =
+  | "text"
+  | "thinkingOff"
+  | "thinkingMinimal"
+  | "thinkingLow"
+  | "thinkingMedium"
+  | "thinkingHigh"
+  | "thinkingXhigh";
+
+type FooterTheme = {
+  fg(color: FooterThemeColor, text: string): string;
+};
+
+const THINKING_LEVEL_COLOR: Record<string, FooterThemeColor> = {
+  off: "thinkingOff",
+  minimal: "thinkingMinimal",
+  low: "thinkingLow",
+  medium: "thinkingMedium",
+  high: "thinkingHigh",
+  xhigh: "thinkingXhigh",
+};
 
 function stripAnsi(text: string) {
   return text.replace(/\x1b\[[0-9;]*m/g, "");
@@ -58,8 +80,16 @@ function formatTokens(count: number) {
   return `${Math.round(count / 1000000)}M`;
 }
 
-function footerText(theme: { fg(color: "text", text: string): string }, text: string) {
+function footerText(theme: FooterTheme, text: string) {
   return theme.fg("text", text);
+}
+
+function thinkingLevelColor(level: string | undefined) {
+  return THINKING_LEVEL_COLOR[level ?? ""] ?? "thinkingLow";
+}
+
+function thinkingLevelText(theme: FooterTheme, level: string | undefined, text: string) {
+  return theme.fg(thinkingLevelColor(level), text);
 }
 
 function installFooter(pi: ExtensionAPI, ctx: ExtensionContext) {
@@ -130,13 +160,12 @@ function installFooter(pi: ExtensionAPI, ctx: ExtensionContext) {
         }
 
         const modelName = ctx.model?.id || "no-model";
-        let rightSideWithoutProvider = modelName;
+        const thinkingLevel = pi.getThinkingLevel();
+        let rightSide = thinkingLevelText(theme, thinkingLevel, modelName);
         if (ctx.model?.reasoning) {
-          const thinkingLevel = pi.getThinkingLevel();
-          rightSideWithoutProvider = thinkingLevel === "off" ? `${modelName} thinking off` : `${modelName} ${thinkingLevel}`;
+          const thinkingDisplay = thinkingLevel === "off" ? "thinking off" : thinkingLevel;
+          rightSide = `${rightSide} ${thinkingLevelText(theme, thinkingLevel, thinkingDisplay)}`;
         }
-
-        let rightSide = footerText(theme, rightSideWithoutProvider);
 
         const extensionStatuses = footerData.getExtensionStatuses();
         const rightStatuses = RIGHT_STATUS_ORDER
