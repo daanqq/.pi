@@ -1,3 +1,17 @@
+/**
+ * Agent Pulse Extension
+ *
+ * Unified pi agent activity signals:
+ * - replaces the built-in working indicator with a themed thinking shimmer;
+ * - owns the terminal title while loaded;
+ * - shows working/tool/done states;
+ * - rings the terminal bell when an agent turn finishes.
+ *
+ * Do not enable together with other extensions that continuously call ctx.ui.setTitle()
+ * or replace the built-in working indicator.
+ */
+
+import path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 const SPINNER_VERBS = [
@@ -190,8 +204,17 @@ const SPINNER_VERBS = [
 	"Zigzagging",
 ] as const;
 
-const DEFAULT_CHARACTERS = ["·", "✢", "✳", "✶", "✻", "✽"] as const;
-const SPINNER_FRAMES = [...DEFAULT_CHARACTERS, ...[...DEFAULT_CHARACTERS].reverse()];
+const SPINNER_CHARACTERS = ["·", "✢", "✶", "✻", "✽"] as const;
+const SPINNER_FRAMES = [...SPINNER_CHARACTERS, ...[...SPINNER_CHARACTERS].reverse()];
+const SPINNER_RENDER_INTERVAL_MS = 50;
+const SPINNER_FRAME_MS = 120;
+const SHIMMER_FRAME_MS = 50;
+const SHIMMER_TRAILING_GAP = 4;
+const WIDGET_DONE_HOLD_MS = 5000;
+const TITLE_DONE_HOLD_MS = 8000;
+const MAX_SESSION_LENGTH = 36;
+const MAX_CWD_LENGTH = 24;
+const WIDGET_ID = "agent-pulse";
 
 type ThinkingColorKey =
 	| "thinkingOff"
@@ -225,6 +248,10 @@ function sampleVerb(): string {
 	return SPINNER_VERBS[Math.floor(Math.random() * SPINNER_VERBS.length)] ?? "Thinking";
 }
 
+function spinnerFrame(elapsedMs: number): string {
+	return SPINNER_FRAMES[Math.floor(elapsedMs / SPINNER_FRAME_MS) % SPINNER_FRAMES.length] ?? "✻";
+}
+
 function formatElapsed(ms: number): string {
 	const totalSeconds = Math.floor(ms / 1000);
 	if (totalSeconds < 60) return `${totalSeconds}s`;
@@ -237,14 +264,9 @@ function formatFinalDuration(ms: number): string {
 	return `Worked for ${formatElapsed(ms)}`;
 }
 
-function renderGlyph(elapsedMs: number, base: ColorFn): string {
-	const frame = SPINNER_FRAMES[Math.floor(elapsedMs / 120) % SPINNER_FRAMES.length] ?? "✻";
-	return base(frame);
-}
-
 function renderShimmeredMessage(message: string, elapsedMs: number, base: ColorFn, bright: ColorFn): string {
 	const chars = Array.from(message);
-	const shimmerCenter = Math.floor(elapsedMs / 50) % (chars.length + 4);
+	const shimmerCenter = Math.floor(elapsedMs / SHIMMER_FRAME_MS) % (chars.length + SHIMMER_TRAILING_GAP);
 	return chars
 		.map((char, index) => {
 			const distance = Math.abs(index - shimmerCenter);
@@ -253,49 +275,79 @@ function renderShimmeredMessage(message: string, elapsedMs: number, base: ColorF
 		.join("");
 }
 
-function getElapsedMs(startTime: number, totalPausedMs: number, pauseStartTime: number | null): number {
-	const now = Date.now();
-	if (pauseStartTime !== null) return pauseStartTime - startTime - totalPausedMs;
-	return now - startTime - totalPausedMs;
+function truncate(value: string, maxLength: number): string {
+	if (value.length <= maxLength) return value;
+	if (maxLength <= 1) return value.slice(0, maxLength);
+	return `${value.slice(0, maxLength - 1)}…`;
 }
 
-function renderLine(
-	message: string,
-	startTime: number,
-	totalPausedMs: number,
-	pauseStartTime: number | null,
-	base: ColorFn,
-	bright: ColorFn,
-): string {
-	const elapsedMs = getElapsedMs(startTime, totalPausedMs, pauseStartTime);
-	return `${renderGlyph(elapsedMs, base)} ${renderShimmeredMessage(message, elapsedMs, base, bright)} ${base(formatElapsed(elapsedMs))}`;
+function cwdLabel(ctx?: ExtensionContext): string {
+	const cwd = ctx?.cwd ?? process.cwd();
+	return truncate(path.basename(cwd) || cwd, MAX_CWD_LENGTH);
 }
 
-function renderFinalLine(finalElapsedMs: number, base: ColorFn): string {
-	return `${base("✻")} ${base(formatFinalDuration(finalElapsedMs))}`;
+function contextLabel(pi: ExtensionAPI, ctx?: ExtensionContext): string {
+	const session = pi.getSessionName();
+	const cwd = cwdLabel(ctx);
+	if (!session) return cwd;
+	return `${truncate(session, MAX_SESSION_LENGTH)} - ${cwd}`;
+}
+
+function ringBell() {
+	process.stdout.write("\x07");
 }
 
 export default function (pi: ExtensionAPI) {
-	let timer: ReturnType<typeof setInterval> | null = null;
-	let finalTimer: ReturnType<typeof setTimeout> | null = null;
+	let renderTimer: ReturnType<typeof setInterval> | null = null;
+	let widgetDoneTimer: ReturnType<typeof setTimeout> | null = null;
+	let titleDoneTimer: ReturnType<typeof setTimeout> | null = null;
 	let message = "Thinking…";
 	let startTime = 0;
 	let totalPausedMs = 0;
 	let pauseStartTime: number | null = null;
 	let active = false;
+	let lastFrame = "✻";
+	let lastToolName: string | undefined;
+	const activeTools = new Set<string>();
 	// Do not call pi.getThinkingLevel() during extension loading: action methods
 	// are only available after the runtime is initialized. The real value is
 	// captured on agent_start.
 	let frozenThinkingColorKey: ThinkingColorKey = "thinkingLow";
 
+	function getElapsedMs(): number {
+		if (pauseStartTime !== null) return pauseStartTime - startTime - totalPausedMs;
+		return Date.now() - startTime - totalPausedMs;
+	}
+
+	function clearRenderTimer() {
+		if (renderTimer) {
+			clearInterval(renderTimer);
+			renderTimer = null;
+		}
+	}
+
+	function clearWidgetDoneTimer() {
+		if (widgetDoneTimer) {
+			clearTimeout(widgetDoneTimer);
+			widgetDoneTimer = null;
+		}
+	}
+
+	function clearTitleDoneTimer() {
+		if (titleDoneTimer) {
+			clearTimeout(titleDoneTimer);
+			titleDoneTimer = null;
+		}
+	}
+
 	function setThemedWidget(ctx: ExtensionContext, renderLineWithColors: (base: ColorFn, bright: ColorFn) => string) {
 		const colorKey = frozenThinkingColorKey;
 		ctx.ui.setWidget(
-			"thinking-shimmer",
+			WIDGET_ID,
 			(_tui, theme) => ({
 				render: () => {
 					const base = (text: string) => theme.fg(colorKey, text);
-					// Use the same thinking-level hue for shimmer as requested; bold gives a subtle glimmer
+					// Use the same thinking-level hue for shimmer; bold gives a subtle glimmer
 					// without switching to a different color family.
 					const bright = (text: string) => theme.bold(theme.fg(colorKey, text));
 					return [renderLineWithColors(base, bright)];
@@ -306,40 +358,69 @@ export default function (pi: ExtensionAPI) {
 		);
 	}
 
-	function render(ctx: ExtensionContext) {
-		setThemedWidget(ctx, (base, bright) => renderLine(message, startTime, totalPausedMs, pauseStartTime, base, bright));
+	function renderWidget(ctx: ExtensionContext) {
+		const elapsedMs = getElapsedMs();
+		lastFrame = spinnerFrame(elapsedMs);
+		setThemedWidget(ctx, (base, bright) => {
+			return `${base(lastFrame)} ${renderShimmeredMessage(message, elapsedMs, base, bright)} ${base(formatElapsed(elapsedMs))}`;
+		});
 	}
 
-	function renderFinal(ctx: ExtensionContext, finalElapsedMs: number) {
-		setThemedWidget(ctx, (base) => renderFinalLine(finalElapsedMs, base));
+	function renderFinalWidget(ctx: ExtensionContext, finalElapsedMs: number) {
+		setThemedWidget(ctx, (base) => `${base("✻")} ${base(formatFinalDuration(finalElapsedMs))}`);
 	}
 
-	function stop(ctx: ExtensionContext) {
-		if (timer) {
-			clearInterval(timer);
-			timer = null;
+	function setIdleTitle(ctx: ExtensionContext) {
+		ctx.ui.setTitle(contextLabel(pi, ctx));
+	}
+
+	function setDoneTitle(ctx: ExtensionContext) {
+		ctx.ui.setTitle(`${lastFrame} done - ${contextLabel(pi, ctx)}`);
+	}
+
+	function renderTitle(ctx: ExtensionContext) {
+		if (activeTools.size > 0 && lastToolName) {
+			const extraTools = activeTools.size - 1;
+			const suffix = extraTools > 0 ? ` +${extraTools}` : "";
+			ctx.ui.setTitle(`⚙ ${lastToolName}${suffix} - ${contextLabel(pi, ctx)}`);
+			return;
 		}
-		if (finalTimer) {
-			clearTimeout(finalTimer);
-			finalTimer = null;
-		}
-		active = false;
-		pauseStartTime = null;
-		totalPausedMs = 0;
-		ctx.ui.setWidget("thinking-shimmer", undefined);
-		ctx.ui.setWorkingVisible(true);
+
+		const elapsedMs = getElapsedMs();
+		lastFrame = spinnerFrame(elapsedMs);
+		ctx.ui.setTitle(`${lastFrame} ${message.replace(/…$/, "")} - ${contextLabel(pi, ctx)}`);
+	}
+
+	function renderActive(ctx: ExtensionContext) {
+		renderWidget(ctx);
+		renderTitle(ctx);
 	}
 
 	function stopActiveTimerOnly() {
-		if (timer) {
-			clearInterval(timer);
-			timer = null;
-		}
+		clearRenderTimer();
 		active = false;
 	}
 
+	function resetRuntimeState() {
+		active = false;
+		pauseStartTime = null;
+		totalPausedMs = 0;
+		activeTools.clear();
+		lastToolName = undefined;
+	}
+
+	function resetToIdle(ctx: ExtensionContext) {
+		clearRenderTimer();
+		clearWidgetDoneTimer();
+		clearTitleDoneTimer();
+		resetRuntimeState();
+		ctx.ui.setWidget(WIDGET_ID, undefined);
+		ctx.ui.setWorkingVisible(true);
+		setIdleTitle(ctx);
+	}
+
 	function pauseElapsed() {
-		if (!timer || pauseStartTime !== null) return;
+		if (!renderTimer || pauseStartTime !== null) return;
 		pauseStartTime = Date.now();
 	}
 
@@ -350,52 +431,80 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	function start(ctx: ExtensionContext) {
-		stop(ctx);
-		message = `${sampleVerb()}…`;
+		resetToIdle(ctx);
+		const verb = sampleVerb();
+		message = `${verb}…`;
 		startTime = Date.now();
 		totalPausedMs = 0;
 		pauseStartTime = null;
 		active = true;
+		lastFrame = spinnerFrame(0);
 		// Freeze the thinking-level color for this whole model response.
 		// If the user changes thinking level mid-response, the loader keeps this color
 		// until the next agent_start.
 		frozenThinkingColorKey = getThinkingColorKey(pi.getThinkingLevel());
 		ctx.ui.setWorkingVisible(false);
-		render(ctx);
-		timer = setInterval(() => render(ctx), 50);
+		renderActive(ctx);
+		renderTimer = setInterval(() => renderActive(ctx), SPINNER_RENDER_INTERVAL_MS);
 	}
+
+	function finish(ctx: ExtensionContext) {
+		if (!active) {
+			resetToIdle(ctx);
+			return;
+		}
+
+		const finalElapsedMs = getElapsedMs();
+		stopActiveTimerOnly();
+		pauseStartTime = null;
+		totalPausedMs = 0;
+		activeTools.clear();
+		lastToolName = undefined;
+		renderFinalWidget(ctx, finalElapsedMs);
+		ctx.ui.setWorkingVisible(true);
+		setDoneTitle(ctx);
+		ringBell();
+
+		clearWidgetDoneTimer();
+		widgetDoneTimer = setTimeout(() => {
+			widgetDoneTimer = null;
+			ctx.ui.setWidget(WIDGET_ID, undefined);
+		}, WIDGET_DONE_HOLD_MS);
+
+		clearTitleDoneTimer();
+		titleDoneTimer = setTimeout(() => {
+			setIdleTitle(ctx);
+			titleDoneTimer = null;
+		}, TITLE_DONE_HOLD_MS);
+	}
+
+	pi.on("session_start", async (_event, ctx) => {
+		resetToIdle(ctx);
+	});
 
 	pi.on("agent_start", async (_event, ctx) => {
 		start(ctx);
 	});
 
-	pi.on("agent_end", async (_event, ctx) => {
-		if (!active) {
-			stop(ctx);
-			return;
-		}
-
-		const finalElapsedMs = getElapsedMs(startTime, totalPausedMs, pauseStartTime);
-		stopActiveTimerOnly();
-		pauseStartTime = null;
-		totalPausedMs = 0;
-		renderFinal(ctx, finalElapsedMs);
-		ctx.ui.setWorkingVisible(true);
-		finalTimer = setTimeout(() => {
-			finalTimer = null;
-			ctx.ui.setWidget("thinking-shimmer", undefined);
-		}, 5000);
-	});
-
-	pi.on("tool_execution_start", async (event) => {
+	pi.on("tool_execution_start", async (event, ctx) => {
+		activeTools.add(event.toolCallId);
+		lastToolName = event.toolName;
 		if (event.toolName === "answer_questions") pauseElapsed();
+		renderActive(ctx);
 	});
 
-	pi.on("tool_execution_end", async (event) => {
+	pi.on("tool_execution_end", async (event, ctx) => {
+		activeTools.delete(event.toolCallId);
+		if (activeTools.size === 0) lastToolName = undefined;
 		if (event.toolName === "answer_questions") resumeElapsed();
+		renderActive(ctx);
+	});
+
+	pi.on("agent_end", async (_event, ctx) => {
+		finish(ctx);
 	});
 
 	pi.on("session_shutdown", async (_event, ctx) => {
-		stop(ctx);
+		resetToIdle(ctx);
 	});
 }
