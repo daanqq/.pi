@@ -1,6 +1,6 @@
 {
   "lastChangelogVersion": "0.75.5",
-  "defaultThinkingLevel": "off",
+  "defaultThinkingLevel": "low",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.5",
   "packages": [
@@ -11,19 +11,17 @@
   "theme": "alabaster",
   "quietStartup": true,
   "compaction": {
-    "enabled": true
+    "enabled": false
   },
   "enabledModels": [
     "openai-codex/gpt-5.5",
-    "openai-codex/gpt-5.4",
-    "openai-codex/gpt-5.4-mini",
-    "deepseek/deepseek-v4-flash",
-    "deepseek/deepseek-v4-pro"
+    "deepseek/deepseek-v4-pro",
+    "openrouter/xiaomi/mimo-v2.5-pro"
   ],
   "transport": "auto",
-  "collapseChangelog": false,
+  "collapseChangelog": true,
   "treeFilterMode": "default",
-  "steeringMode": "one-at-a-time",
+  "steeringMode": "all",
   "terminal": {
     "showTerminalProgress": true,
     "clearOnShrink": false
@@ -34,12 +32,16 @@
     "autoResize": true,
     "blockImages": false
   },
-  "enableSkillCommands": true,
+  "enableSkillCommands": false,
   "autocompleteMaxVisible": 5,
-  "followUpMode": "one-at-a-time",
+  "followUpMode": "all",
   "enableInstallTelemetry": true,
   "doubleEscapeAction": "tree",
   "warnings": {
     "anthropicExtraUsage": false
-  }
+  },
+  "extensions": [
+    "-extensions/compact.ts"
+  ],
+  "httpIdleTimeoutMs": 120000
 }
