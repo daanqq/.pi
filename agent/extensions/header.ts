@@ -7,13 +7,29 @@ import type {
 const RESET = "\x1b[0m";
 const BOLD = "\x1b[1m";
 
-const DEEP_BLUE: Rgb = [22, 83, 189];
-const BLUE: Rgb = [48, 129, 247];
-const SKY: Rgb = [93, 171, 255];
-const ICE: Rgb = [151, 205, 255];
-const PALETTE: Rgb[] = [DEEP_BLUE, BLUE, SKY, ICE, SKY, BLUE];
+type ThemeColor =
+  | "thinkingOff"
+  | "thinkingMinimal"
+  | "thinkingLow"
+  | "thinkingMedium"
+  | "thinkingHigh"
+  | "thinkingXhigh";
 
 type Rgb = [number, number, number];
+
+type HeaderTheme = {
+  fg(color: ThemeColor, text: string): string;
+  getFgAnsi(color: ThemeColor): string;
+};
+
+const THINKING_LEVEL_COLOR: Record<string, ThemeColor> = {
+  off: "thinkingOff",
+  minimal: "thinkingMinimal",
+  low: "thinkingLow",
+  medium: "thinkingMedium",
+  high: "thinkingHigh",
+  xhigh: "thinkingXhigh",
+};
 
 const TITLE_LINES = [
   "███████████████     ",
@@ -27,32 +43,94 @@ const TITLE_LINES = [
   "                    "
 ];
 
+const FALLBACK_COLORS: Record<ThemeColor, Rgb> = {
+  thinkingOff: [238, 238, 238],
+  thinkingMinimal: [187, 187, 187],
+  thinkingLow: [0, 122, 204],
+  thinkingMedium: [50, 92, 192],
+  thinkingHigh: [122, 62, 157],
+  thinkingXhigh: [230, 76, 230],
+};
+
 function mix(a: number, b: number, t: number) {
   return Math.round(a + (b - a) * t);
 }
 
-function sampleGradient(position: number) {
-  const wrapped = ((position % 1) + 1) % 1;
-  const scaled = wrapped * PALETTE.length;
-  const index = Math.floor(scaled);
-  const nextIndex = (index + 1) % PALETTE.length;
-  const t = scaled - index;
-  const a = PALETTE[index]!;
-  const b = PALETTE[nextIndex]!;
-  return [mix(a[0], b[0], t), mix(a[1], b[1], t), mix(a[2], b[2], t)] as Rgb;
+function mixRgb(a: Rgb, b: Rgb, t: number): Rgb {
+  return [mix(a[0], b[0], t), mix(a[1], b[1], t), mix(a[2], b[2], t)];
+}
+
+function shade(color: Rgb, amount: number): Rgb {
+  return amount < 0
+    ? mixRgb(color, [0, 0, 0], Math.abs(amount))
+    : mixRgb(color, [255, 255, 255], amount);
 }
 
 function fg([r, g, b]: Rgb, text: string) {
   return `\x1b[38;2;${r};${g};${b}m${text}${RESET}`;
 }
 
-function gradientText(text: string, phase: number) {
+function ansiToRgb(ansi: string): Rgb | undefined {
+  const trueColor = ansi.match(/38;2;(\d+);(\d+);(\d+)/);
+  if (trueColor) return [Number(trueColor[1]), Number(trueColor[2]), Number(trueColor[3])];
+
+  const basic = ansi.match(/\x1b\[(3\d|9\d)m/);
+  if (!basic) return undefined;
+  const palette: Record<string, Rgb> = {
+    "30": [0, 0, 0],
+    "34": [0, 0, 238],
+    "35": [205, 0, 205],
+    "36": [0, 205, 205],
+    "37": [229, 229, 229],
+    "90": [127, 127, 127],
+    "94": [92, 92, 255],
+    "95": [255, 0, 255],
+    "96": [0, 255, 255],
+    "97": [255, 255, 255],
+  };
+  return palette[basic[1]];
+}
+
+function getThinkingPalette(theme: HeaderTheme, level: string | undefined) {
+  const color = thinkingLevelColor(level);
+  const themeBase = ansiToRgb(theme.getFgAnsi(color)) ?? FALLBACK_COLORS[color];
+  const base = shade(themeBase, 0.12);
+
+  // Keep the original header feel: one hue flowing darker → base → lighter → base.
+  // The hue changes only when the thinking level changes; the base is slightly brighter
+  // than the theme color so every thinking variant reads clearly in the header.
+  return [
+    shade(base, -0.38),
+    shade(base, -0.14),
+    base,
+    shade(base, 0.34),
+    base,
+    shade(base, -0.14),
+  ];
+}
+
+function sampleGradient(palette: Rgb[], position: number) {
+  const wrapped = ((position % 1) + 1) % 1;
+  const scaled = wrapped * palette.length;
+  const index = Math.floor(scaled);
+  const nextIndex = (index + 1) % palette.length;
+  const t = scaled - index;
+  const a = palette[index]!;
+  const b = palette[nextIndex]!;
+  return [mix(a[0], b[0], t), mix(a[1], b[1], t), mix(a[2], b[2], t)] as Rgb;
+}
+
+function thinkingLevelColor(level: string | undefined) {
+  return THINKING_LEVEL_COLOR[level ?? ""] ?? "thinkingLow";
+}
+
+function gradientText(palette: Rgb[], text: string, phase: number) {
   const chars = [...text];
   const span = Math.max(chars.length - 1, 1);
   return chars
     .map((char, index) => {
       if (char === " ") return char;
-      return fg(sampleGradient(index / span + phase), char);
+      return fg(sampleGradient(palette, index / span + phase), char);
     })
     .join("");
 }
@@ -67,16 +145,17 @@ function projectName() {
   return path.basename(process.cwd()) || "session";
 }
 
-function renderHeader(width: number, phase: number, subtitleText: string) {
+function renderHeader(theme: HeaderTheme, width: number, phase: number, subtitleText: string, thinkingLevel: string) {
+  const palette = getThinkingPalette(theme, thinkingLevel);
   const lines = TITLE_LINES.map((line, row) =>
-    gradientText(center(line, width), phase + row * 0.045),
+    gradientText(palette, center(line, width), phase + row * 0.045),
   );
   const subtitle = center(subtitleText, width);
 
   return [
     "",
     ...lines,
-    `${BOLD}${gradientText(subtitle, phase + 0.18)}${RESET}`,
+    `${BOLD}${theme.fg(thinkingLevelColor(thinkingLevel), subtitle)}${RESET}`,
     "",
   ];
 }
@@ -86,11 +165,12 @@ export default function (pi: ExtensionAPI) {
   let currentModelId = "no model selected";
 
   function installHeader(ctx: ExtensionContext) {
-    ctx.ui.setHeader((tui) => {
+    ctx.ui.setHeader((tui, theme) => {
       requestRender = () => tui.requestRender();
       return {
         render(width: number) {
-          return renderHeader(width, 0, `${currentModelId} • ${projectName()}`);
+          const thinkingLevel = pi.getThinkingLevel();
+          return renderHeader(theme, width, 0, `${currentModelId} • ${projectName()}`, thinkingLevel);
         },
         invalidate() {
           tui.requestRender();
@@ -110,12 +190,16 @@ export default function (pi: ExtensionAPI) {
     requestRender?.();
   });
 
+  pi.on("thinking_level_select", () => {
+    requestRender?.();
+  });
+
   pi.on("session_shutdown", (_event, ctx) => {
     if (ctx.hasUI) ctx.ui.setHeader(undefined);
   });
 
   pi.registerCommand("flow-title", {
-    description: "Enable the blue flowing gradient session header",
+    description: "Enable the thinking-colored session header",
     handler: async (_args, ctx) => {
       installHeader(ctx);
       ctx.ui.notify("Flow title enabled", "info");
