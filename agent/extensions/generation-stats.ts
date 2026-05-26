@@ -96,17 +96,13 @@ export default function (pi: ExtensionAPI) {
 		const tps = totalOutputTokens > 0 && elapsed > 0 ? Math.round(totalOutputTokens / elapsed) : 0;
 
 		const theme = ctx.ui.theme;
-		const icon = theme.fg("success", "✓");
 		const tpsLabel = tps > 0
 			? theme.fg("accent", `${tps}tps`)
 			: theme.fg("dim", "N/A");
 		const ttftLabel = requestTtftMs !== null
 			? theme.fg("accent", `${(requestTtftMs / 1000).toFixed(1)}ttft`)
 			: "";
-		const detail = theme.fg("accent", `${totalOutputTokens} tokens in ${elapsed.toFixed(1)}s`);
-		const parts = [tpsLabel, ttftLabel, detail].filter(Boolean);
 
-		ctx.ui.notify(`${icon} ${parts.join("  ")}`, "info");
 		ctx.ui.setStatus("generation-stats", `${tpsLabel}${ttftLabel ? ` ${ttftLabel}` : ""}`);
 	});
 }
