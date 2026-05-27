@@ -275,10 +275,11 @@ function formatCommandOutput(result: CodexQuotaResult): string {
 function createRefresher() {
   let timer: ReturnType<typeof setInterval> | undefined;
   let activeContext: ExtensionContext | undefined;
+  let generation = 0;
   let inFlight = false;
   let queued = false;
 
-  async function update(ctx: ExtensionContext): Promise<void> {
+  async function update(ctx: ExtensionContext, updateGeneration = generation): Promise<void> {
     if (!ctx.hasUI) return;
     if (!isCodexContext(ctx)) {
       ctx.ui.setStatus(EXTENSION_ID, undefined);
@@ -292,14 +293,18 @@ function createRefresher() {
     inFlight = true;
     try {
       const result = await fetchCodexQuota(ctx);
+      if (updateGeneration !== generation || ctx !== activeContext) return;
       ctx.ui.setStatus(EXTENSION_ID, formatFooterStatus(ctx, result));
     } catch {
+      if (updateGeneration !== generation || ctx !== activeContext) return;
       ctx.ui.setStatus(EXTENSION_ID, ctx.ui.theme.fg("warning", "codex quota unavailable"));
     } finally {
       inFlight = false;
-      if (queued) {
+      if (queued && updateGeneration === generation && ctx === activeContext) {
         queued = false;
-        void update(ctx);
+        void update(ctx, updateGeneration);
+      } else {
+        queued = false;
       }
     }
   }
@@ -307,22 +312,29 @@ function createRefresher() {
   return {
     start(ctx: ExtensionContext): void {
       activeContext = ctx;
+      generation += 1;
+      const updateGeneration = generation;
       if (timer) clearInterval(timer);
       timer = setInterval(() => {
-        if (activeContext) void update(activeContext);
+        if (activeContext) void update(activeContext, updateGeneration);
       }, REFRESH_INTERVAL_MS);
       timer.unref?.();
-      void update(ctx);
+      void update(ctx, updateGeneration);
     },
     refresh(ctx: ExtensionContext): void {
       activeContext = ctx;
-      void update(ctx);
+      void update(ctx, generation);
     },
     stop(ctx?: ExtensionContext): void {
+      generation += 1;
       if (timer) clearInterval(timer);
       timer = undefined;
       activeContext = undefined;
-      ctx?.ui.setStatus(EXTENSION_ID, undefined);
+      try {
+        ctx?.ui.setStatus(EXTENSION_ID, undefined);
+      } catch {
+        // The session may already be replaced; stale contexts must not crash pi.
+      }
     },
   };
 }
