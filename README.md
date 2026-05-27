@@ -25,6 +25,7 @@ Personal configuration repository for the `pi` coding agent.
 
 - `agent/settings.json` — main pi settings: model defaults, packages, UI behavior, enabled models, terminal/editor preferences.
 - `agent/extensions/` — local TypeScript extensions.
+- `agent/zshrc` — lightweight zsh startup sourced only for pi user bash commands.
 - `agent/extensions/pi-rtk-optimizer/config.json` — local RTK/output compaction settings.
 - `agent/themes/alabaster.json` — custom theme.
 - `web-search.json` — web-search defaults.
@@ -43,7 +44,7 @@ Personal configuration repository for the `pi` coding agent.
 
 | Extension | What it does | Commands / shortcuts |
 | --- | --- | --- |
-| `agent-pulse/` | Unified agent activity indicator: replaces the built-in working indicator with a themed thinking shimmer, owns the terminal title, shows working/tool/done states from one shared spinner clock, and rings the terminal bell when an agent turn finishes. | — |
+| `agent-pulse/` | Unified agent activity indicator: replaces the built-in working indicator with a themed thinking shimmer over both the work text and adjacent elapsed time, owns the terminal title, shows working/tool/done states from one shared spinner clock, and rings the terminal bell when an agent turn finishes. | — |
 | `answer.ts` | Extracts questions from the last assistant message, opens an interactive Q&A TUI, then sends the compiled answers back into the session. Prefers `openai-codex/gpt-5.3` for extraction when available, then falls back to Claude Haiku or the current model. | `/answer`, `ctrl+.` |
 | `codex-quotas.ts` | Fetches ChatGPT/Codex subscription quota from `chatgpt.com/backend-api/wham/usage`, retries transient failures after 2s and 5s, caches it, refreshes it on session/model/turn events, and exposes footer status for Codex models. Footer reset time and percentage use the quota color; command output is dim/gray. Uses `openai-codex` OAuth from pi auth and falls back to `~/.codex/auth.json` for account id. | `/codex:quotas` |
 | `compact.ts` | Automatically compacts context before agent start when context usage exceeds `256000` tokens. | — |
@@ -58,4 +59,4 @@ Personal configuration repository for the `pi` coding agent.
 | `custom-footer.ts` | Installs a custom footer with cwd, git branch, session name, token/cost/context stats, model/thinking level, and moves selected extension statuses (`codex-quotas`, `deepseek-balance`, `generation-stats`) to the right side. Plain footer text uses the theme `text` color; the model/thinking label uses the active thinking-level color; warning/error and extension-provided colors are preserved, including when the footer is truncated. | — |
 | `shortcuts.ts` | Adds quit aliases, a new-session alias, and a status shortcut that delegates to the Codex quota command. | `/exit`, `/q`, `/e`, `/n`, `/status` |
 | `skill-dollar.ts` | Adds inline `$skill-name` skill selection: autocomplete after `$`, resolves selected skills, injects their `SKILL.md` content into the next turn, and warns on unknown/unreadable skills. | `$<skill-name>` inline syntax |
-| `zsh.ts` | Runs user bash commands through interactive zsh (`PI_USER_BASH=1 zsh -ic ...`) so local shell setup is available while preserving pi's local bash operations. Honors `PI_USER_BASH_SHELL` before falling back to `$SHELL` or `/bin/zsh`. | — |
+| `zsh.ts` | Runs user bash commands through non-interactive zsh (`PI_USER_BASH=1 zsh -fc ...`) while preserving pi's local bash operations. Avoids sourcing `~/.zshrc`; sources `~/.pi/agent/zshrc` instead for safe aliases/functions, then evals the command so aliases expand. Honors `PI_USER_BASH_SHELL`, `PI_USER_ZSHRC`, then falls back to `$SHELL` or `/bin/zsh`. | — |

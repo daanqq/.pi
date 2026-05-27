@@ -16,6 +16,10 @@ function getZshPath() {
   return "/bin/zsh";
 }
 
+function getPiZshrcPath() {
+  return process.env.PI_USER_ZSHRC ?? `${process.env.HOME}/.pi/agent/zshrc`;
+}
+
 export default function (pi: ExtensionAPI) {
   const local = createLocalBashOperations();
 
@@ -23,13 +27,13 @@ export default function (pi: ExtensionAPI) {
     return {
       operations: {
         exec(command, cwd, options) {
-          // Run zsh as a non-interactive shell. `-i` sources ~/.zshrc, which may
-          // start prompt integrations like gitstatus/powerlevel10k. Pi executes
-          // user bash commands without a real interactive job-control terminal,
-          // so those integrations can emit warnings such as:
-          //   setopt: can't change option: monitor
-          //   gitstatus failed to initialize
-          const zshCommand = `PI_USER_BASH=1 exec ${shellQuote(getZshPath())} -ic ${shellQuote(command)}`;
+          // Run zsh as a non-interactive shell. Avoid `-i`: it sources ~/.zshrc,
+          // which can start prompt/ZLE integrations without a real interactive
+          // job-control terminal. Source a small pi-specific zshrc instead for
+          // safe aliases/functions, then eval the user command so aliases expand.
+          const initPath = getPiZshrcPath();
+          const initCommand = `[[ -r ${shellQuote(initPath)} ]] && source ${shellQuote(initPath)}; eval ${shellQuote(command)}`;
+          const zshCommand = `PI_USER_BASH=1 exec ${shellQuote(getZshPath())} -fc ${shellQuote(initCommand)}`;
           return local.exec(zshCommand, cwd, options);
         },
       },

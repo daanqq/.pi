@@ -1,0 +1,27 @@
+# Lightweight zsh startup file for pi user_bash commands.
+# Keep this non-interactive: aliases, exports, small helper functions only.
+# Do not load prompt/ZLE plugins here.
+
+export _ZO_EXCLUDE_DIRS="/home/user/reviews/*"
+export GEMINI_SYSTEM_MD="~/.gemini/GEMINI.md"
+
+alias cdch="cd ~/echat"
+alias c="clear"
+alias g="git"
+alias gy="gemini --yolo"
+alias co="antigravity"
+alias p="pi"
+alias cx="HTTPS_PROXY=http://127.0.0.1:7898 HTTP_PROXY=http://127.0.0.1:7898 codex"
+alias cy="codex --dangerously-bypass-approvals-and-sandbox"
+alias cyp="HTTPS_PROXY=http://127.0.0.1:7890 HTTP_PROXY=http://127.0.0.1:7890 codex --dangerously-bypass-approvals-and-sandbox"
+alias gpatch="git apply my.patch"
+alias rmf="rm -rf"
+alias rmfn="rm -rf node_modules package-lock.json"
+alias nv="nvim"
+alias compose="z yads; ./yads deploy up compose"
+alias countrec='for dir in */; do echo "$(find "$dir" -type f | wc -l) $dir"; done | sort -nr'
+alias ca="codexauth"
+
+mkcd() {
+  mkdir "$1" && cd "$1"
+}
