@@ -142,8 +142,8 @@ function installFooter(pi: ExtensionAPI, ctx: ExtensionContext) {
         const contextUsage = ctx.getContextUsage();
         const contextWindow = contextUsage?.contextWindow ?? ctx.model?.contextWindow ?? 0;
         const contextPercentValue = contextUsage?.percent ?? 0;
-        const contextPercent = contextUsage?.percent !== null ? contextPercentValue.toFixed(1) : "?";
-        const contextDisplay = `${contextPercent}%/${formatTokens(contextWindow)}`;
+        const contextTokens = contextUsage?.tokens ?? Math.round(contextWindow * contextPercentValue / 100);
+        const contextDisplay = `${formatTokens(contextTokens)}/${formatTokens(contextWindow)}`;
         statsParts.push(
           contextPercentValue > 90
             ? theme.fg("error", contextDisplay)
