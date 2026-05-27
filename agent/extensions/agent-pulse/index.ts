@@ -362,7 +362,8 @@ export default function (pi: ExtensionAPI) {
 		const elapsedMs = getElapsedMs();
 		lastFrame = spinnerFrame(elapsedMs);
 		setThemedWidget(ctx, (base, bright) => {
-			return `${base(lastFrame)} ${renderShimmeredMessage(message, elapsedMs, base, bright)} ${base(formatElapsed(elapsedMs))}`;
+			const line = `${message} ${formatElapsed(elapsedMs)}`;
+			return `${base(lastFrame)} ${renderShimmeredMessage(line, elapsedMs, base, bright)}`;
 		});
 	}
 
