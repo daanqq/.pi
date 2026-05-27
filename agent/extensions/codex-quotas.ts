@@ -237,10 +237,15 @@ function resetText(date: Date): string {
   return restHours > 0 ? `${days}d${restHours}h` : `${days}d`;
 }
 
-function quotaColor(remainingPercent: number): "dim" | "success" | "warning" | "error" {
+function quotaColor(remainingPercent: number): "default" | "warning" | "error" {
   if (remainingPercent < 15) return "error";
   if (remainingPercent < 40) return "warning";
-  return "success";
+  return "default";
+}
+
+function quotaFg(theme: Pick<ExtensionContext["ui"]["theme"], "fg">, color: ReturnType<typeof quotaColor>, text: string): string {
+  if (color === "default") return `\x1b[30m${text}\x1b[0m`;
+  return theme.fg(color, text);
 }
 
 function formatFooterStatus(ctx: Pick<ExtensionContext, "ui">, result: CodexQuotaResult): string {
@@ -250,8 +255,8 @@ function formatFooterStatus(ctx: Pick<ExtensionContext, "ui">, result: CodexQuot
 
   const windows = result.windows.map((window) => {
     const color = quotaColor(window.remainingPercent);
-    const left = theme.fg(color, `${resetText(window.resetsAt)}:`);
-    const value = theme.fg(color, `${Math.round(window.remainingPercent)}%`);
+    const left = quotaFg(theme, color, `${resetText(window.resetsAt)}:`);
+    const value = quotaFg(theme, color, `${Math.round(window.remainingPercent)}%`);
     return `${left}${value}`;
   });
 

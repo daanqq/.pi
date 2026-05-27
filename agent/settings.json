@@ -41,7 +41,8 @@
     "anthropicExtraUsage": false
   },
   "extensions": [
-    "-extensions/compact.ts"
+    "-extensions/compact.ts",
+    "-extensions/generation-stats.ts"
   ],
   "httpIdleTimeoutMs": 120000
 }

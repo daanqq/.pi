@@ -216,31 +216,21 @@ const MAX_SESSION_LENGTH = 36;
 const MAX_CWD_LENGTH = 24;
 const WIDGET_ID = "agent-pulse";
 
-type ThinkingColorKey =
-	| "thinkingOff"
-	| "thinkingMinimal"
-	| "thinkingLow"
-	| "thinkingMedium"
-	| "thinkingHigh"
-	| "thinkingXhigh";
+type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
 type ColorFn = (text: string) => string;
 
-function getThinkingColorKey(level: string): ThinkingColorKey {
+function normalizeThinkingLevel(level: string): ThinkingLevel {
 	switch (level) {
 		case "off":
-			return "thinkingOff";
 		case "minimal":
-			return "thinkingMinimal";
 		case "low":
-			return "thinkingLow";
-		case "high":
-			return "thinkingHigh";
-		case "xhigh":
-			return "thinkingXhigh";
 		case "medium":
+		case "high":
+		case "xhigh":
+			return level;
 		default:
-			return "thinkingMedium";
+			return "medium";
 	}
 }
 
@@ -312,7 +302,7 @@ export default function (pi: ExtensionAPI) {
 	// Do not call pi.getThinkingLevel() during extension loading: action methods
 	// are only available after the runtime is initialized. The real value is
 	// captured on agent_start.
-	let frozenThinkingColorKey: ThinkingColorKey = "thinkingLow";
+	let frozenThinkingLevel: ThinkingLevel = "low";
 
 	function getElapsedMs(): number {
 		if (pauseStartTime !== null) return pauseStartTime - startTime - totalPausedMs;
@@ -341,16 +331,15 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	function setThemedWidget(ctx: ExtensionContext, renderLineWithColors: (base: ColorFn, bright: ColorFn) => string) {
-		const colorKey = frozenThinkingColorKey;
+		const level = frozenThinkingLevel;
 		ctx.ui.setWidget(
 			WIDGET_ID,
 			(_tui, theme) => ({
 				render: () => {
-					const base = (text: string) => theme.fg(colorKey, text);
-					// Use the same thinking-level hue for shimmer; bold gives a subtle glimmer
-					// without switching to a different color family.
-					const bright = (text: string) => theme.bold(theme.fg(colorKey, text));
-					return [renderLineWithColors(base, bright)];
+					// Use the same resolver as the editor border to avoid tiny shade differences
+					// between the activity pulse and the input border/project label.
+					const borderColor = theme.getThinkingBorderColor(level);
+					return [renderLineWithColors(borderColor, borderColor)];
 				},
 				invalidate: () => {},
 			}),
@@ -443,7 +432,7 @@ export default function (pi: ExtensionAPI) {
 		// Freeze the thinking-level color for this whole model response.
 		// If the user changes thinking level mid-response, the loader keeps this color
 		// until the next agent_start.
-		frozenThinkingColorKey = getThinkingColorKey(pi.getThinkingLevel());
+		frozenThinkingLevel = normalizeThinkingLevel(pi.getThinkingLevel());
 		ctx.ui.setWorkingVisible(false);
 		renderActive(ctx);
 		renderTimer = setInterval(() => renderActive(ctx), SPINNER_RENDER_INTERVAL_MS);

@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { CustomEditor, type ExtensionAPI, type SourceInfo } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, SourceInfo } from "@earendil-works/pi-coding-agent";
 import {
 	type AutocompleteItem,
 	type AutocompleteProvider,
@@ -170,46 +170,12 @@ function buildSkillPromptBlock(selectedSkills: Array<{ skill: SkillInfo; content
 	].join("\n");
 }
 
-class SkillDollarEditor extends CustomEditor {
-	private autocompleteRequestVersion = 0;
-
-	override handleInput(data: string): void {
-		const wasShowingAutocomplete = this.isShowingAutocomplete();
-		this.autocompleteRequestVersion++;
-		super.handleInput(data);
-
-		// If autocomplete handled this key (e.g. Enter selected `$tdd`), do not
-		// immediately reopen it for completed `$tdd`. Otherwise next Space fights
-		// stale completion state and can fall through to file completion.
-		if (wasShowingAutocomplete) return;
-
-		// Pi's built-in editor auto-opens completion for `/`, `@`, and `#` only.
-		// Do not trust `data` here: terminals with enhanced keyboard protocols can
-		// send shifted printable keys (like `$`) as escape sequences. Inspect the
-		// editor state after the base editor has handled the input instead.
-		if (this.isShowingAutocomplete()) return;
-
-		const cursor = this.getCursor();
-		const line = this.getLines()[cursor.line] ?? "";
-		const beforeCursor = line.slice(0, cursor.col);
-		if (!SKILL_AUTOCOMPLETE_CONTEXT.test(beforeCursor)) return;
-
-		const requestVersion = this.autocompleteRequestVersion;
-		queueMicrotask(() => {
-			if (requestVersion !== this.autocompleteRequestVersion) return;
-			if (this.isShowingAutocomplete()) return;
-			(this as unknown as { tryTriggerAutocomplete(): void }).tryTriggerAutocomplete();
-		});
-	}
-}
-
 export default function skillDollarExtension(pi: ExtensionAPI) {
 	const skillContentCache = new Map<string, string>();
 
 	pi.on("session_start", (_event, ctx) => {
 		if (!ctx.hasUI) return;
 		ctx.ui.addAutocompleteProvider((current) => createSkillAutocompleteProvider(pi, current));
-		ctx.ui.setEditorComponent((tui, theme, keybindings) => new SkillDollarEditor(tui, theme, keybindings));
 	});
 
 	pi.on("before_agent_start", async (event, ctx) => {

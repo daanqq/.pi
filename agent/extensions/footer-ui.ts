@@ -1,31 +1,13 @@
 import type {
   ExtensionAPI,
   ExtensionContext,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 
 const RIGHT_STATUS_ORDER = ["generation-stats", "codex-quotas", "deepseek-balance", "openrouter-balance"] as const;
 const RIGHT_STATUS_IDS = new Set<string>(RIGHT_STATUS_ORDER);
 
-type FooterThemeColor =
-  | "text"
-  | "thinkingOff"
-  | "thinkingMinimal"
-  | "thinkingLow"
-  | "thinkingMedium"
-  | "thinkingHigh"
-  | "thinkingXhigh";
-
 type FooterTheme = {
-  fg(color: FooterThemeColor, text: string): string;
-};
-
-const THINKING_LEVEL_COLOR: Record<string, FooterThemeColor> = {
-  off: "thinkingOff",
-  minimal: "thinkingMinimal",
-  low: "thinkingLow",
-  medium: "thinkingMedium",
-  high: "thinkingHigh",
-  xhigh: "thinkingXhigh",
+  fg(color: "text" | "muted" | "error" | "warning", text: string): string;
 };
 
 function stripAnsi(text: string) {
@@ -84,15 +66,7 @@ function footerText(theme: FooterTheme, text: string) {
   return theme.fg("text", text);
 }
 
-function thinkingLevelColor(level: string | undefined) {
-  return THINKING_LEVEL_COLOR[level ?? ""] ?? "thinkingLow";
-}
-
-function thinkingLevelText(theme: FooterTheme, level: string | undefined, text: string) {
-  return theme.fg(thinkingLevelColor(level), text);
-}
-
-function installFooter(pi: ExtensionAPI, ctx: ExtensionContext) {
+function installFooter(ctx: ExtensionContext) {
   ctx.ui.setFooter((tui, theme, footerData) => {
     const unsub = footerData.onBranchChange(() => tui.requestRender());
 
@@ -102,6 +76,11 @@ function installFooter(pi: ExtensionAPI, ctx: ExtensionContext) {
       },
       invalidate() {},
       render(width: number): string[] {
+        const horizontalPadding = 2;
+        const contentWidth = Math.max(0, width - horizontalPadding * 2);
+        const padLine = (line: string) =>
+          " ".repeat(horizontalPadding) + line.padEnd(contentWidth) + " ".repeat(horizontalPadding);
+
         let totalInput = 0;
         let totalOutput = 0;
         let totalCacheRead = 0;
@@ -117,16 +96,6 @@ function installFooter(pi: ExtensionAPI, ctx: ExtensionContext) {
             totalCost += entry.message.usage.cost.total;
           }
         }
-
-        let pwd = ctx.sessionManager.getCwd();
-        const home = process.env.HOME || process.env.USERPROFILE;
-        if (home && pwd.startsWith(home)) pwd = `~${pwd.slice(home.length)}`;
-
-        const branch = footerData.getGitBranch();
-        if (branch) pwd = `${pwd} (${branch})`;
-
-        const sessionName = ctx.sessionManager.getSessionName();
-        if (sessionName) pwd = `${pwd} • ${sessionName}`;
 
         const statsParts: string[] = [];
         if (totalInput) statsParts.push(footerText(theme, `↑${formatTokens(totalInput)}`));
@@ -154,52 +123,43 @@ function installFooter(pi: ExtensionAPI, ctx: ExtensionContext) {
 
         let statsLeft = statsParts.join(" ");
         let statsLeftWidth = visibleWidth(statsLeft);
-        if (statsLeftWidth > width) {
-          statsLeft = truncateToWidth(statsLeft, width, "...");
+        if (statsLeftWidth > contentWidth) {
+          statsLeft = truncateToWidth(statsLeft, contentWidth, "...");
           statsLeftWidth = visibleWidth(statsLeft);
         }
 
-        const modelName = ctx.model?.id || "no-model";
-        const thinkingLevel = pi.getThinkingLevel();
-        let rightSide = thinkingLevelText(theme, thinkingLevel, modelName);
-        if (ctx.model?.reasoning) {
-          const thinkingDisplay = thinkingLevel === "off" ? "thinking off" : thinkingLevel;
-          rightSide = `${rightSide} ${thinkingLevelText(theme, thinkingLevel, thinkingDisplay)}`;
-        }
+        let rightSide = "";
 
         const extensionStatuses = footerData.getExtensionStatuses();
         const rightStatuses = RIGHT_STATUS_ORDER
           .map((key) => extensionStatuses.get(key))
           .filter((text): text is string => Boolean(text))
           .map((text) => sanitizeStatusText(text));
-        if (rightStatuses.length > 0) rightSide = `${rightStatuses.join("  ")}  ${rightSide}`;
+        if (rightStatuses.length > 0) rightSide = rightStatuses.join("  ");
 
         const rightSideWidth = visibleWidth(rightSide);
         const totalNeeded = statsLeftWidth + 2 + rightSideWidth;
         let statsLine: string;
-        if (totalNeeded <= width) {
-          statsLine = statsLeft + " ".repeat(width - statsLeftWidth - rightSideWidth) + rightSide;
+        if (totalNeeded <= contentWidth) {
+          statsLine = statsLeft + " ".repeat(contentWidth - statsLeftWidth - rightSideWidth) + rightSide;
         } else {
-          const availableForRight = width - statsLeftWidth - 2;
+          const availableForRight = contentWidth - statsLeftWidth - 2;
           if (availableForRight > 0) {
             const truncatedRight = truncateToWidth(rightSide, availableForRight, "");
-            statsLine = statsLeft + " ".repeat(Math.max(0, width - statsLeftWidth - visibleWidth(truncatedRight))) + truncatedRight;
+            statsLine = statsLeft + " ".repeat(Math.max(0, contentWidth - statsLeftWidth - visibleWidth(truncatedRight))) + truncatedRight;
           } else {
             statsLine = statsLeft;
           }
         }
 
-        const lines = [
-          truncateToWidth(footerText(theme, pwd), width, footerText(theme, "...")),
-          statsLine,
-        ];
+        const lines = [padLine(statsLine)];
 
         const statusLine = Array.from(extensionStatuses.entries())
           .filter(([key]) => !RIGHT_STATUS_IDS.has(key))
           .sort(([a], [b]) => a.localeCompare(b))
           .map(([, text]) => sanitizeStatusText(text))
           .join(" ");
-        if (statusLine) lines.push(truncateToWidth(statusLine, width, footerText(theme, "...")));
+        if (statusLine) lines.push(padLine(truncateToWidth(statusLine, contentWidth, footerText(theme, "..."))));
 
         return lines;
       },
@@ -209,15 +169,15 @@ function installFooter(pi: ExtensionAPI, ctx: ExtensionContext) {
 
 export default function rightStatusFooterExtension(pi: ExtensionAPI) {
   pi.on("session_start", (_event, ctx) => {
-    installFooter(pi, ctx);
+    installFooter(ctx);
   });
 
   pi.on("model_select", (_event, ctx) => {
-    installFooter(pi, ctx);
+    installFooter(ctx);
   });
 
   pi.on("thinking_level_select", (_event, ctx) => {
-    installFooter(pi, ctx);
+    installFooter(ctx);
   });
 
   pi.on("session_shutdown", (_event, ctx) => {
