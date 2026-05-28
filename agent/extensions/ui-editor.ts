@@ -7,6 +7,10 @@ import type { EditorTheme, TUI } from "@earendil-works/pi-tui";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 const SKILL_AUTOCOMPLETE_CONTEXT = /(?:^|[\s([{])\$[a-z0-9-]*$/;
+// Keep the custom editor status border visually connected. A plain ASCII dash
+// has side bearings in most terminal fonts, while the heavy box-drawing glyph
+// tends to stay continuous and reads better in dim "thinking off" themes.
+const EDITOR_BORDER_CHAR = "―";
 
 function fitBorder(
 	left: string,
@@ -16,7 +20,7 @@ function fitBorder(
 	fill: (text: string) => string = border,
 ): string {
 	if (width <= 0) return "";
-	if (width === 1) return border("─");
+	if (width === 1) return border(EDITOR_BORDER_CHAR);
 
 	let leftText = left;
 	let rightText = right;
@@ -31,7 +35,7 @@ function fitBorder(
 	}
 
 	const gapWidth = Math.max(0, width - fixedWidth - visibleWidth(leftText) - visibleWidth(rightText));
-	return `${border("─")}${leftText}${fill("─".repeat(gapWidth))}${rightText}${border("─")}`;
+	return `${border(EDITOR_BORDER_CHAR)}${leftText}${fill(EDITOR_BORDER_CHAR.repeat(gapWidth))}${rightText}${border(EDITOR_BORDER_CHAR)}`;
 }
 
 function formatProjectLabel(cwd: string, branch: string | undefined) {
@@ -53,7 +57,7 @@ function stripAnsi(text: string) {
 
 function isEditorBorderLine(line: string) {
 	const plain = stripAnsi(line);
-	return /^─+$/.test(plain) || /^─── [↑↓] \d+ more ─*$/.test(plain);
+	return /^[─━═╌┄┈―—_▔▁-]+$/.test(plain) || /^[─━═╌┄┈―—_▔▁-]{3} [↑↓] \d+ more [─━═╌┄┈―—_▔▁-]*$/.test(plain);
 }
 
 function findBottomBorderIndex(lines: string[]) {
@@ -61,6 +65,12 @@ function findBottomBorderIndex(lines: string[]) {
 		if (isEditorBorderLine(lines[index] ?? "")) return index;
 	}
 	return -1;
+}
+
+function restyleBorderLine(line: string, color: (text: string) => string) {
+	const plain = stripAnsi(line);
+	if (!isEditorBorderLine(plain)) return line;
+	return color(plain.replace(/[─━═╌┄┈―—_▔▁-]/g, EDITOR_BORDER_CHAR));
 }
 
 class PiConfigEditor extends CustomEditor {
@@ -117,6 +127,10 @@ class PiConfigEditor extends CustomEditor {
 		if (bottomBorderIndex < 0) return lines;
 
 		const borderColor = (text: string) => this.borderColor(text);
+		for (let index = 0; index < lines.length; index++) {
+			if (index === bottomBorderIndex) continue;
+			lines[index] = restyleBorderLine(lines[index] ?? "", borderColor);
+		}
 		lines[bottomBorderIndex] = fitBorder(leftLabel, rightLabel, width, borderColor);
 		return lines;
 	}
