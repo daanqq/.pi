@@ -1,5 +1,3 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
 import type { ExtensionAPI, SourceInfo } from "@earendil-works/pi-coding-agent";
 import {
 	type AutocompleteItem,
@@ -17,9 +15,9 @@ type SkillInfo = {
 
 const MAX_SUGGESTIONS = 100;
 const SKILL_TOKEN_BEFORE_CURSOR = /(?:^|[\s([{])\$([a-z0-9-]*)$/;
-const SKILL_MARKER = /(?:^|[\s([{])\$([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)/g;
 const SKILL_AUTOCOMPLETE_CONTEXT = /(?:^|[\s([{])\$[a-z0-9-]*$/;
 const TRAILING_SKILL_TOKEN_WITH_SPACES = /(?:^|[\s([{])\$([a-z0-9-]*)\s*$/;
+const LEADING_SKILL_INVOCATION = /^\s*\$([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)(?:\s+([\s\S]*))?$/;
 
 function getSkills(pi: ExtensionAPI): SkillInfo[] {
 	return pi
@@ -121,96 +119,35 @@ function createSkillAutocompleteProvider(pi: ExtensionAPI, current: Autocomplete
 	};
 }
 
-function extractRequestedSkillNames(prompt: string): string[] {
-	const names = new Set<string>();
-	for (const match of prompt.matchAll(SKILL_MARKER)) {
-		const name = match[1];
-		if (name) names.add(name);
-	}
-	return [...names];
-}
+function expandLeadingDollarSkill(text: string): { skillName: string; transformed: string } | undefined {
+	const match = text.match(LEADING_SKILL_INVOCATION);
+	const skillName = match?.[1];
+	if (!skillName) return undefined;
 
-function resolveSkillMarkdownPath(sourceInfo: SourceInfo): string | undefined {
-	const sourcePath = sourceInfo.path;
-	if (!sourcePath || !existsSync(sourcePath)) return undefined;
-
-	const stat = statSync(sourcePath);
-	if (stat.isFile()) return sourcePath;
-	if (!stat.isDirectory()) return undefined;
-
-	const skillMd = join(sourcePath, "SKILL.md");
-	return existsSync(skillMd) ? skillMd : undefined;
-}
-
-function readSkillContent(skill: SkillInfo, cache: Map<string, string>): string | undefined {
-	const skillPath = resolveSkillMarkdownPath(skill.sourceInfo);
-	if (!skillPath) return undefined;
-
-	const cached = cache.get(skillPath);
-	if (cached !== undefined) return cached;
-
-	const content = readFileSync(skillPath, "utf-8");
-	cache.set(skillPath, content);
-	return content;
-}
-
-function buildSkillPromptBlock(selectedSkills: Array<{ skill: SkillInfo; content: string }>): string {
-	const sections = selectedSkills.map(
-		({ skill, content }) => `### $${skill.name}\n\nSource: ${skill.sourceInfo.path}\n\n${content.trim()}`,
-	);
-
-	return [
-		"## User-selected skills for this turn",
-		"",
-		"The user explicitly selected these skills via `$skill-name` inline syntax.",
-		"Load and follow the selected skill instructions for this turn.",
-		"Treat `$skill-name` markers as skill-selection syntax, not as part of the task content.",
-		"",
-		...sections,
-	].join("\n");
+	const args = match[2]?.trim();
+	return {
+		skillName,
+		transformed: args ? `/skill:${skillName} ${args}` : `/skill:${skillName}`,
+	};
 }
 
 export default function skillDollarExtension(pi: ExtensionAPI) {
-	const skillContentCache = new Map<string, string>();
 
 	pi.on("session_start", (_event, ctx) => {
 		if (!ctx.hasUI) return;
 		ctx.ui.addAutocompleteProvider((current) => createSkillAutocompleteProvider(pi, current));
 	});
 
-	pi.on("before_agent_start", async (event, ctx) => {
-		const requestedNames = extractRequestedSkillNames(event.prompt);
-		if (requestedNames.length === 0) return undefined;
+	pi.on("input", async (event, ctx) => {
+		const expansion = expandLeadingDollarSkill(event.text);
+		if (!expansion) return { action: "continue" };
 
-		const skillsByName = new Map(getSkills(pi).map((skill) => [skill.name, skill]));
-		const selectedSkills: Array<{ skill: SkillInfo; content: string }> = [];
-
-		for (const name of requestedNames) {
-			const skill = skillsByName.get(name);
-			if (!skill) {
-				ctx.ui.notify(`Unknown skill: $${name}`, "warning");
-				continue;
-			}
-
-			try {
-				const content = readSkillContent(skill, skillContentCache);
-				if (!content) {
-					ctx.ui.notify(`Could not load skill: $${name}`, "warning");
-					continue;
-				}
-				selectedSkills.push({ skill, content });
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				ctx.ui.notify(`Could not load skill $${name}: ${message}`, "warning");
-			}
+		const skill = getSkills(pi).find((skill) => skill.name === expansion.skillName);
+		if (!skill) {
+			ctx.ui.notify(`Unknown skill: $${expansion.skillName}`, "warning");
+			return { action: "continue" };
 		}
 
-		if (selectedSkills.length === 0) return undefined;
-
-		ctx.ui.notify(`Using skills: ${selectedSkills.map(({ skill }) => `$${skill.name}`).join(", ")}`, "info");
-
-		return {
-			systemPrompt: `${event.systemPrompt}\n\n${buildSkillPromptBlock(selectedSkills)}`,
-		};
+		return { action: "transform", text: expansion.transformed };
 	});
 }
