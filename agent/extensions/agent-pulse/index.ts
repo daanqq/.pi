@@ -342,7 +342,7 @@ export default function (pi: ExtensionAPI) {
 					// Keep the hue identical to the editor border, but make the shimmer band bold
 					// so the message visibly pulses while staying in the same color family.
 					const bright = (text: string) => theme.bold(borderColor(text));
-					return [renderLineWithColors(borderColor, bright)];
+					return [`  ${renderLineWithColors(borderColor, bright)}`];
 				},
 				invalidate: () => {},
 			}),
