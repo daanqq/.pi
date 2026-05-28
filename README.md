@@ -1,3 +1,5 @@
+![pi-config header](https://iili.io/C2EEHP4.png)
+
 # pi-config
 
 Personal configuration repository for the `pi` coding agent.
@@ -22,6 +24,7 @@ Personal configuration repository for the `pi` coding agent.
 
 - `agent/settings.json` — main pi settings: model defaults, packages, UI behavior, enabled models, terminal/editor preferences.
 - `agent/extensions/` — local TypeScript extensions.
+- `agent/skills/` — local agent skills.
 - `agent/zshrc` — lightweight zsh startup sourced only for pi user bash commands.
 - `agent/extensions/pi-rtk-optimizer/config.json` — local RTK/output compaction settings.
 - `agent/themes/alabaster.json` — custom theme.
@@ -36,6 +39,12 @@ Personal configuration repository for the `pi` coding agent.
 - `session-search/` — local session-search index.
 - `*.db`, `*.db-shm`, `*.db-wal`, `*.sqlite*` — runtime databases.
 - `.env*`, keys, logs, cache and editor directories.
+
+## Custom skills
+
+| Skill | What it does |
+| --- | --- |
+| `pi-extensions/` | Reference for writing and debugging pi extensions. |
 
 ## Custom extensions
 
