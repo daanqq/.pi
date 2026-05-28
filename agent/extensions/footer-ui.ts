@@ -51,7 +51,7 @@ function truncateToWidth(text: string, width: number, ellipsis = "...") {
 }
 
 function sanitizeStatusText(text: string) {
-  return text.replace(/[\r\n\t]/g, " ").replace(/ +/g, " ").trim();
+  return stripAnsi(text).replace(/[\r\n\t]/g, " ").replace(/ +/g, " ").trim();
 }
 
 function formatTokens(count: number) {
@@ -63,7 +63,7 @@ function formatTokens(count: number) {
 }
 
 function footerText(theme: FooterTheme, text: string) {
-  return theme.fg("text", text);
+  return theme.fg("muted", text);
 }
 
 function installFooter(ctx: ExtensionContext) {
@@ -113,13 +113,7 @@ function installFooter(ctx: ExtensionContext) {
         const contextPercentValue = contextUsage?.percent ?? 0;
         const contextTokens = contextUsage?.tokens ?? Math.round(contextWindow * contextPercentValue / 100);
         const contextDisplay = `${formatTokens(contextTokens)}/${formatTokens(contextWindow)}`;
-        statsParts.push(
-          contextPercentValue > 90
-            ? theme.fg("error", contextDisplay)
-            : contextPercentValue > 70
-              ? theme.fg("warning", contextDisplay)
-              : footerText(theme, contextDisplay),
-        );
+        statsParts.push(footerText(theme, contextDisplay));
 
         let statsLeft = statsParts.join(" ");
         let statsLeftWidth = visibleWidth(statsLeft);
@@ -135,7 +129,7 @@ function installFooter(ctx: ExtensionContext) {
           .map((key) => extensionStatuses.get(key))
           .filter((text): text is string => Boolean(text))
           .map((text) => sanitizeStatusText(text));
-        if (rightStatuses.length > 0) rightSide = rightStatuses.join("  ");
+        if (rightStatuses.length > 0) rightSide = footerText(theme, rightStatuses.join("  "));
 
         const rightSideWidth = visibleWidth(rightSide);
         const totalNeeded = statsLeftWidth + 2 + rightSideWidth;

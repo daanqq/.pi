@@ -339,7 +339,10 @@ export default function (pi: ExtensionAPI) {
 					// Use the same resolver as the editor border to avoid tiny shade differences
 					// between the activity pulse and the input border/project label.
 					const borderColor = theme.getThinkingBorderColor(level);
-					return [renderLineWithColors(borderColor, borderColor)];
+					// Keep the hue identical to the editor border, but make the shimmer band bold
+					// so the message visibly pulses while staying in the same color family.
+					const bright = (text: string) => theme.bold(borderColor(text));
+					return [renderLineWithColors(borderColor, bright)];
 				},
 				invalidate: () => {},
 			}),
