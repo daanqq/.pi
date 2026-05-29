@@ -210,7 +210,6 @@ const SPINNER_RENDER_INTERVAL_MS = 50;
 const SPINNER_FRAME_MS = 120;
 const SHIMMER_FRAME_MS = 50;
 const SHIMMER_TRAILING_GAP = 4;
-const WIDGET_DONE_HOLD_MS = 5000;
 const TITLE_DONE_HOLD_MS = 8000;
 const MAX_SESSION_LENGTH = 36;
 const MAX_CWD_LENGTH = 24;
@@ -289,7 +288,6 @@ function ringBell() {
 
 export default function (pi: ExtensionAPI) {
 	let renderTimer: ReturnType<typeof setInterval> | null = null;
-	let widgetDoneTimer: ReturnType<typeof setTimeout> | null = null;
 	let titleDoneTimer: ReturnType<typeof setTimeout> | null = null;
 	let message = "Thinking…";
 	let startTime = 0;
@@ -313,13 +311,6 @@ export default function (pi: ExtensionAPI) {
 		if (renderTimer) {
 			clearInterval(renderTimer);
 			renderTimer = null;
-		}
-	}
-
-	function clearWidgetDoneTimer() {
-		if (widgetDoneTimer) {
-			clearTimeout(widgetDoneTimer);
-			widgetDoneTimer = null;
 		}
 	}
 
@@ -404,7 +395,6 @@ export default function (pi: ExtensionAPI) {
 
 	function resetToIdle(ctx: ExtensionContext) {
 		clearRenderTimer();
-		clearWidgetDoneTimer();
 		clearTitleDoneTimer();
 		resetRuntimeState();
 		ctx.ui.setWidget(WIDGET_ID, undefined);
@@ -457,12 +447,6 @@ export default function (pi: ExtensionAPI) {
 		ctx.ui.setWorkingVisible(true);
 		setDoneTitle(ctx);
 		ringBell();
-
-		clearWidgetDoneTimer();
-		widgetDoneTimer = setTimeout(() => {
-			widgetDoneTimer = null;
-			ctx.ui.setWidget(WIDGET_ID, undefined);
-		}, WIDGET_DONE_HOLD_MS);
 
 		clearTitleDoneTimer();
 		titleDoneTimer = setTimeout(() => {
