@@ -1,11 +1,9 @@
-import path from "node:path";
 import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
 
 const RESET = "\x1b[0m";
-const BOLD = "\x1b[1m";
 
 type ThemeColor =
   | "thinkingOff"
@@ -30,6 +28,8 @@ const THINKING_LEVEL_COLOR: Record<string, ThemeColor> = {
   high: "thinkingHigh",
   xhigh: "thinkingXhigh",
 };
+
+const HEADER_LEFT_PADDING = "  ";
 
 const TITLE_LINES = [
   "███████████████     ",
@@ -100,12 +100,12 @@ function getThinkingPalette(theme: HeaderTheme, level: string | undefined) {
   // The hue changes only when the thinking level changes; the base is slightly brighter
   // than the theme color so every thinking variant reads clearly in the header.
   return [
-    shade(base, -0.14),
     shade(base, -0.38),
     shade(base, -0.14),
     shade(base, 0.24),
     shade(base, 0.44),
-    shade(base, 0.24)
+    shade(base, 0.24),
+    shade(base, -0.14)
   ];
 }
 
@@ -135,34 +135,20 @@ function gradientText(palette: Rgb[], text: string, phase: number) {
     .join("");
 }
 
-function center(text: string, width: number) {
-  const length = [...text].length;
-  if (length >= width) return text;
-  return `${" ".repeat(Math.floor((width - length) / 2))}${text}`;
-}
-
-function projectName() {
-  return path.basename(process.cwd()) || "session";
-}
-
-function renderHeader(theme: HeaderTheme, width: number, phase: number, subtitleText: string, thinkingLevel: string) {
+function renderHeader(theme: HeaderTheme, _width: number, phase: number, thinkingLevel: string) {
   const palette = getThinkingPalette(theme, thinkingLevel);
   const lines = TITLE_LINES.map((line, row) =>
-    gradientText(palette, center(line, width), phase + row * 0.045),
+    HEADER_LEFT_PADDING + gradientText(palette, line, phase + row * 0.045),
   );
-  const subtitle = center(subtitleText, width);
-
   return [
     "",
     ...lines,
-    `${BOLD}${theme.fg(thinkingLevelColor(thinkingLevel), subtitle)}${RESET}`,
     "",
   ];
 }
 
 export default function (pi: ExtensionAPI) {
   let requestRender: (() => void) | undefined;
-  let currentModelId = "no model selected";
 
   function installHeader(ctx: ExtensionContext) {
     ctx.ui.setHeader((tui, theme) => {
@@ -170,7 +156,7 @@ export default function (pi: ExtensionAPI) {
       return {
         render(width: number) {
           const thinkingLevel = pi.getThinkingLevel();
-          return renderHeader(theme, width, 0, `${currentModelId} • ${projectName()}`, thinkingLevel);
+          return renderHeader(theme, width, 0, thinkingLevel);
         },
         invalidate() {
           tui.requestRender();
@@ -180,14 +166,8 @@ export default function (pi: ExtensionAPI) {
   }
 
   pi.on("session_start", (_event, ctx) => {
-    currentModelId = ctx.model?.id ?? "no model selected";
     if (!ctx.hasUI) return;
     installHeader(ctx);
-  });
-
-  pi.on("model_select", (event) => {
-    currentModelId = event.model.id;
-    requestRender?.();
   });
 
   pi.on("thinking_level_select", () => {
