@@ -1,5 +1,7 @@
 ![pi-config header](https://iili.io/C2G25PV.png)
 
+![pi-config screenshot](https://iili.io/C2mIO2n.png)
+
 # pi-config
 
 Personal configuration repository for the `pi` coding agent.
@@ -50,9 +52,10 @@ Personal configuration repository for the `pi` coding agent.
 
 | Extension | What it does | Commands / shortcuts |
 | --- | --- | --- |
-| `agent-pulse/` | Unified agent activity indicator: replaces the built-in working indicator with a two-space-indented activity pulse colored through the same thinking-level border resolver as the input editor, adds a bold shimmer/pulse over the active message text, owns the terminal title, shows working/tool/done states from one shared spinner clock, keeps the final elapsed-time status visible until the next request, and rings the terminal bell when an agent turn finishes. | — |
+| `agent-pulse.ts` | Unified agent activity indicator: replaces the built-in working indicator with a two-space-indented activity pulse colored through the same thinking-level border resolver as the input editor, adds a bold shimmer/pulse over the active message text, owns the terminal title, shows working/tool/done states from one shared spinner clock, keeps the final elapsed-time status visible until the next request, and rings the terminal bell when an agent turn finishes. | — |
 | `answer.ts` | Extracts questions from the last assistant message, opens an interactive Q&A TUI, then sends the compiled answers back into the session. Prefers `openai-codex/gpt-5.3` for extraction when available, then falls back to Claude Haiku or the current model. | `/answer`, `ctrl+.` |
 | `codex-quotas.ts` | Fetches ChatGPT/Codex subscription quota from `chatgpt.com/backend-api/wham/usage`, retries transient failures after 2s and 5s, caches it, refreshes it on session/model/turn events, and exposes footer status for Codex models. Footer reset time and percentage use ANSI black by default, then warning/error theme colors as quota gets low; command output is dim/gray. Uses `openai-codex` OAuth from pi auth and falls back to `~/.codex/auth.json` for account id. | `/codex:quotas` |
+| `codex-review.ts` | Adds a Codex-style `/review` command in one self-contained extension file: selects or accepts a base branch, injects the Codex review prompt, reviews tracked/untracked changes from the merge base, and reformats JSON review output into readable cards. | `/review [--base branch]` |
 | `compact.ts` | Automatically compacts context before agent start when context usage exceeds `256000` tokens. | — |
 | `context-limit-warning.ts` | Shows a UI warning after an agent response first crosses `128000` context tokens, then warns again only after usage drops below the threshold and crosses it later. | — |
 | `deepseek-balance.ts` | Shows DeepSeek account balance for DeepSeek models, immediately reuses the last successful balance when switching back, and refreshes it asynchronously on session/model/turn events so model switching is not blocked by the balance request. Reads the API key from `~/.pi/agent/auth.json` (`deepseek.key`, `deepseek.apiKey`, or `deepseek.token`). | `/deepseek:balance` |
