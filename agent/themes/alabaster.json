@@ -16,6 +16,7 @@
 		"lighterGray": "#eeeeee",
 		"paleGray": "#f7f7f7",
 		"paper": "#f7f7f7",
+		"thinkingOffMuted": "#b8b8b8",
 		"selectedBg": "#d7ecff",
 		"userMsgBg": "#f7f7f7",
 		"toolPendingBg": "#f7f7f7",
@@ -79,7 +80,7 @@
 		"syntaxOperator": "black",
 		"syntaxPunctuation": "#777777",
 
-		"thinkingOff": "lighterGray",
+		"thinkingOff": "thinkingOffMuted",
 		"thinkingMinimal": "lightGray",
 		"thinkingLow": "blue",
 		"thinkingMedium": "darkBlue",

@@ -6,8 +6,29 @@ import type {
 const RIGHT_STATUS_ORDER = ["generation-stats", "codex-quotas", "deepseek-balance", "openrouter-balance"] as const;
 const RIGHT_STATUS_IDS = new Set<string>(RIGHT_STATUS_ORDER);
 
+type ThemeColor =
+  | "text"
+  | "muted"
+  | "error"
+  | "warning"
+  | "thinkingOff"
+  | "thinkingMinimal"
+  | "thinkingLow"
+  | "thinkingMedium"
+  | "thinkingHigh"
+  | "thinkingXhigh";
+
 type FooterTheme = {
-  fg(color: "text" | "muted" | "error" | "warning", text: string): string;
+  fg(color: ThemeColor, text: string): string;
+};
+
+const THINKING_LEVEL_COLOR: Record<string, ThemeColor> = {
+  off: "thinkingOff",
+  minimal: "thinkingMinimal",
+  low: "thinkingLow",
+  medium: "thinkingMedium",
+  high: "thinkingHigh",
+  xhigh: "thinkingXhigh",
 };
 
 function stripAnsi(text: string) {
@@ -19,7 +40,9 @@ function visibleWidth(text: string) {
 }
 
 function truncateToWidth(text: string, width: number, ellipsis = "...") {
+  if (width <= 0) return "";
   if (visibleWidth(text) <= width) return text;
+  if (visibleWidth(ellipsis) > width) return stripAnsi(ellipsis).slice(0, width);
 
   const max = Math.max(0, width - visibleWidth(ellipsis));
   const ansiPattern = /\x1b\[[0-9;]*m/g;
@@ -62,11 +85,50 @@ function formatTokens(count: number) {
   return `${Math.round(count / 1000000)}M`;
 }
 
-function footerText(theme: FooterTheme, text: string) {
-  return theme.fg("muted", text);
+function formatProjectLabel(cwd: string, branch: string | null) {
+  const home = process.env.HOME || process.env.USERPROFILE;
+  let project = cwd;
+  if (home && project.startsWith(home)) project = `~${project.slice(home.length)}`;
+  return `${project}${branch ? ` (${branch})` : ""}`;
 }
 
-function installFooter(ctx: ExtensionContext) {
+function formatModelLabel(modelId: string | undefined, reasoning: boolean | undefined, thinkingLevel: string) {
+  const modelName = modelId || "no-model";
+  if (!reasoning) return modelName;
+  return thinkingLevel === "off" ? `${modelName} thinking off` : `${modelName} ${thinkingLevel}`;
+}
+
+function thinkingLevelColor(level: string | undefined) {
+  return THINKING_LEVEL_COLOR[level ?? ""] ?? "thinkingLow";
+}
+
+function footerText(theme: FooterTheme, thinkingLevel: string, text: string) {
+  return theme.fg(thinkingLevelColor(thinkingLevel), text);
+}
+
+function twoColumnLine(left: string, right: string, width: number) {
+  let leftText = left;
+  let rightText = right;
+  let leftWidth = visibleWidth(leftText);
+  let rightWidth = visibleWidth(rightText);
+
+  if (leftWidth + 2 + rightWidth > width) {
+    const maxRight = Math.max(0, Math.floor((width - 2) / 2));
+    rightText = truncateToWidth(rightText, maxRight, "...");
+    rightWidth = visibleWidth(rightText);
+  }
+
+  if (leftWidth + 2 + rightWidth > width) {
+    leftText = truncateToWidth(leftText, Math.max(0, width - rightWidth - 2), "...");
+    leftWidth = visibleWidth(leftText);
+  }
+
+  if (!rightText) return leftText;
+  if (!leftText) return " ".repeat(Math.max(0, width - rightWidth)) + rightText;
+  return leftText + " ".repeat(Math.max(1, width - leftWidth - rightWidth)) + rightText;
+}
+
+function installFooter(pi: ExtensionAPI, ctx: ExtensionContext) {
   ctx.ui.setFooter((tui, theme, footerData) => {
     const unsub = footerData.onBranchChange(() => tui.requestRender());
 
@@ -79,7 +141,7 @@ function installFooter(ctx: ExtensionContext) {
         const horizontalPadding = 2;
         const contentWidth = Math.max(0, width - horizontalPadding * 2);
         const padLine = (line: string) =>
-          " ".repeat(horizontalPadding) + line.padEnd(contentWidth) + " ".repeat(horizontalPadding);
+          " ".repeat(horizontalPadding) + line + " ".repeat(Math.max(0, contentWidth - visibleWidth(line))) + " ".repeat(horizontalPadding);
 
         let totalInput = 0;
         let totalOutput = 0;
@@ -97,65 +159,44 @@ function installFooter(ctx: ExtensionContext) {
           }
         }
 
+        const thinkingLevel = pi.getThinkingLevel();
+        const infoLeft = footerText(theme, thinkingLevel, formatProjectLabel(ctx.cwd, footerData.getGitBranch()));
+        const infoRight = footerText(theme, thinkingLevel, formatModelLabel(ctx.model?.id, ctx.model?.reasoning, thinkingLevel));
+
         const statsParts: string[] = [];
-        if (totalInput) statsParts.push(footerText(theme, `↑${formatTokens(totalInput)}`));
-        if (totalOutput) statsParts.push(footerText(theme, `↓${formatTokens(totalOutput)}`));
-        if (totalCacheRead) statsParts.push(footerText(theme, `R${formatTokens(totalCacheRead)}`));
-        if (totalCacheWrite) statsParts.push(footerText(theme, `W${formatTokens(totalCacheWrite)}`));
+        if (totalInput) statsParts.push(footerText(theme, thinkingLevel, `↑${formatTokens(totalInput)}`));
+        if (totalOutput) statsParts.push(footerText(theme, thinkingLevel, `↓${formatTokens(totalOutput)}`));
+        if (totalCacheRead) statsParts.push(footerText(theme, thinkingLevel, `R${formatTokens(totalCacheRead)}`));
+        if (totalCacheWrite) statsParts.push(footerText(theme, thinkingLevel, `W${formatTokens(totalCacheWrite)}`));
 
         const usingSubscription = ctx.model ? ctx.modelRegistry.isUsingOAuth(ctx.model) : false;
         if (totalCost || usingSubscription) {
-          statsParts.push(footerText(theme, `$${totalCost.toFixed(3)}${usingSubscription ? " (sub)" : ""}`));
+          statsParts.push(footerText(theme, thinkingLevel, `$${totalCost.toFixed(3)}${usingSubscription ? " (sub)" : ""}`));
         }
 
         const contextUsage = ctx.getContextUsage();
         const contextWindow = contextUsage?.contextWindow ?? ctx.model?.contextWindow ?? 0;
         const contextPercentValue = contextUsage?.percent ?? 0;
         const contextTokens = contextUsage?.tokens ?? Math.round(contextWindow * contextPercentValue / 100);
-        const contextDisplay = `${formatTokens(contextTokens)}/${formatTokens(contextWindow)}`;
-        statsParts.push(footerText(theme, contextDisplay));
-
-        let statsLeft = statsParts.join(" ");
-        let statsLeftWidth = visibleWidth(statsLeft);
-        if (statsLeftWidth > contentWidth) {
-          statsLeft = truncateToWidth(statsLeft, contentWidth, "...");
-          statsLeftWidth = visibleWidth(statsLeft);
-        }
-
-        let rightSide = "";
+        statsParts.push(footerText(theme, thinkingLevel, `${formatTokens(contextTokens)}/${formatTokens(contextWindow)}`));
 
         const extensionStatuses = footerData.getExtensionStatuses();
-        const rightStatuses = RIGHT_STATUS_ORDER
+        const prioritizedStatuses = RIGHT_STATUS_ORDER
           .map((key) => extensionStatuses.get(key))
           .filter((text): text is string => Boolean(text))
           .map((text) => sanitizeStatusText(text));
-        if (rightStatuses.length > 0) rightSide = footerText(theme, rightStatuses.join("  "));
-
-        const rightSideWidth = visibleWidth(rightSide);
-        const totalNeeded = statsLeftWidth + 2 + rightSideWidth;
-        let statsLine: string;
-        if (totalNeeded <= contentWidth) {
-          statsLine = statsLeft + " ".repeat(contentWidth - statsLeftWidth - rightSideWidth) + rightSide;
-        } else {
-          const availableForRight = contentWidth - statsLeftWidth - 2;
-          if (availableForRight > 0) {
-            const truncatedRight = truncateToWidth(rightSide, availableForRight, "");
-            statsLine = statsLeft + " ".repeat(Math.max(0, contentWidth - statsLeftWidth - visibleWidth(truncatedRight))) + truncatedRight;
-          } else {
-            statsLine = statsLeft;
-          }
-        }
-
-        const lines = [padLine(statsLine)];
-
-        const statusLine = Array.from(extensionStatuses.entries())
+        const otherStatuses = Array.from(extensionStatuses.entries())
           .filter(([key]) => !RIGHT_STATUS_IDS.has(key))
           .sort(([a], [b]) => a.localeCompare(b))
-          .map(([, text]) => sanitizeStatusText(text))
-          .join(" ");
-        if (statusLine) lines.push(padLine(truncateToWidth(statusLine, contentWidth, footerText(theme, "..."))));
+          .map(([, text]) => sanitizeStatusText(text));
+        const statusText = [...prioritizedStatuses, ...otherStatuses].filter(Boolean).join("  ");
+        const statusRight = statusText ? footerText(theme, thinkingLevel, statusText) : "";
 
-        return lines;
+        const statsLeft = statsParts.join(" ");
+        const infoLine = twoColumnLine(infoLeft, infoRight, contentWidth);
+        const statsLine = twoColumnLine(statsLeft, statusRight, contentWidth);
+
+        return [padLine(infoLine), padLine(statsLine)];
       },
     };
   });
@@ -163,15 +204,15 @@ function installFooter(ctx: ExtensionContext) {
 
 export default function rightStatusFooterExtension(pi: ExtensionAPI) {
   pi.on("session_start", (_event, ctx) => {
-    installFooter(ctx);
+    installFooter(pi, ctx);
   });
 
   pi.on("model_select", (_event, ctx) => {
-    installFooter(ctx);
+    installFooter(pi, ctx);
   });
 
   pi.on("thinking_level_select", (_event, ctx) => {
-    installFooter(ctx);
+    installFooter(pi, ctx);
   });
 
   pi.on("session_shutdown", (_event, ctx) => {
