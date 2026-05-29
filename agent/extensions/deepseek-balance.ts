@@ -128,6 +128,7 @@ async function fetchDeepSeekBalance(apiKey: string): Promise<DeepSeekBalanceResp
 function createBalanceRefresher() {
   let refreshTimer: ReturnType<typeof setInterval> | undefined;
   let activeContext: ExtensionContext | undefined;
+  let lastBalance: DeepSeekBalanceResponse | undefined;
   let inFlight = false;
   let queued = false;
 
@@ -148,6 +149,7 @@ function createBalanceRefresher() {
     inFlight = true;
     try {
       const balance = await fetchDeepSeekBalance(apiKey);
+      if (!balance.error?.message) lastBalance = balance;
       if (activeContext !== ctx || !isDeepSeekContext(ctx)) return;
       ctx.ui.setStatus(STATUS_ID, formatFooterBalance(ctx, balance));
     } catch {
@@ -163,13 +165,17 @@ function createBalanceRefresher() {
   }
 
   return {
-    async refreshFor(ctx: ExtensionContext): Promise<void> {
+    refreshFor(ctx: ExtensionContext): void {
       activeContext = ctx;
       if (!ctx.hasUI || !isDeepSeekContext(ctx)) {
         ctx.ui.setStatus(STATUS_ID, undefined);
         return;
       }
-      await update(ctx);
+      if (lastBalance) ctx.ui.setStatus(STATUS_ID, formatFooterBalance(ctx, lastBalance));
+      void update(ctx);
+    },
+    remember(balance: DeepSeekBalanceResponse): void {
+      if (!balance.error?.message) lastBalance = balance;
     },
     start(): void {
       if (refreshTimer) clearInterval(refreshTimer);
@@ -190,20 +196,20 @@ function createBalanceRefresher() {
 export default function deepSeekBalanceExtension(pi: ExtensionAPI) {
   const refresher = createBalanceRefresher();
 
-  pi.on("session_start", async (_event, ctx) => {
+  pi.on("session_start", (_event, ctx) => {
     refresher.start();
-    await refresher.refreshFor(ctx);
+    refresher.refreshFor(ctx);
   });
 
-  pi.on("turn_end", async (_event, ctx) => {
-    await refresher.refreshFor(ctx);
+  pi.on("turn_end", (_event, ctx) => {
+    refresher.refreshFor(ctx);
   });
 
-  pi.on("model_select", async (_event, ctx) => {
-    await refresher.refreshFor(ctx);
+  pi.on("model_select", (_event, ctx) => {
+    refresher.refreshFor(ctx);
   });
 
-  pi.on("session_shutdown", async (_event, ctx) => {
+  pi.on("session_shutdown", (_event, ctx) => {
     refresher.stop(ctx);
   });
 
@@ -218,6 +224,7 @@ export default function deepSeekBalanceExtension(pi: ExtensionAPI) {
 
       try {
         const balance = await fetchDeepSeekBalance(apiKey);
+        refresher.remember(balance);
         ctx.ui.notify(formatBalance(balance), balance.error ? "error" : "info");
         if (ctx.hasUI && isDeepSeekContext(ctx)) {
           ctx.ui.setStatus(STATUS_ID, formatFooterBalance(ctx, balance));
