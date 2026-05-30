@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.77.0",
+  "lastChangelogVersion": "0.78.0",
   "defaultThinkingLevel": "low",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.5",
@@ -42,8 +42,8 @@
   },
   "extensions": [
     "-extensions/compact.ts",
-    "-extensions/generation-stats.ts",
-    "-extensions/answer/index.ts"
+    "-extensions/answer/index.ts",
+    "-extensions/prompt-audit.ts"
   ],
   "httpIdleTimeoutMs": 120000
 }

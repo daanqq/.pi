@@ -11,10 +11,6 @@ function stripAnsi(text: string) {
 	return text.replace(/\x1b\[[0-9;]*m/g, "");
 }
 
-function isEditorHorizontalLine(line: string) {
-	const plain = stripAnsi(line).trim();
-	return /^[─━═╌┄┈―—_▔▁-]+$/.test(plain) || /^[─━═╌┄┈―—_▔▁-]{3} [↑↓] \d+ more [─━═╌┄┈―—_▔▁-]*$/.test(plain);
-}
 
 class PiConfigEditor extends CustomEditor {
 	private autocompleteRequestVersion = 0;
@@ -57,7 +53,10 @@ class PiConfigEditor extends CustomEditor {
 	}
 
 	override render(width: number): string[] {
-		return super.render(width).filter((line) => !isEditorHorizontalLine(line));
+		return super.render(width).filter((line) => {
+			const plain = stripAnsi(line).trim();
+			return !/^─{3,}(?: [↑↓] \d+ more ─*)?$/.test(plain);
+		});
 	}
 }
 

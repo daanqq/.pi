@@ -6,12 +6,14 @@ function getDefaultThinkingLevel(provider: string, modelId: string): ThinkingLev
   const normalizedProvider = provider.toLowerCase();
   const normalizedModelId = modelId.toLowerCase();
 
-  if (normalizedProvider.includes("deepseek") || normalizedModelId.includes("deepseek")) {
+  if (
+    normalizedProvider.includes("deepseek") ||
+    normalizedModelId.includes("deepseek") ||
+    normalizedProvider.includes("xiaomi") ||
+    normalizedModelId.includes("xiaomi") ||
+    normalizedModelId.includes("gpt-5.4-mini")
+  ) {
     return "high";
-  }
-
-  if (normalizedModelId.includes("gpt-5.4-mini")) {
-    return "medium";
   }
 
   if (normalizedModelId.includes("gpt")) {
