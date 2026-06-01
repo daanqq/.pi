@@ -4,6 +4,7 @@
 
 export _ZO_EXCLUDE_DIRS="/home/user/reviews/*"
 export GEMINI_SYSTEM_MD="~/.gemini/GEMINI.md"
+export EDITOR="code"
 
 alias cdch="cd ~/echat"
 alias c="clear"
