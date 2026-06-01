@@ -13,6 +13,7 @@
 
 import path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { truncateToWidth } from "@earendil-works/pi-tui";
 
 const SPINNER_VERBS = [
 	"Accomplishing",
@@ -326,14 +327,14 @@ export default function (pi: ExtensionAPI) {
 		ctx.ui.setWidget(
 			WIDGET_ID,
 			(_tui, theme) => ({
-				render: () => {
+				render: (width: number) => {
 					// Use the same resolver as the editor border to avoid tiny shade differences
 					// between the activity pulse and the input border/project label.
 					const borderColor = theme.getThinkingBorderColor(level);
 					// Keep the hue identical to the editor border, but make the shimmer band bold
 					// so the message visibly pulses while staying in the same color family.
 					const bright = (text: string) => theme.bold(borderColor(text));
-					return [`  ${renderLineWithColors(borderColor, bright)}`];
+					return [truncateToWidth(`  ${renderLineWithColors(borderColor, bright)}`, width, "")];
 				},
 				invalidate: () => {},
 			}),
