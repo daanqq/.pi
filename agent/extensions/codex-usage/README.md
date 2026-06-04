@@ -179,16 +179,16 @@ Scans all saved `ca` profiles and displays:
 
 ## Footer
 
-Compact status format shows time until each window resets plus remaining percentage:
+Compact status format shows the active profile, time until each window resets, and remaining percentage. It intentionally omits the leading `codex` label:
 
 ```text
-codex main 3h12m:84% 5d4h:42%
+main 3h12m:84% 5d4h:42%
 ```
 
 Low quota example:
 
 ```text
-codex main low 12m:4% 5d4h:42%
+main low 12m:4% 5d4h:42%
 ```
 
 ## Audit trail

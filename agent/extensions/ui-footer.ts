@@ -171,7 +171,7 @@ function installFooter(pi: ExtensionAPI, ctx: ExtensionContext) {
 
         const usingSubscription = ctx.model ? ctx.modelRegistry.isUsingOAuth(ctx.model) : false;
         if (totalCost || usingSubscription) {
-          statsParts.push(footerText(theme, thinkingLevel, `$${totalCost.toFixed(3)}${usingSubscription ? " (sub)" : ""}`));
+          statsParts.push(footerText(theme, thinkingLevel, `$${totalCost.toFixed(3)}`));
         }
 
         const contextUsage = ctx.getContextUsage();
