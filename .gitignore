@@ -7,6 +7,10 @@ agent/auth.json
 .env.*
 
 # Runtime state
+agent/codex-usage-state.json
+agent/codex-rotation-state.json
+agent/codex-usage.lock/
+agent/codex-rotation.lock/
 agent/sessions/
 memory/
 session-search/

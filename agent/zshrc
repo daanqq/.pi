@@ -21,7 +21,330 @@ alias rmfn="rm -rf node_modules package-lock.json"
 alias nv="nvim"
 alias compose="z yads; ./yads deploy up compose"
 alias countrec='for dir in */; do echo "$(find "$dir" -type f | wc -l) $dir"; done | sort -nr'
-alias ca="codexauth"
+codexauth() {
+  local store_dir="$HOME/.codex/auth-profiles"
+  local state_file="$store_dir/.current"
+  local auth_file="$HOME/.codex/auth.json"
+  local pi_auth_file="$HOME/.pi/agent/auth.json"
+  local pi_provider="openai-codex"
+  local command="$1"
+  local name="$2"
+  local json=0
+  local current_name
+  local profile_file
+
+  if [[ "$2" == "--json" ]]; then
+    json=1
+    name=""
+  elif [[ "$3" == "--json" ]]; then
+    json=1
+  fi
+
+  _codexauth_profile_file() {
+    local profile_name="$1"
+    local profile_dir="$store_dir/$profile_name"
+
+    if [[ -f "$profile_dir/auth.json" ]]; then
+      echo "$profile_dir/auth.json"
+      return 0
+    fi
+
+    if [[ -f "$store_dir/$profile_name.json" ]]; then
+      mkdir -p "$profile_dir" && command mv "$store_dir/$profile_name.json" "$profile_dir/auth.json"
+      echo "$profile_dir/auth.json"
+      return 0
+    fi
+
+    return 1
+  }
+
+  _codexauth_sync_pi_from_codex_auth() {
+    local codex_auth_file="$1"
+
+    CODEX_AUTH_FILE="$codex_auth_file" PI_AUTH_FILE="$pi_auth_file" PI_PROVIDER="$pi_provider" python3 - <<'PY'
+import base64
+import json
+import os
+import pathlib
+
+codex_path = pathlib.Path(os.environ["CODEX_AUTH_FILE"]).expanduser()
+pi_path = pathlib.Path(os.environ["PI_AUTH_FILE"]).expanduser()
+provider = os.environ["PI_PROVIDER"]
+
+with codex_path.open() as f:
+    codex = json.load(f)
+
+tokens = codex.get("tokens") or {}
+access = tokens.get("access_token")
+refresh = tokens.get("refresh_token")
+account_id = tokens.get("account_id")
+if not access or not refresh or not account_id:
+    raise SystemExit(f"codex auth is missing access_token, refresh_token, or account_id: {codex_path}")
+
+def jwt_exp_ms(token: str) -> int:
+    try:
+        payload = token.split(".")[1]
+        payload += "=" * (-len(payload) % 4)
+        data = json.loads(base64.urlsafe_b64decode(payload.encode()))
+        exp = data.get("exp")
+        return int(exp) * 1000 if exp else 0
+    except Exception:
+        return 0
+
+pi_path.parent.mkdir(parents=True, exist_ok=True)
+if pi_path.exists():
+    try:
+        with pi_path.open() as f:
+            pi_auth = json.load(f)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"invalid pi auth json: {pi_path}: {exc}")
+else:
+    pi_auth = {}
+
+pi_auth[provider] = {
+    "type": "oauth",
+    "access": access,
+    "refresh": refresh,
+    "expires": jwt_exp_ms(access),
+    "accountId": account_id,
+}
+
+with pi_path.open("w") as f:
+    json.dump(pi_auth, f, indent=2)
+    f.write("\n")
+os.chmod(pi_path, 0o600)
+PY
+  }
+
+  _codexauth_backfill_current_profile_from_pi() {
+    local current_profile="$1"
+    local current_profile_file
+
+    [[ -z "$current_profile" ]] && return 0
+    current_profile_file="$(_codexauth_profile_file "$current_profile")" || return 0
+    [[ -f "$pi_auth_file" && -f "$current_profile_file" ]] || return 0
+
+    CODEX_AUTH_FILE="$current_profile_file" PI_AUTH_FILE="$pi_auth_file" PI_PROVIDER="$pi_provider" python3 - <<'PY'
+import json
+import os
+import pathlib
+import time
+
+codex_path = pathlib.Path(os.environ["CODEX_AUTH_FILE"]).expanduser()
+pi_path = pathlib.Path(os.environ["PI_AUTH_FILE"]).expanduser()
+provider = os.environ["PI_PROVIDER"]
+
+try:
+    codex = json.load(codex_path.open())
+    pi_auth = json.load(pi_path.open())
+except Exception:
+    raise SystemExit(0)
+
+cred = pi_auth.get(provider)
+if not isinstance(cred, dict) or cred.get("type") != "oauth":
+    raise SystemExit(0)
+if not cred.get("access") or not cred.get("refresh") or not cred.get("accountId"):
+    raise SystemExit(0)
+
+tokens = codex.setdefault("tokens", {})
+tokens["access_token"] = cred["access"]
+tokens["refresh_token"] = cred["refresh"]
+tokens["account_id"] = cred["accountId"]
+codex["last_refresh"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+with codex_path.open("w") as f:
+    json.dump(codex, f, indent=2)
+    f.write("\n")
+os.chmod(codex_path, 0o600)
+PY
+  }
+
+  _codexauth_json_list() {
+    CODEXAUTH_STORE_DIR="$store_dir" CODEXAUTH_STATE_FILE="$state_file" python3 - <<'PY'
+import json
+import os
+import pathlib
+
+store = pathlib.Path(os.environ["CODEXAUTH_STORE_DIR"]).expanduser()
+state_file = pathlib.Path(os.environ["CODEXAUTH_STATE_FILE"]).expanduser()
+profiles = []
+seen = set()
+if store.exists():
+    for path in sorted(store.glob("*/auth.json")):
+        name = path.parent.name
+        seen.add(name)
+        try:
+            data = json.load(path.open())
+        except Exception:
+            data = {}
+        tokens = data.get("tokens") or {}
+        profiles.append({
+            "name": name,
+            "accountId": tokens.get("account_id") or tokens.get("accountId"),
+            "email": data.get("email") or data.get("account", {}).get("email"),
+        })
+    for path in sorted(store.glob("*.json")):
+        if path.name == ".current" or path.stem in seen:
+            continue
+        try:
+            data = json.load(path.open())
+        except Exception:
+            data = {}
+        tokens = data.get("tokens") or {}
+        profiles.append({
+            "name": path.stem,
+            "accountId": tokens.get("account_id") or tokens.get("accountId"),
+            "email": data.get("email") or data.get("account", {}).get("email"),
+        })
+try:
+    current = state_file.read_text().strip() or None
+except Exception:
+    current = None
+print(json.dumps({"profiles": profiles, "current": current}, separators=(",", ":")))
+PY
+  }
+
+  _codexauth_json_token() {
+    local profile_name="$1"
+    local token_file="$(_codexauth_profile_file "$profile_name")" || return 1
+    CODEXAUTH_PROFILE="$profile_name" CODEXAUTH_TOKEN_FILE="$token_file" python3 - <<'PY'
+import base64
+import json
+import os
+import pathlib
+
+profile = os.environ["CODEXAUTH_PROFILE"]
+path = pathlib.Path(os.environ["CODEXAUTH_TOKEN_FILE"]).expanduser()
+data = json.load(path.open())
+tokens = data.get("tokens") or {}
+access = tokens.get("access_token")
+refresh = tokens.get("refresh_token")
+account_id = tokens.get("account_id") or tokens.get("accountId")
+if not access or not refresh or not account_id:
+    raise SystemExit(f"codex auth is missing access_token, refresh_token, or account_id: {path}")
+
+def jwt_exp_ms(token: str) -> int:
+    try:
+        payload = token.split(".")[1]
+        payload += "=" * (-len(payload) % 4)
+        decoded = json.loads(base64.urlsafe_b64decode(payload.encode()))
+        exp = decoded.get("exp")
+        return int(exp) * 1000 if exp else 0
+    except Exception:
+        return 0
+
+print(json.dumps({
+    "name": profile,
+    "credential": {
+        "type": "oauth",
+        "access": access,
+        "refresh": refresh,
+        "expires": jwt_exp_ms(access),
+        "accountId": account_id,
+    },
+    "accountId": account_id,
+    "email": data.get("email") or data.get("account", {}).get("email"),
+}, separators=(",", ":")))
+PY
+  }
+
+  _codexauth_usage() {
+    echo "usage: codexauth [current] | codexauth save <name> | codexauth use <name> | codexauth list [--json] | codexauth token <name> --json | codexauth pi-sync [name]"
+    echo "alias: ca"
+  }
+
+  case "$command" in
+    "")
+      echo "current: $(cat "$state_file" 2>/dev/null || echo none)"
+      _codexauth_usage
+      ;;
+    current)
+      if (( json )); then
+        python3 -c 'import json,sys; print(json.dumps({"current": sys.stdin.read().strip() or None}))' < "$state_file" 2>/dev/null || echo '{"current":null}'
+      else
+        cat "$state_file" 2>/dev/null || true
+      fi
+      ;;
+    save)
+      if [[ -z "$name" ]]; then
+        echo "usage: codexauth save <name>"
+        return 2
+      fi
+      mkdir -p "$store_dir/$name" && command cp "$auth_file" "$store_dir/$name/auth.json" && print -r -- "$name" > "$state_file"
+      _codexauth_sync_pi_from_codex_auth "$store_dir/$name/auth.json"
+      (( json )) && print -r -- "{\"ok\":true,\"name\":\"$name\"}"
+      ;;
+    use|restore)
+      if [[ -z "$name" ]]; then
+        echo "usage: codexauth use <name>"
+        return 2
+      fi
+      mkdir -p "$store_dir"
+      profile_file="$(_codexauth_profile_file "$name")"
+      if [[ -z "$profile_file" ]]; then
+        echo "auth profile not found: $name"
+        return 1
+      fi
+
+      current_name="$(cat "$state_file" 2>/dev/null)"
+      if [[ -n "$current_name" && "$current_name" != "$name" ]]; then
+        _codexauth_backfill_current_profile_from_pi "$current_name"
+        mkdir -p "$store_dir/$current_name"
+        command cp "$auth_file" "$store_dir/$current_name/auth.json"
+      fi
+
+      command cp "$auth_file" "$auth_file.bak.$(date +%Y%m%d%H%M%S)" 2>/dev/null
+      command cp "$profile_file" "$auth_file"
+      _codexauth_sync_pi_from_codex_auth "$profile_file"
+      print -r -- "$name" > "$state_file"
+      (( json )) && print -r -- "{\"ok\":true,\"current\":\"$name\"}"
+      ;;
+    pi-sync)
+      mkdir -p "$store_dir"
+      if [[ -z "$name" ]]; then
+        name="$(cat "$state_file" 2>/dev/null)"
+      fi
+      if [[ -z "$name" ]]; then
+        echo "usage: codexauth pi-sync [name]"
+        return 2
+      fi
+      profile_file="$(_codexauth_profile_file "$name")"
+      if [[ -z "$profile_file" ]]; then
+        echo "auth profile not found: $name"
+        return 1
+      fi
+      _codexauth_sync_pi_from_codex_auth "$profile_file"
+      (( json )) && print -r -- "{\"ok\":true,\"name\":\"$name\"}"
+      ;;
+    list)
+      mkdir -p "$store_dir"
+      if (( json )); then
+        _codexauth_json_list
+      else
+        { find "$store_dir" -mindepth 2 -maxdepth 2 -type f -name auth.json -printf '%h\n' | xargs -r -n1 basename; find "$store_dir" -maxdepth 1 -type f -name '*.json' -printf '%f\n' | sed 's/\.json$//'; } | sort -u
+      fi
+      ;;
+    token)
+      if [[ -z "$name" ]]; then
+        echo "usage: codexauth token <name> --json"
+        return 2
+      fi
+      if (( ! json )); then
+        echo "codexauth token only supports --json"
+        return 2
+      fi
+      _codexauth_json_token "$name"
+      ;;
+    *)
+      _codexauth_usage
+      return 2
+      ;;
+  esac
+}
+
+ca() {
+  codexauth "$@"
+}
 
 mkcd() {
   mkdir "$1" && cd "$1"

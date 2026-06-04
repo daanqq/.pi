@@ -3,7 +3,7 @@ import type {
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 
-const RIGHT_STATUS_ORDER = ["generation-stats", "codex-quotas", "deepseek-balance", "openrouter-balance"] as const;
+const RIGHT_STATUS_ORDER = ["generation-stats", "codex-usage", "deepseek-balance", "openrouter-balance"] as const;
 const RIGHT_STATUS_IDS = new Set<string>(RIGHT_STATUS_ORDER);
 
 type ThemeColor =

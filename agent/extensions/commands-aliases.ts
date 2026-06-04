@@ -3,7 +3,7 @@ import type {
   ExtensionCommandContext,
 } from "@mariozechner/pi-coding-agent";
 
-const CODEX_QUOTAS_EXTENSION_PATH = new URL("./codex-quotas.ts", import.meta.url).href;
+const CODEX_USAGE_EXTENSION_PATH = new URL("./codex-usage/index.ts", import.meta.url).href;
 
 type CommandOptions = Parameters<ExtensionAPI["registerCommand"]>[1];
 
@@ -12,7 +12,7 @@ async function runCapturedCommand(
   args: string,
   ctx: ExtensionCommandContext,
 ): Promise<boolean> {
-  const commandModule = (await import(CODEX_QUOTAS_EXTENSION_PATH)) as {
+  const commandModule = (await import(CODEX_USAGE_EXTENSION_PATH)) as {
     default: (pi: ExtensionAPI) => void;
   };
 
