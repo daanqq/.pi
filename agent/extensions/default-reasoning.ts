@@ -43,9 +43,41 @@ function hasConversationEntries(ctx: { sessionManager: { getEntries(): Array<{ t
 }
 
 const CACHE_WARNING_WIDGET_ID = "gpt-cache-warning";
+const CONTEXT_CACHE_TTL_MS = 10 * 60 * 1000;
+
+type SessionEntryLike = {
+  type?: string;
+  timestamp?: string | number;
+  message?: { role?: string };
+};
 
 function clearCacheWarning(ctx: any) {
   ctx.ui.setWidget(CACHE_WARNING_WIDGET_ID, undefined);
+}
+
+function entryTimestampMs(entry: SessionEntryLike): number | undefined {
+  if (typeof entry.timestamp === "number") return Number.isFinite(entry.timestamp) ? entry.timestamp : undefined;
+  if (typeof entry.timestamp !== "string") return undefined;
+
+  const timestamp = Date.parse(entry.timestamp);
+  return Number.isFinite(timestamp) ? timestamp : undefined;
+}
+
+function lastAssistantResponseTimestampMs(ctx: { sessionManager: { getEntries(): SessionEntryLike[] } }): number | undefined {
+  const entries = ctx.sessionManager.getEntries();
+  for (let index = entries.length - 1; index >= 0; index--) {
+    const entry = entries[index];
+    if (entry?.type === "message" && entry.message?.role === "assistant") {
+      return entryTimestampMs(entry);
+    }
+  }
+
+  return undefined;
+}
+
+function isContextCacheAlreadyExpiredByTime(ctx: { sessionManager: { getEntries(): SessionEntryLike[] } }): boolean {
+  const lastResponseTimestamp = lastAssistantResponseTimestampMs(ctx);
+  return lastResponseTimestamp !== undefined && Date.now() - lastResponseTimestamp >= CONTEXT_CACHE_TTL_MS;
 }
 
 function showThinkingCacheWarning(ctx: any, level: ThinkingLevel) {
@@ -95,7 +127,7 @@ export default function defaultReasoningExtension(pi: ExtensionAPI) {
       hasConversationEntries(ctx)
     ) {
       clearCacheWarning(ctx);
-      if (!sameModel(event.model, sessionInitialModel)) {
+      if (!sameModel(event.model, sessionInitialModel) && !isContextCacheAlreadyExpiredByTime(ctx)) {
         pendingModelWarningTimer = showModelCacheWarning(ctx, event.model, () => pi.getThinkingLevel());
       }
     }
@@ -126,7 +158,7 @@ export default function defaultReasoningExtension(pi: ExtensionAPI) {
       clearCacheWarning(ctx);
       return;
     }
-    if (!hasConversationEntries(ctx) || !isGptModel(ctx.model)) return;
+    if (!hasConversationEntries(ctx) || !isGptModel(ctx.model) || isContextCacheAlreadyExpiredByTime(ctx)) return;
 
     clearCacheWarning(ctx);
     showThinkingCacheWarning(ctx, event.level);
