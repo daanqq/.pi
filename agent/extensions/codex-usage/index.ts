@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { caList, caRestore, caToken } from "./ca";
 import { withRotationLock } from "./lock";
-import { fetchQuotaForCredential, formatQuota, formatQuotaCommandOutput, normalizeQuota, quotaReason } from "./quota";
+import { fetchQuotaForCredential, formatFooterQuota, formatQuota, formatQuotaCommandOutput, normalizeQuota, quotaReason } from "./quota";
 import { chooseBestCandidate, isInCooldown, profileLabel, scoreCandidate } from "./scoring";
 import { pruneCooldowns, readState, updateState, watchState, writeState } from "./state";
 import type { CandidateScan, CaProfile, NormalizedQuota, RotationConfig, RotationResult, RotationState } from "./types";
@@ -80,7 +80,7 @@ function setFooter(ctx: ExtensionContext | ExtensionCommandContext, state = read
   const profile = state.activeProfile ?? "?";
   const knownQuota = quota ?? (profile !== "?" ? state.lastQuotaByProfile[profile] : undefined);
   const low = knownQuota && knownQuota.minRemaining <= CONFIG.rotateBelowPercent ? " low" : "";
-  const text = `codex ${profile}${low} ${formatQuota(knownQuota)}`;
+  const text = `codex ${profile}${low} ${formatFooterQuota(knownQuota)}`;
   ctx.ui.setStatus(EXTENSION_ID, low ? ctx.ui.theme.fg("warning", text) : text);
 }
 

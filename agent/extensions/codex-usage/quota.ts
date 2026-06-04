@@ -95,8 +95,10 @@ export function parseCodexWindows(data: any): QuotaWindow[] {
 
 export function normalizeQuota(result: QuotaResult): NormalizedQuota | undefined {
   if (!result.success) return undefined;
-  const five = result.windows.find((window) => window.label === "5h")?.remainingPercent;
-  const weekly = result.windows.find((window) => window.label === "7d")?.remainingPercent;
+  const fiveWindow = result.windows.find((window) => window.label === "5h");
+  const weeklyWindow = result.windows.find((window) => window.label === "7d");
+  const five = fiveWindow?.remainingPercent;
+  const weekly = weeklyWindow?.remainingPercent;
   if (five == null || weekly == null) return undefined;
   const fiveHourRemaining = Math.round(clampPercent(five));
   const weeklyRemaining = Math.round(clampPercent(weekly));
@@ -105,6 +107,8 @@ export function normalizeQuota(result: QuotaResult): NormalizedQuota | undefined
     fiveHourRemaining,
     weeklyRemaining,
     minRemaining: Math.min(fiveHourRemaining, weeklyRemaining),
+    fiveHourResetsAt: fiveWindow?.resetsAt.getTime(),
+    weeklyResetsAt: weeklyWindow?.resetsAt.getTime(),
   };
 }
 
@@ -117,6 +121,13 @@ export function quotaReason(quota: NormalizedQuota): string {
 export function formatQuota(quota?: NormalizedQuota): string {
   if (!quota) return "quota unavailable";
   return `5h:${quota.fiveHourRemaining}% 7d:${quota.weeklyRemaining}%`;
+}
+
+export function formatFooterQuota(quota?: NormalizedQuota): string {
+  if (!quota) return "quota unavailable";
+  const fiveHourReset = quota.fiveHourResetsAt != null ? resetText(new Date(quota.fiveHourResetsAt)) : "5h";
+  const weeklyReset = quota.weeklyResetsAt != null ? resetText(new Date(quota.weeklyResetsAt)) : "7d";
+  return `${fiveHourReset}:${quota.fiveHourRemaining}% ${weeklyReset}:${quota.weeklyRemaining}%`;
 }
 
 export function resetText(date: Date): string {

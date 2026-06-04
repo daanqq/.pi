@@ -1,0 +1,1 @@
+{"agent":"reviewer","task":"В репозитории /home/user/deploy/env/development/services/echat.business.service оцени риски регресса при переводе runtime Node.js с 14 на 24. Нужен краткий источник-aware вывод: какие зависимости/файл","ts":1780554301,"status":"ok","duration":299445}

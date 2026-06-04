@@ -50,6 +50,8 @@ export type NormalizedQuota = {
   fiveHourRemaining: number;
   weeklyRemaining: number;
   minRemaining: number;
+  fiveHourResetsAt?: number;
+  weeklyResetsAt?: number;
 };
 
 export type Cooldown = {
