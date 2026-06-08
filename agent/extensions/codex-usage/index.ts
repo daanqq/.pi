@@ -26,8 +26,30 @@ let activeContext: ExtensionContext | undefined;
 let lastSeenActiveProfile: string | undefined;
 let providerInFlight = false;
 
+function isStaleContextError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes("extension ctx is stale");
+}
+
+function safeSignal(ctx: ExtensionContext | ExtensionCommandContext): AbortSignal | undefined {
+  try {
+    return ctx.signal;
+  } catch (error) {
+    if (isStaleContextError(error)) return undefined;
+    throw error;
+  }
+}
+
+function isActiveEventContext(ctx: ExtensionContext | ExtensionCommandContext): boolean {
+  return ctx === activeContext;
+}
+
 function isCodexContext(ctx: ExtensionContext | ExtensionCommandContext): boolean {
-  return ctx.model?.provider === CODEX_PROVIDER;
+  try {
+    return ctx.model?.provider === CODEX_PROVIDER;
+  } catch (error) {
+    if (isStaleContextError(error)) return false;
+    throw error;
+  }
 }
 
 function getCurrentCredential(ctx: ExtensionContext | ExtensionCommandContext): any {
@@ -54,7 +76,7 @@ function cacheKeyForCredential(credential: any): string {
 }
 
 async function fetchCurrentQuotaResult(ctx: ExtensionContext | ExtensionCommandContext) {
-  return fetchQuotaForCredential(getCurrentCredential(ctx), getCurrentAccountId(ctx), ctx.signal);
+  return fetchQuotaForCredential(getCurrentCredential(ctx), getCurrentAccountId(ctx), safeSignal(ctx));
 }
 
 async function fetchCurrentQuota(ctx: ExtensionContext | ExtensionCommandContext, force = false): Promise<NormalizedQuota | undefined> {
@@ -72,16 +94,20 @@ function stateProfileForCurrent(state: RotationState, caCurrent?: string): strin
 }
 
 function setFooter(ctx: ExtensionContext | ExtensionCommandContext, state = readState(), quota?: NormalizedQuota): void {
-  if (!ctx.hasUI) return;
-  if (!isCodexContext(ctx)) {
-    ctx.ui.setStatus(EXTENSION_ID, undefined);
-    return;
+  try {
+    if (!ctx.hasUI) return;
+    if (!isCodexContext(ctx)) {
+      ctx.ui.setStatus(EXTENSION_ID, undefined);
+      return;
+    }
+    const profile = state.activeProfile ?? "?";
+    const knownQuota = quota ?? (profile !== "?" ? state.lastQuotaByProfile[profile] : undefined);
+    const low = knownQuota && knownQuota.minRemaining <= CONFIG.rotateBelowPercent ? " low" : "";
+    const text = `${profile}${low} ${formatFooterQuota(knownQuota)}`;
+    ctx.ui.setStatus(EXTENSION_ID, low ? ctx.ui.theme.fg("warning", text) : text);
+  } catch (error) {
+    if (!isStaleContextError(error)) throw error;
   }
-  const profile = state.activeProfile ?? "?";
-  const knownQuota = quota ?? (profile !== "?" ? state.lastQuotaByProfile[profile] : undefined);
-  const low = knownQuota && knownQuota.minRemaining <= CONFIG.rotateBelowPercent ? " low" : "";
-  const text = `${profile}${low} ${formatFooterQuota(knownQuota)}`;
-  ctx.ui.setStatus(EXTENSION_ID, low ? ctx.ui.theme.fg("warning", text) : text);
 }
 
 function notify(ctx: ExtensionContext | ExtensionCommandContext, message: string, level: "info" | "warning" | "error" = "info"): void {
@@ -112,6 +138,7 @@ async function scanCandidates(pi: ExtensionAPI, state: RotationState, skipProfil
       if (cooldown) return { profile, eligible: false, reason: cooldown };
 
       try {
+        if (signal?.aborted) return { profile, eligible: false, reason: "aborted" };
         const token = await caToken(pi, profile.name, signal);
         const quota = await fetchQuotaForCredential(token.credential, token.accountId ?? profile.accountId, signal);
         const normalizedQuota = normalizeQuota(quota);
@@ -141,7 +168,7 @@ async function commitRotation(
   try {
     ctx.modelRegistry.authStorage.set(CODEX_PROVIDER, winner.token.credential);
   } catch {
-    await caRestore(pi, winner.profile.name, ctx.signal);
+    await caRestore(pi, winner.profile.name, safeSignal(ctx));
     ctx.modelRegistry.authStorage.reload();
   }
 
@@ -171,10 +198,11 @@ async function rotateToBest(
   return withRotationLock(CONFIG.lockStaleMs, async () => {
     const state = readState();
     pruneCooldowns(state);
-    const list = await caList(pi, ctx.signal).catch(() => ({ profiles: [] as CaProfile[], current: undefined }));
+    const signal = safeSignal(ctx);
+    const list = await caList(pi, signal).catch(() => ({ profiles: [] as CaProfile[], current: undefined }));
     const from = stateProfileForCurrent(state, list.current);
     const skipProfile = options.skipProfile ?? from;
-    const scans = await scanCandidates(pi, state, skipProfile, ctx.signal);
+    const scans = await scanCandidates(pi, state, skipProfile, signal);
     const winner = chooseBestCandidate(scans);
     if (!winner) {
       writeState(state);
@@ -190,11 +218,12 @@ async function rotateToProfile(pi: ExtensionAPI, ctx: ExtensionCommandContext, p
   return withRotationLock(CONFIG.lockStaleMs, async () => {
     const state = readState();
     pruneCooldowns(state);
-    const list = await caList(pi, ctx.signal);
+    const signal = safeSignal(ctx);
+    const list = await caList(pi, signal);
     const from = stateProfileForCurrent(state, list.current);
     const profileInfo = list.profiles.find((candidate) => candidate.name === profile) ?? { name: profile };
-    const token = await caToken(pi, profile, ctx.signal);
-    const quotaResult = await fetchQuotaForCredential(token.credential, token.accountId ?? profileInfo.accountId, ctx.signal);
+    const token = await caToken(pi, profile, signal);
+    const quotaResult = await fetchQuotaForCredential(token.credential, token.accountId ?? profileInfo.accountId, signal);
     const normalizedQuota = normalizeQuota(quotaResult);
     if (!quotaResult.success || !normalizedQuota) throw new Error(`Cannot switch to ${profile}: quota unavailable`);
     const scan: CandidateScan = { profile: profileInfo, token, quota: quotaResult, normalizedQuota, score: normalizedQuota.minRemaining, eligible: true };
@@ -221,18 +250,20 @@ async function maybeEnsureActiveProfile(pi: ExtensionAPI): Promise<RotationState
 }
 
 async function maybeRotateForQuota(pi: ExtensionAPI, ctx: ExtensionContext | ExtensionCommandContext, hook: string): Promise<void> {
-  if (!isCodexContext(ctx)) return;
-  if (ctx.signal?.aborted) return;
+  if (!isActiveEventContext(ctx) || !isCodexContext(ctx)) return;
+  if (safeSignal(ctx)?.aborted) return;
   const state = await maybeEnsureActiveProfile(pi);
+  if (!isActiveEventContext(ctx) || safeSignal(ctx)?.aborted) return;
   if (!state.autoEnabled) {
     setFooter(ctx, state);
     return;
   }
   const quota = await fetchCurrentQuota(ctx, true);
+  if (!isActiveEventContext(ctx) || safeSignal(ctx)?.aborted) return;
   if (!quota) {
     // Request cancellation aborts the nested quota fetch too. Do not show a
     // scary rotation warning for an intentional Esc/Ctrl+C abort.
-    if (!ctx.signal?.aborted) {
+    if (!safeSignal(ctx)?.aborted) {
       notify(ctx, "Codex quota unavailable; not rotating blindly", "warning");
       setFooter(ctx, state);
     }
@@ -252,6 +283,18 @@ async function maybeRotateForQuota(pi: ExtensionAPI, ctx: ExtensionContext | Ext
     } catch (error) {
       notify(ctx, `Codex quota low (${formatQuota(quota)}), but rotation failed: ${error instanceof Error ? error.message : String(error)}`, "warning");
     }
+  }
+}
+
+async function maybeRotateForQuotaSafely(pi: ExtensionAPI, ctx: ExtensionContext | ExtensionCommandContext, hook: string): Promise<void> {
+  try {
+    await maybeRotateForQuota(pi, ctx, hook);
+  } catch (error) {
+    // Async fire-and-forget quota checks can outlive /resume, /fork, /new, or
+    // /reload.  Pi correctly marks their captured ctx/pi as stale; treat that
+    // as cancellation instead of crashing the process.
+    if (isStaleContextError(error) || safeSignal(ctx)?.aborted) return;
+    notify(ctx, `Codex quota check failed: ${error instanceof Error ? error.message : String(error)}`, "warning");
   }
 }
 
@@ -358,7 +401,7 @@ export default function (pi: ExtensionAPI) {
         }
         if (action === "scan") {
           const state = readState();
-          const scans = await scanCandidates(pi, state, state.activeProfile, ctx.signal);
+          const scans = await scanCandidates(pi, state, state.activeProfile, safeSignal(ctx));
           notify(ctx, ctx.ui.theme.fg("dim", formatScans(scans)), "info");
           setFooter(ctx, state);
           return;
@@ -388,7 +431,7 @@ export default function (pi: ExtensionAPI) {
     startCrossProcessSync(ctx);
     const state = await maybeEnsureActiveProfile(pi);
     setFooter(ctx, state);
-    if (isCodexContext(ctx)) void maybeRotateForQuota(pi, ctx, "session_start");
+    if (isCodexContext(ctx)) void maybeRotateForQuotaSafely(pi, ctx, "session_start");
   });
 
   pi.on("before_agent_start", (_event, ctx) => {
@@ -429,18 +472,18 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("turn_end", async (_event, ctx) => {
     providerInFlight = false;
-    await maybeRotateForQuota(pi, ctx, "turn_end");
+    await maybeRotateForQuotaSafely(pi, ctx, "turn_end");
   });
 
   pi.on("agent_end", async (_event, ctx) => {
     providerInFlight = false;
-    await maybeRotateForQuota(pi, ctx, "agent_end");
+    await maybeRotateForQuotaSafely(pi, ctx, "agent_end");
   });
 
   pi.on("model_select", (_event, ctx) => {
     const state = readState();
     setFooter(ctx, state);
-    if (isCodexContext(ctx)) void maybeRotateForQuota(pi, ctx, "model_select");
+    if (isCodexContext(ctx)) void maybeRotateForQuotaSafely(pi, ctx, "model_select");
   });
 
   pi.on("session_shutdown", (_event, ctx) => {

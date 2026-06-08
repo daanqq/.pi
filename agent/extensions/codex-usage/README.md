@@ -20,6 +20,7 @@ It:
 - avoids switching auth while a provider request is in flight;
 - reacts to HTTP `429` by cooling down the current profile and trying another one;
 - synchronizes usage/rotation state across multiple Pi processes;
+- treats async quota checks that outlive `/new`, `/resume`, `/fork`, or `/reload` as cancellation so stale extension contexts do not crash Pi;
 - writes audit entries into the Pi session.
 
 ## Requirements
