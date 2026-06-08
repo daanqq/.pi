@@ -1,12 +1,23 @@
 {
-  "lastChangelogVersion": "0.78.0",
-  "defaultThinkingLevel": "high",
+  "lastChangelogVersion": "0.78.1",
+  "defaultThinkingLevel": "low",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.5",
   "packages": [
     "npm:pi-web-access",
     "npm:pi-rtk-optimizer",
-    "npm:pi-subagents"
+    {
+      "source": "npm:pi-subagents",
+      "prompts": [
+        "-prompts/gather-context-and-clarify.md",
+        "-prompts/parallel-cleanup.md",
+        "-prompts/parallel-context-build.md",
+        "-prompts/parallel-handoff-plan.md",
+        "-prompts/parallel-research.md",
+        "-prompts/parallel-review.md",
+        "-prompts/review-loop.md"
+      ]
+    }
   ],
   "hideThinkingBlock": false,
   "theme": "alabaster",
@@ -45,7 +56,14 @@
     "-extensions/compact.ts",
     "-extensions/answer/index.ts",
     "-extensions/prompt-audit.ts",
-    "-extensions/generation-stats.ts"
+    "-extensions/generation-stats.ts",
+    "-extensions/commands-aliases.ts"
   ],
-  "httpIdleTimeoutMs": 120000
+  "httpIdleTimeoutMs": 120000,
+  "skills": [
+    "-skills/grill-with-docs/SKILL.md",
+    "-skills/tdd/SKILL.md",
+    "-skills/to-prd/SKILL.md",
+    "-skills/frontend-design/SKILL.md"
+  ]
 }
