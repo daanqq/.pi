@@ -7,6 +7,7 @@ agent/auth.json
 .env.*
 
 # Runtime state
+agent/trust.json
 agent/codex-usage-state.json
 agent/codex-rotation-state.json
 agent/codex-usage.lock/

@@ -1,10 +1,15 @@
 {
-  "lastChangelogVersion": "0.78.1",
-  "defaultThinkingLevel": "medium",
+  "lastChangelogVersion": "0.79.0",
+  "defaultThinkingLevel": "low",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.5",
   "packages": [
-    "npm:pi-web-access",
+    {
+      "source": "npm:pi-web-access",
+      "skills": [
+        "-skills/librarian/SKILL.md"
+      ]
+    },
     "npm:pi-rtk-optimizer",
     {
       "source": "npm:pi-subagents",
@@ -16,6 +21,12 @@
         "-prompts/parallel-research.md",
         "-prompts/parallel-review.md",
         "-prompts/review-loop.md"
+      ],
+      "skills": [
+        "-skills/pi-subagents/SKILL.md"
+      ],
+      "extensions": [
+        "-src/extension/index.ts"
       ]
     }
   ],
@@ -55,9 +66,8 @@
   "extensions": [
     "-extensions/compact.ts",
     "-extensions/answer/index.ts",
-    "-extensions/prompt-audit.ts",
     "-extensions/generation-stats.ts",
-    "-extensions/commands-aliases.ts"
+    "-extensions/prompt-audit.ts"
   ],
   "httpIdleTimeoutMs": 120000,
   "skills": [
