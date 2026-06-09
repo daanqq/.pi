@@ -14,6 +14,7 @@ The extension keeps Codex usable without restarting Pi or manually editing auth 
 It:
 
 - fetches and displays Codex 5h and 7d quota windows;
+- refreshes the active footer quota every 60 seconds so remaining percentages do not stay stale during long idle sessions;
 - tracks last known quota per saved profile;
 - rotates away from a profile whose weakest quota window is almost exhausted;
 - chooses the best saved profile by score: `min(5hRemaining, weeklyRemaining)`;
@@ -83,6 +84,7 @@ Rotation/checks happen at safer boundaries:
 - `turn_end` — between provider calls inside a long-running agent loop;
 - `agent_end` — after an agent run, preparing for the next prompt;
 - `session_start` / `model_select` — asynchronous status refresh;
+- periodic footer refresh every 60 seconds — fetches the active profile quota and updates state/status without rotating;
 - `after_provider_response` on `429` — emergency cooldown + rotation attempt;
 - manual commands.
 
@@ -180,7 +182,7 @@ Scans all saved `ca` profiles and displays:
 
 ## Footer
 
-Compact status format shows the active profile, time until each window resets, and remaining percentage. It intentionally omits the leading `codex` label:
+Compact status format shows the active profile, time until each window resets, and remaining percentage. While Pi is in TUI mode, the extension refetches the active quota once per minute and rewrites this footer status, even when automatic rotation is disabled. It intentionally omits the leading `codex` label:
 
 ```text
 main 3h12m:84% 5d4h:42%

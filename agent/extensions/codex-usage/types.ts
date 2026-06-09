@@ -9,6 +9,7 @@ export type RotationConfig = {
   rotateBelowPercent: number;
   eligibleAbovePercent: number;
   quotaCacheTtlMs: number;
+  quotaRefreshIntervalMs: number;
   cooldownMs: number;
   lockStaleMs: number;
   statePollMs: number;

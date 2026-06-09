@@ -14,6 +14,7 @@ const CONFIG: RotationConfig = {
   rotateBelowPercent: 5,
   eligibleAbovePercent: 10,
   quotaCacheTtlMs: 60_000,
+  quotaRefreshIntervalMs: 60_000,
   cooldownMs: 10 * 60_000,
   lockStaleMs: 60_000,
   statePollMs: 2_000,
@@ -21,6 +22,11 @@ const CONFIG: RotationConfig = {
 };
 
 let quotaCache: { key: string; quota: NormalizedQuota; fetchedAt: number } | undefined;
+let quotaFetchInFlight: { key: string; promise: Promise<NormalizedQuota | undefined> } | undefined;
+let quotaRefreshTimer: ReturnType<typeof setInterval> | undefined;
+let quotaRefreshGeneration = 0;
+let quotaRefreshInFlight = false;
+let quotaRefreshQueued = false;
 let stopWatcher: (() => void) | undefined;
 let activeContext: ExtensionContext | undefined;
 let lastSeenActiveProfile: string | undefined;
@@ -83,10 +89,19 @@ async function fetchCurrentQuota(ctx: ExtensionContext | ExtensionCommandContext
   const credential = getCurrentCredential(ctx);
   const key = `${cacheKeyForCredential(credential)}:${getCurrentAccountId(ctx) ?? ""}`;
   if (!force && quotaCache?.key === key && Date.now() - quotaCache.fetchedAt < CONFIG.quotaCacheTtlMs) return quotaCache.quota;
-  const result = await fetchCurrentQuotaResult(ctx);
-  const quota = normalizeQuota(result);
-  if (quota) quotaCache = { key, quota, fetchedAt: Date.now() };
-  return quota;
+  if (quotaFetchInFlight?.key === key) return quotaFetchInFlight.promise;
+
+  const promise = (async () => {
+    const result = await fetchCurrentQuotaResult(ctx);
+    const quota = normalizeQuota(result);
+    if (quota) quotaCache = { key, quota, fetchedAt: Date.now() };
+    return quota;
+  })().finally(() => {
+    if (quotaFetchInFlight?.key === key && quotaFetchInFlight.promise === promise) quotaFetchInFlight = undefined;
+  });
+
+  quotaFetchInFlight = { key, promise };
+  return promise;
 }
 
 function stateProfileForCurrent(state: RotationState, caCurrent?: string): string | undefined {
@@ -254,17 +269,13 @@ async function maybeRotateForQuota(pi: ExtensionAPI, ctx: ExtensionContext | Ext
   if (safeSignal(ctx)?.aborted) return;
   const state = await maybeEnsureActiveProfile(pi);
   if (!isActiveEventContext(ctx) || safeSignal(ctx)?.aborted) return;
-  if (!state.autoEnabled) {
-    setFooter(ctx, state);
-    return;
-  }
   const quota = await fetchCurrentQuota(ctx, true);
   if (!isActiveEventContext(ctx) || safeSignal(ctx)?.aborted) return;
   if (!quota) {
     // Request cancellation aborts the nested quota fetch too. Do not show a
     // scary rotation warning for an intentional Esc/Ctrl+C abort.
     if (!safeSignal(ctx)?.aborted) {
-      notify(ctx, "Codex quota unavailable; not rotating blindly", "warning");
+      if (state.autoEnabled) notify(ctx, "Codex quota unavailable; not rotating blindly", "warning");
       setFooter(ctx, state);
     }
     return;
@@ -275,6 +286,8 @@ async function maybeRotateForQuota(pi: ExtensionAPI, ctx: ExtensionContext | Ext
     writeState(state);
   }
   setFooter(ctx, state, quota);
+
+  if (!state.autoEnabled) return;
 
   if (quota.minRemaining <= CONFIG.rotateBelowPercent) {
     try {
@@ -296,6 +309,64 @@ async function maybeRotateForQuotaSafely(pi: ExtensionAPI, ctx: ExtensionContext
     if (isStaleContextError(error) || safeSignal(ctx)?.aborted) return;
     notify(ctx, `Codex quota check failed: ${error instanceof Error ? error.message : String(error)}`, "warning");
   }
+}
+
+async function refreshFooterQuota(pi: ExtensionAPI, ctx: ExtensionContext, generation = quotaRefreshGeneration): Promise<void> {
+  if (!ctx.hasUI) return;
+  if (!isCodexContext(ctx)) {
+    setFooter(ctx, readState());
+    return;
+  }
+  if (quotaRefreshInFlight) {
+    quotaRefreshQueued = true;
+    return;
+  }
+
+  quotaRefreshInFlight = true;
+  try {
+    const state = await maybeEnsureActiveProfile(pi);
+    if (generation !== quotaRefreshGeneration || !isActiveEventContext(ctx) || safeSignal(ctx)?.aborted) return;
+
+    const quota = await fetchCurrentQuota(ctx, true);
+    if (generation !== quotaRefreshGeneration || !isActiveEventContext(ctx) || safeSignal(ctx)?.aborted) return;
+
+    if (quota && state.activeProfile) {
+      state.lastQuotaByProfile[state.activeProfile] = quota;
+      writeState(state);
+    }
+    setFooter(ctx, state, quota);
+  } catch (error) {
+    if (isStaleContextError(error) || safeSignal(ctx)?.aborted) return;
+    setFooter(ctx, readState());
+  } finally {
+    quotaRefreshInFlight = false;
+    if (quotaRefreshQueued && generation === quotaRefreshGeneration && isActiveEventContext(ctx)) {
+      quotaRefreshQueued = false;
+      void refreshFooterQuota(pi, ctx, generation);
+    } else {
+      quotaRefreshQueued = false;
+    }
+  }
+}
+
+function startQuotaRefresh(pi: ExtensionAPI, ctx: ExtensionContext): void {
+  if (quotaRefreshTimer) clearInterval(quotaRefreshTimer);
+  quotaRefreshGeneration += 1;
+  if (!ctx.hasUI) return;
+  const generation = quotaRefreshGeneration;
+  quotaRefreshTimer = setInterval(() => {
+    if (isActiveEventContext(ctx)) void refreshFooterQuota(pi, ctx, generation);
+  }, CONFIG.quotaRefreshIntervalMs);
+  quotaRefreshTimer.unref?.();
+  void refreshFooterQuota(pi, ctx, generation);
+}
+
+function stopQuotaRefresh(): void {
+  quotaRefreshGeneration += 1;
+  if (quotaRefreshTimer) clearInterval(quotaRefreshTimer);
+  quotaRefreshTimer = undefined;
+  quotaRefreshQueued = false;
+  quotaFetchInFlight = undefined;
 }
 
 function summarizeScans(scans: CandidateScan[]): unknown[] {
@@ -431,6 +502,7 @@ export default function (pi: ExtensionAPI) {
     startCrossProcessSync(ctx);
     const state = await maybeEnsureActiveProfile(pi);
     setFooter(ctx, state);
+    startQuotaRefresh(pi, ctx);
     if (isCodexContext(ctx)) void maybeRotateForQuotaSafely(pi, ctx, "session_start");
   });
 
@@ -483,11 +555,13 @@ export default function (pi: ExtensionAPI) {
   pi.on("model_select", (_event, ctx) => {
     const state = readState();
     setFooter(ctx, state);
+    if (ctx === activeContext) void refreshFooterQuota(pi, ctx);
     if (isCodexContext(ctx)) void maybeRotateForQuotaSafely(pi, ctx, "model_select");
   });
 
   pi.on("session_shutdown", (_event, ctx) => {
     providerInFlight = false;
+    stopQuotaRefresh();
     stopWatcher?.();
     stopWatcher = undefined;
     activeContext = undefined;
