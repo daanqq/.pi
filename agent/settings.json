@@ -38,8 +38,7 @@
   },
   "enabledModels": [
     "openai-codex/gpt-5.5",
-    "deepseek/deepseek-v4-pro",
-    "openrouter/nvidia/nemotron-3-ultra-550b-a55b"
+    "deepseek/deepseek-v4-pro"
   ],
   "transport": "auto",
   "collapseChangelog": true,
