@@ -107,7 +107,7 @@ PLAN_MD required sections:
 type HandoffImplementFlags = {
   draft: boolean;
   force: boolean;
-  noConfirm: boolean;
+  confirm: boolean;
   focus: string;
 };
 
@@ -248,14 +248,15 @@ function parseHandoffImplementArgs(args: string): HandoffImplementFlags {
   const flags: HandoffImplementFlags = {
     draft: false,
     force: false,
-    noConfirm: false,
+    confirm: false,
     focus: "",
   };
 
   for (const token of tokens) {
     if (token === "--draft") flags.draft = true;
     else if (token === "--force") flags.force = true;
-    else if (token === "--no-confirm") flags.noConfirm = true;
+    else if (token === "--confirm") flags.confirm = true;
+    else if (token === "--no-confirm") flags.confirm = false;
     else focusTokens.push(token);
   }
 
@@ -588,17 +589,17 @@ Sensitive values were redacted where detected.
           return;
         }
 
-        progress.set("waiting for confirmation");
-        const shouldStart = flags.noConfirm || !ctx.hasUI
-          ? true
-          : await ctx.ui.confirm(
-              "Start fresh implementation session?",
-              `Created:\n- ${handoffFile}\n- ${planFile}\n\nReadiness: ${parsed.readiness}\nReason: ${parsed.reason}\n\nSend kickoff prompt to a new session now?`,
-            );
+        if (flags.confirm && ctx.hasUI) {
+          progress.set("waiting for confirmation");
+          const shouldStart = await ctx.ui.confirm(
+            "Start fresh implementation session?",
+            `Created:\n- ${handoffFile}\n- ${planFile}\n\nReadiness: ${parsed.readiness}\nReason: ${parsed.reason}\n\nSend kickoff prompt to a new session now?`,
+          );
 
-        if (!shouldStart) {
-          ctx.ui.notify(`Implementation handoff saved: ${handoffFile} and ${planFile}`, "info");
-          return;
+          if (!shouldStart) {
+            ctx.ui.notify(`Implementation handoff saved: ${handoffFile} and ${planFile}`, "info");
+            return;
+          }
         }
 
         progress.set("starting fresh session");

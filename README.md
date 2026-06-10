@@ -39,13 +39,13 @@ Personal configuration repository for the `pi` coding agent.
 2. summarizes the active session branch and current git snapshot with the current model;
 3. writes two temp artifacts under `pi-handoffs/`: `handoff-*.md` and `plan-*.md`;
 4. reads `readiness` from generated metadata;
-5. when ready, optionally confirms and starts a fresh session with a kickoff prompt that tells the new agent to read both artifacts before editing.
+5. when ready, starts a fresh session by default with a kickoff prompt that tells the new agent to read both artifacts before editing; pass `--confirm` to require an interactive confirmation first.
 
 Flags:
 
 - `--draft` — only generate files and prefill the editor with the kickoff prompt; do not create a new session.
 - `--force` — allow starting even when the generated plan says `readiness: blocked`.
-- `--no-confirm` — skip the interactive confirmation when the plan is ready.
+- `--confirm` — ask for interactive confirmation before starting the fresh implementation session.
 
 If artifact splitting fails, raw model output is saved as `handoff-implement-raw-*.md` and no new session is started.
 
@@ -79,7 +79,7 @@ If artifact splitting fails, raw model output is saved as `handoff-implement-raw
 | `default-reasoning.ts` | Applies model-specific thinking defaults on manual model selection: DeepSeek/Xiaomi/`gpt-5.4-mini` → `high`, other GPT models → `low`, non-reasoning models → `off`. Skips restored session selections. In non-empty sessions, appends `• Context cache will be invalidated` to the native model-switch status line for any model change and to the native thinking-level status line for GPT/OpenAI thinking changes; switching model or thinking back to the runtime's initial value clears/skips the warning, and reload/startup treats the current model/thinking as the new baseline. | — |
 | `ui-editor.ts` | Owns the custom input editor behavior: removes the editor's horizontal separator bars and auto-triggers autocomplete for `$skill-name` syntax. Project/model labels now live in the footer. | — |
 | `generation-stats.ts` | Tracks assistant generation speed during an agent run: live tokens/sec, time to first token, final output tokens, and final streaming summary. Keeps the footer/status entry active without showing `done`. | — |
-| `handoff.ts` | Writes compact handoff artifacts into the OS temp directory (`pi-handoffs/`). `/handoff` creates a summary document for a fresh agent. `/handoff-implement` generates both a handoff and an implementation-plan contract from the current session branch and git snapshot, gates on plan readiness, and can start a fresh implementation session with a kickoff prompt referencing both files. Uses the current model, a local suggested-skills allowlist, and best-effort secret redaction. | `/handoff [focus]`, `/handoff-implement [--draft] [--force] [--no-confirm] [focus]` |
+| `handoff.ts` | Writes compact handoff artifacts into the OS temp directory (`pi-handoffs/`). `/handoff` creates a summary document for a fresh agent. `/handoff-implement` generates both a handoff and an implementation-plan contract from the current session branch and git snapshot, gates on plan readiness, and starts a fresh implementation session with a kickoff prompt referencing both files by default. Uses the current model, a local suggested-skills allowlist, and best-effort secret redaction. | `/handoff [focus]`, `/handoff-implement [--draft] [--force] [--confirm] [focus]` |
 | `ui-header.ts` | Replaces the built-in header with a slightly brighter smooth darker-to-lighter gradient derived from the current theme thinking level color; it rerenders when thinking level changes. | — |
 | `prompt-audit.ts` | Logs the initial pi prompt breakdown and the serialized provider request payload to `~/.pi/logs/prompt-audit` for prompt/token auditing. Supports one-shot, persistent, environment-enabled, and status modes. | `/prompt-audit [once\|on\|off\|status]`, `PI_PROMPT_AUDIT=1` |
 | `ui-footer.ts` | Installs a two-line custom footer with two-cell horizontal padding: the first line shows project path/git branch on the left and selected model/thinking level on the right; the second line shows token/cost/context stats on the left and extension statuses on the right. Subscription-backed model cost is shown as plain `$0.000` without a `(sub)` suffix. Context usage is shown as absolute current/window tokens (`44k/272k`) instead of a percentage. Footer text uses the active thinking-level theme color; extension-provided ANSI colors are stripped before display. | — |
