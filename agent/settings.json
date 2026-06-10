@@ -1,6 +1,6 @@
 {
-  "lastChangelogVersion": "0.79.0",
-  "defaultThinkingLevel": "high",
+  "lastChangelogVersion": "0.79.1",
+  "defaultThinkingLevel": "off",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.5",
   "packages": [
@@ -39,7 +39,7 @@
   "enabledModels": [
     "openai-codex/gpt-5.5",
     "deepseek/deepseek-v4-pro",
-    "openrouter/xiaomi/mimo-v2.5-pro"
+    "openrouter/nvidia/nemotron-3-ultra-550b-a55b"
   ],
   "transport": "auto",
   "collapseChangelog": true,
@@ -75,5 +75,6 @@
     "-skills/tdd/SKILL.md",
     "-skills/to-prd/SKILL.md",
     "-skills/frontend-design/SKILL.md"
-  ]
+  ],
+  "defaultProjectTrust": "always"
 }
