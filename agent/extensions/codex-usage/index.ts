@@ -424,8 +424,12 @@ function startCrossProcessSync(ctx: ExtensionContext): void {
         // Ignore reload errors; status will show last known state.
       }
       quotaCache = undefined;
-      if (ctx === activeContext) setFooter(ctx, state);
     }
+
+    // Keep footer quota synchronized across multiple Pi windows.  Any window
+    // that fetches fresh quota writes it to shared state; other windows redraw
+    // from that state without issuing their own network request immediately.
+    if (ctx === activeContext) setFooter(ctx, state);
   }, CONFIG.statePollMs);
 }
 

@@ -20,7 +20,7 @@ It:
 - chooses the best saved profile by score: `min(5hRemaining, weeklyRemaining)`;
 - avoids switching auth while a provider request is in flight;
 - reacts to HTTP `429` by cooling down the current profile and trying another one;
-- synchronizes usage/rotation state across multiple Pi processes;
+- synchronizes usage/rotation state and footer quota display across multiple Pi processes;
 - treats async quota checks that outlive `/new`, `/resume`, `/fork`, or `/reload` as cancellation so stale extension contexts do not crash Pi;
 - writes audit entries into the Pi session.
 
@@ -116,7 +116,7 @@ A global lock is used during commit:
 ~/.pi/agent/codex-usage.lock
 ```
 
-Other Pi processes watch the state file and reload auth when `activeProfile` changes.
+Other Pi processes watch the state file, reload auth when `activeProfile` changes, and redraw their footer from the shared last-known quota whenever the state changes. This keeps quota display in multiple Pi windows synchronized without forcing every window to fetch quota immediately.
 
 ## Commands
 
