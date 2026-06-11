@@ -1,6 +1,6 @@
 {
   "lastChangelogVersion": "0.79.1",
-  "defaultThinkingLevel": "medium",
+  "defaultThinkingLevel": "off",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.5",
   "packages": [
@@ -28,7 +28,8 @@
       "extensions": [
         "-src/extension/index.ts"
       ]
-    }
+    },
+    "npm:@ff-labs/pi-fff"
   ],
   "hideThinkingBlock": false,
   "theme": "alabaster",
