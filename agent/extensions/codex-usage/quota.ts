@@ -62,72 +62,122 @@ function shouldRetryQuotaResult(result: QuotaResult): boolean {
   return status === 429 || (status != null && status >= 500);
 }
 
+function quotaWindowLabel(window: any, fallback: QuotaWindow["label"]): QuotaWindow["label"] {
+  const seconds = Number(window?.limit_window_seconds ?? 0);
+  if (Number.isFinite(seconds) && seconds > 0) {
+    if (seconds >= 20 * 24 * 60 * 60) return "30d";
+    if (seconds >= 6 * 24 * 60 * 60) return "7d";
+    return "5h";
+  }
+
+  // Free accounts may expose only a long reset time without
+  // limit_window_seconds.  Classify that single window by its reset horizon so
+  // it is not mislabeled as a 5h quota.
+  const reset = parseDateish(window?.reset_at ?? window?.reset_time_ms).getTime();
+  const diffSeconds = (reset - Date.now()) / 1000;
+  if (Number.isFinite(diffSeconds) && diffSeconds > 0) {
+    if (diffSeconds >= 20 * 24 * 60 * 60) return "30d";
+    if (diffSeconds >= 6 * 24 * 60 * 60) return "7d";
+  }
+  return fallback;
+}
+
 export function parseCodexWindows(data: any): QuotaWindow[] {
   const rateLimit = data?.rate_limit ?? data?.rate_limits ?? {};
   const primary = rateLimit.primary_window ?? rateLimit.primary ?? rateLimit.five_hour_limit ?? rateLimit.five_hour;
-  const secondary = rateLimit.secondary_window ?? rateLimit.secondary ?? rateLimit.weekly_limit ?? rateLimit.weekly;
+  const secondary =
+    rateLimit.secondary_window ??
+    rateLimit.secondary ??
+    rateLimit.weekly_limit ??
+    rateLimit.weekly ??
+    rateLimit.monthly_limit ??
+    rateLimit.monthly ??
+    rateLimit.thirty_day_limit ??
+    rateLimit.thirty_day;
   const windows: QuotaWindow[] = [];
 
   if (primary) {
     const usedPercent = clampPercent(percentLeftToUsedPercent(primary));
+    const label = quotaWindowLabel(primary, "5h");
     windows.push({
-      label: "5h",
+      label,
       usedPercent,
       remainingPercent: clampPercent(100 - usedPercent),
       resetsAt: parseDateish(primary.reset_at ?? primary.reset_time_ms),
-      windowSeconds: Number(primary.limit_window_seconds ?? 5 * 60 * 60),
+      windowSeconds: Number(primary.limit_window_seconds ?? (label === "30d" ? 30 * 24 * 60 * 60 : label === "7d" ? 7 * 24 * 60 * 60 : 5 * 60 * 60)),
     });
   }
 
   if (secondary) {
     const usedPercent = clampPercent(percentLeftToUsedPercent(secondary));
+    const label = quotaWindowLabel(secondary, "7d");
     windows.push({
-      label: "7d",
+      label,
       usedPercent,
       remainingPercent: clampPercent(100 - usedPercent),
       resetsAt: parseDateish(secondary.reset_at ?? secondary.reset_time_ms),
-      windowSeconds: Number(secondary.limit_window_seconds ?? 7 * 24 * 60 * 60),
+      windowSeconds: Number(secondary.limit_window_seconds ?? (label === "30d" ? 30 : 7) * 24 * 60 * 60),
     });
   }
 
   return windows;
 }
 
+function resetTimestamp(window: QuotaWindow | undefined): number | undefined {
+  const value = window?.resetsAt.getTime();
+  return value && value > 0 ? value : undefined;
+}
+
 export function normalizeQuota(result: QuotaResult): NormalizedQuota | undefined {
   if (!result.success) return undefined;
   const fiveWindow = result.windows.find((window) => window.label === "5h");
-  const weeklyWindow = result.windows.find((window) => window.label === "7d");
-  const five = fiveWindow?.remainingPercent;
-  const weekly = weeklyWindow?.remainingPercent;
-  if (five == null || weekly == null) return undefined;
-  const fiveHourRemaining = Math.round(clampPercent(five));
-  const weeklyRemaining = Math.round(clampPercent(weekly));
+  const secondaryWindow = result.windows.find((window) => window.label === "7d" || window.label === "30d");
+  const available = [fiveWindow, secondaryWindow].filter((window): window is QuotaWindow => Boolean(window));
+  if (available.length === 0) return undefined;
+  const fiveHourRemaining = Math.round(clampPercent((fiveWindow ?? secondaryWindow)?.remainingPercent ?? 0));
+  const weeklyRemaining = Math.round(clampPercent((secondaryWindow ?? fiveWindow)?.remainingPercent ?? 0));
+  const remainingValues = available.map((window) => Math.round(clampPercent(window.remainingPercent)));
   return {
     fetchedAt: result.fetchedAt,
     fiveHourRemaining,
     weeklyRemaining,
-    minRemaining: Math.min(fiveHourRemaining, weeklyRemaining),
-    fiveHourResetsAt: fiveWindow?.resetsAt.getTime(),
-    weeklyResetsAt: weeklyWindow?.resetsAt.getTime(),
+    secondaryLabel: secondaryWindow?.label ?? "7d",
+    hasFiveHourWindow: Boolean(fiveWindow),
+    hasSecondaryWindow: Boolean(secondaryWindow),
+    minRemaining: Math.min(...remainingValues),
+    fiveHourResetsAt: resetTimestamp(fiveWindow),
+    weeklyResetsAt: resetTimestamp(secondaryWindow),
   };
 }
 
 export function quotaReason(quota: NormalizedQuota): string {
+  if (!quota.hasFiveHourWindow) return `${quota.secondaryLabel ?? "7d"} quota ${quota.weeklyRemaining}%`;
+  if (!quota.hasSecondaryWindow) return `5h quota ${quota.fiveHourRemaining}%`;
   return quota.fiveHourRemaining <= quota.weeklyRemaining
     ? `5h quota ${quota.fiveHourRemaining}%`
-    : `7d quota ${quota.weeklyRemaining}%`;
+    : `${quota.secondaryLabel ?? "7d"} quota ${quota.weeklyRemaining}%`;
 }
 
 export function formatQuota(quota?: NormalizedQuota): string {
   if (!quota) return "quota unavailable";
-  return `5h:${quota.fiveHourRemaining}% 7d:${quota.weeklyRemaining}%`;
+  const parts: string[] = [];
+  if (quota.hasFiveHourWindow ?? true) parts.push(`5h:${quota.fiveHourRemaining}%`);
+  if (quota.hasSecondaryWindow ?? true) parts.push(`${quota.secondaryLabel ?? "7d"}:${quota.weeklyRemaining}%`);
+  return parts.length > 0 ? parts.join(" ") : "quota unavailable";
 }
 
 export function formatFooterQuota(quota?: NormalizedQuota): string {
   if (!quota) return "quota unavailable";
-  const fiveHourReset = quota.fiveHourResetsAt != null ? resetText(new Date(quota.fiveHourResetsAt)) : "5h";
-  const weeklyReset = quota.weeklyResetsAt != null ? resetText(new Date(quota.weeklyResetsAt)) : "7d";
-  return `${fiveHourReset}:${quota.fiveHourRemaining}% ${weeklyReset}:${quota.weeklyRemaining}%`;
+  const parts: string[] = [];
+  if (quota.hasFiveHourWindow ?? true) {
+    const reset = quota.fiveHourResetsAt != null ? resetText(new Date(quota.fiveHourResetsAt)) : undefined;
+    parts.push(reset ? `${reset}:${quota.fiveHourRemaining}%` : `${quota.fiveHourRemaining}%`);
+  }
+  if (quota.hasSecondaryWindow ?? true) {
+    const reset = quota.weeklyResetsAt != null ? resetText(new Date(quota.weeklyResetsAt)) : undefined;
+    parts.push(reset ? `${reset}:${quota.weeklyRemaining}%` : `${quota.weeklyRemaining}%`);
+  }
+  return parts.length > 0 ? parts.join(" ") : "quota unavailable";
 }
 
 export function resetText(date: Date): string {

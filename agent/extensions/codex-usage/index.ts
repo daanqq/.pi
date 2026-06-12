@@ -2,12 +2,12 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { caList, caRestore, caToken } from "./ca";
+import { deleteProfile, getCurrentProfile, getProfileCredential, listProfiles, saveCurrentProfile, useProfile } from "./profiles";
 import { withRotationLock } from "./lock";
 import { fetchQuotaForCredential, formatFooterQuota, formatQuota, formatQuotaCommandOutput, normalizeQuota, quotaReason } from "./quota";
 import { chooseBestCandidate, isInCooldown, profileLabel, scoreCandidate } from "./scoring";
 import { pruneCooldowns, readState, updateState, watchState, writeState } from "./state";
-import type { CandidateScan, CaProfile, NormalizedQuota, RotationConfig, RotationResult, RotationState } from "./types";
+import type { CandidateScan, CodexProfile, NormalizedQuota, RotationConfig, RotationResult, RotationState, StoredCodexProfile } from "./types";
 import { CODEX_PROVIDER, EXTENSION_ID } from "./types";
 
 const CONFIG: RotationConfig = {
@@ -104,8 +104,8 @@ async function fetchCurrentQuota(ctx: ExtensionContext | ExtensionCommandContext
   return promise;
 }
 
-function stateProfileForCurrent(state: RotationState, caCurrent?: string): string | undefined {
-  return state.activeProfile ?? caCurrent;
+function stateProfileForCurrent(state: RotationState, currentProfile?: string): string | undefined {
+  return state.activeProfile ?? currentProfile;
 }
 
 function setFooter(ctx: ExtensionContext | ExtensionCommandContext, state = readState(), quota?: NormalizedQuota): void {
@@ -141,8 +141,8 @@ function audit(pi: ExtensionAPI, type: string, data: Record<string, unknown>): v
   }
 }
 
-async function scanCandidates(pi: ExtensionAPI, state: RotationState, skipProfile?: string, signal?: AbortSignal): Promise<CandidateScan[]> {
-  const list = await caList(pi, signal);
+async function scanCandidates(state: RotationState, skipProfile?: string, signal?: AbortSignal): Promise<CandidateScan[]> {
+  const list = listProfiles();
   const now = Date.now();
   pruneCooldowns(state, now);
 
@@ -154,7 +154,8 @@ async function scanCandidates(pi: ExtensionAPI, state: RotationState, skipProfil
 
       try {
         if (signal?.aborted) return { profile, eligible: false, reason: "aborted" };
-        const token = await caToken(pi, profile.name, signal);
+        if (signal?.aborted) return { profile, eligible: false, reason: "aborted" };
+        const token = getProfileCredential(profile.name);
         const quota = await fetchQuotaForCredential(token.credential, token.accountId ?? profile.accountId, signal);
         const normalizedQuota = normalizeQuota(quota);
         if (normalizedQuota) state.lastQuotaByProfile[profile.name] = normalizedQuota;
@@ -180,16 +181,11 @@ async function commitRotation(
 ): Promise<RotationResult> {
   if (!winner.token) return { rotated: false, reason: "winner has no token" };
 
-  try {
-    ctx.modelRegistry.authStorage.set(CODEX_PROVIDER, winner.token.credential);
-  } catch {
-    await caRestore(pi, winner.profile.name, safeSignal(ctx));
-    ctx.modelRegistry.authStorage.reload();
-  }
+  const activeToken = useProfile(ctx, winner.profile.name);
 
   state.activeProfile = winner.profile.name;
-  state.activeAccountId = winner.token.accountId ?? winner.profile.accountId;
-  state.activeEmail = winner.token.email ?? winner.profile.email;
+  state.activeAccountId = activeToken.accountId ?? winner.token.accountId ?? winner.profile.accountId;
+  state.activeEmail = activeToken.email ?? winner.token.email ?? winner.profile.email;
   state.lastRotationAt = Date.now();
   if (winner.normalizedQuota) state.lastQuotaByProfile[winner.profile.name] = winner.normalizedQuota;
   writeState(state);
@@ -214,10 +210,16 @@ async function rotateToBest(
     const state = readState();
     pruneCooldowns(state);
     const signal = safeSignal(ctx);
-    const list = await caList(pi, signal).catch(() => ({ profiles: [] as CaProfile[], current: undefined }));
+    const list = (() => {
+      try {
+        return listProfiles();
+      } catch {
+        return { profiles: [] as CodexProfile[], current: undefined };
+      }
+    })();
     const from = stateProfileForCurrent(state, list.current);
     const skipProfile = options.skipProfile ?? from;
-    const scans = await scanCandidates(pi, state, skipProfile, signal);
+    const scans = await scanCandidates(state, skipProfile, signal);
     const winner = chooseBestCandidate(scans);
     if (!winner) {
       writeState(state);
@@ -234,10 +236,10 @@ async function rotateToProfile(pi: ExtensionAPI, ctx: ExtensionCommandContext, p
     const state = readState();
     pruneCooldowns(state);
     const signal = safeSignal(ctx);
-    const list = await caList(pi, signal);
+    const list = listProfiles();
     const from = stateProfileForCurrent(state, list.current);
     const profileInfo = list.profiles.find((candidate) => candidate.name === profile) ?? { name: profile };
-    const token = await caToken(pi, profile, signal);
+    const token = getProfileCredential(profile);
     const quotaResult = await fetchQuotaForCredential(token.credential, token.accountId ?? profileInfo.accountId, signal);
     const normalizedQuota = normalizeQuota(quotaResult);
     if (!quotaResult.success || !normalizedQuota) throw new Error(`Cannot switch to ${profile}: quota unavailable`);
@@ -246,20 +248,16 @@ async function rotateToProfile(pi: ExtensionAPI, ctx: ExtensionCommandContext, p
   });
 }
 
-async function maybeEnsureActiveProfile(pi: ExtensionAPI): Promise<RotationState> {
+async function maybeEnsureActiveProfile(): Promise<RotationState> {
   const state = readState();
   if (state.activeProfile) return state;
-  try {
-    const list = await caList(pi);
-    if (list.current) {
-      const profile = list.profiles.find((candidate) => candidate.name === list.current);
-      state.activeProfile = list.current;
-      state.activeAccountId = profile?.accountId;
-      state.activeEmail = profile?.email;
-      writeState(state);
-    }
-  } catch {
-    // ca may be unavailable; state will remain unknown.
+  const current = getCurrentProfile();
+  if (current) {
+    const profile = listProfiles().profiles.find((candidate) => candidate.name === current);
+    state.activeProfile = current;
+    state.activeAccountId = profile?.accountId;
+    state.activeEmail = profile?.email;
+    writeState(state);
   }
   return state;
 }
@@ -267,7 +265,7 @@ async function maybeEnsureActiveProfile(pi: ExtensionAPI): Promise<RotationState
 async function maybeRotateForQuota(pi: ExtensionAPI, ctx: ExtensionContext | ExtensionCommandContext, hook: string): Promise<void> {
   if (!isActiveEventContext(ctx) || !isCodexContext(ctx)) return;
   if (safeSignal(ctx)?.aborted) return;
-  const state = await maybeEnsureActiveProfile(pi);
+  const state = await maybeEnsureActiveProfile();
   if (!isActiveEventContext(ctx) || safeSignal(ctx)?.aborted) return;
   const quota = await fetchCurrentQuota(ctx, true);
   if (!isActiveEventContext(ctx) || safeSignal(ctx)?.aborted) return;
@@ -311,7 +309,7 @@ async function maybeRotateForQuotaSafely(pi: ExtensionAPI, ctx: ExtensionContext
   }
 }
 
-async function refreshFooterQuota(pi: ExtensionAPI, ctx: ExtensionContext, generation = quotaRefreshGeneration): Promise<void> {
+async function refreshFooterQuota(ctx: ExtensionContext, generation = quotaRefreshGeneration): Promise<void> {
   if (!ctx.hasUI) return;
   if (!isCodexContext(ctx)) {
     setFooter(ctx, readState());
@@ -324,7 +322,7 @@ async function refreshFooterQuota(pi: ExtensionAPI, ctx: ExtensionContext, gener
 
   quotaRefreshInFlight = true;
   try {
-    const state = await maybeEnsureActiveProfile(pi);
+    const state = await maybeEnsureActiveProfile();
     if (generation !== quotaRefreshGeneration || !isActiveEventContext(ctx) || safeSignal(ctx)?.aborted) return;
 
     const quota = await fetchCurrentQuota(ctx, true);
@@ -342,23 +340,23 @@ async function refreshFooterQuota(pi: ExtensionAPI, ctx: ExtensionContext, gener
     quotaRefreshInFlight = false;
     if (quotaRefreshQueued && generation === quotaRefreshGeneration && isActiveEventContext(ctx)) {
       quotaRefreshQueued = false;
-      void refreshFooterQuota(pi, ctx, generation);
+      void refreshFooterQuota(ctx, generation);
     } else {
       quotaRefreshQueued = false;
     }
   }
 }
 
-function startQuotaRefresh(pi: ExtensionAPI, ctx: ExtensionContext): void {
+function startQuotaRefresh(ctx: ExtensionContext): void {
   if (quotaRefreshTimer) clearInterval(quotaRefreshTimer);
   quotaRefreshGeneration += 1;
   if (!ctx.hasUI) return;
   const generation = quotaRefreshGeneration;
   quotaRefreshTimer = setInterval(() => {
-    if (isActiveEventContext(ctx)) void refreshFooterQuota(pi, ctx, generation);
+    if (isActiveEventContext(ctx)) void refreshFooterQuota(ctx, generation);
   }, CONFIG.quotaRefreshIntervalMs);
   quotaRefreshTimer.unref?.();
-  void refreshFooterQuota(pi, ctx, generation);
+  void refreshFooterQuota(ctx, generation);
 }
 
 function stopQuotaRefresh(): void {
@@ -381,7 +379,7 @@ function summarizeScans(scans: CandidateScan[]): unknown[] {
 }
 
 function formatScans(scans: CandidateScan[]): string {
-  if (scans.length === 0) return "No ca profiles found.";
+  if (scans.length === 0) return "No Codex profiles found.";
   return scans
     .map((scan) => {
       const status = scan.eligible ? `eligible score=${scan.score}` : `skip ${scan.reason ?? "not eligible"}`;
@@ -408,6 +406,37 @@ async function commandStatus(ctx: ExtensionCommandContext): Promise<string> {
     `current quota: ${formatQuota(quota ?? (state.activeProfile ? state.lastQuotaByProfile[state.activeProfile] : undefined))}`,
     `cooldowns:${cooldowns.length ? `\n${cooldowns.join("\n")}` : " none"}`,
   ].join("\n");
+}
+
+function commandProfileStatus(): string {
+  const state = readState();
+  const list = listProfiles();
+  const current = list.current;
+  const currentInfo = current ? list.profiles.find((profile) => profile.name === current) : undefined;
+  return [
+    `profileStoreCurrent: ${current ?? "none"}`,
+    `stateActiveProfile: ${state.activeProfile ?? "unknown"}`,
+    `currentProfileEmail: ${currentInfo?.email ?? "unknown"}`,
+    `profiles: ${list.profiles.length}`,
+  ].join("\n");
+}
+
+function commandProfileList(): string {
+  const list = listProfiles();
+  if (list.profiles.length === 0) return "No Codex profiles saved.";
+  return list.profiles
+    .map((profile) => `${profile.name === list.current ? "*" : " "} ${profileLabel(profile)}`)
+    .join("\n");
+}
+
+function syncStateForProfile(profile: Pick<StoredCodexProfile, "name" | "accountId" | "email"> | { name: string; accountId?: string; email?: string }): RotationState {
+  const state = updateState((draft) => {
+    draft.activeProfile = profile.name;
+    draft.activeAccountId = profile.accountId;
+    draft.activeEmail = profile.email;
+  });
+  quotaCache = undefined;
+  return state;
 }
 
 function startCrossProcessSync(ctx: ExtensionContext): void {
@@ -451,6 +480,78 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
+  pi.registerCommand("codex:profile", {
+    description: "Manage native Codex auth profiles: status|list|save <name>|use <name>|delete <name>",
+    getArgumentCompletions: (prefix: string) => {
+      const actions = ["status", "list", "save ", "use ", "delete "];
+      const [action, rest = ""] = prefix.split(/\s+/, 2);
+      if ((action === "use" || action === "delete") && prefix.includes(" ")) {
+        const lead = `${action} `;
+        return listProfiles().profiles
+          .map((profile) => `${lead}${profile.name}`)
+          .filter((value) => value.startsWith(prefix))
+          .map((value) => ({ value, label: value }));
+      }
+      void rest;
+      return actions.filter((command) => command.startsWith(prefix)).map((value) => ({ value, label: value }));
+    },
+    handler: async (args, ctx) => {
+      const [action, ...rest] = args.trim().split(/\s+/).filter(Boolean);
+      try {
+        if (!action || action === "status") {
+          notify(ctx, ctx.ui.theme.fg("dim", commandProfileStatus()), "info");
+          setFooter(ctx);
+          return;
+        }
+        if (action === "list") {
+          notify(ctx, ctx.ui.theme.fg("dim", commandProfileList()), "info");
+          setFooter(ctx);
+          return;
+        }
+        if (action === "save") {
+          const name = rest.join(" ").trim();
+          if (!name) throw new Error("Usage: /codex:profile save <name>");
+          const profile = saveCurrentProfile(ctx, name);
+          const state = syncStateForProfile(profile);
+          setFooter(ctx, state);
+          notify(ctx, `Saved Codex profile '${profile.name}'`, "info");
+          return;
+        }
+        if (action === "use") {
+          const name = rest.join(" ").trim();
+          if (!name) throw new Error("Usage: /codex:profile use <name>");
+          const profile = useProfile(ctx, name);
+          const state = syncStateForProfile(profile);
+          setFooter(ctx, state);
+          notify(ctx, `Using Codex profile '${profile.name}'`, "info");
+          return;
+        }
+        if (action === "delete") {
+          const name = rest.join(" ").trim();
+          if (!name) throw new Error("Usage: /codex:profile delete <name>");
+          const wasCurrent = getCurrentProfile() === name;
+          deleteProfile(name);
+          const state = updateState((draft) => {
+            if (draft.activeProfile === name || wasCurrent) {
+              draft.activeProfile = getCurrentProfile();
+              const current = draft.activeProfile ? listProfiles().profiles.find((profile) => profile.name === draft.activeProfile) : undefined;
+              draft.activeAccountId = current?.accountId;
+              draft.activeEmail = current?.email;
+            }
+            delete draft.lastQuotaByProfile[name];
+            delete draft.cooldowns[name];
+          });
+          setFooter(ctx, state);
+          notify(ctx, `Deleted Codex profile '${name}'`, "info");
+          return;
+        }
+        notify(ctx, "Usage: /codex:profile status|list|save <name>|use <name>|delete <name>", "warning");
+      } catch (error) {
+        notify(ctx, `Codex profile error: ${error instanceof Error ? error.message : String(error)}`, "error");
+      }
+    },
+  });
+
   pi.registerCommand("codex:rotate", {
     description: "Manage Codex OAuth profile rotation: status|now|on|off|profile <name>|scan",
     getArgumentCompletions: (prefix: string) => {
@@ -476,7 +577,7 @@ export default function (pi: ExtensionAPI) {
         }
         if (action === "scan") {
           const state = readState();
-          const scans = await scanCandidates(pi, state, state.activeProfile, safeSignal(ctx));
+          const scans = await scanCandidates(state, state.activeProfile, safeSignal(ctx));
           notify(ctx, ctx.ui.theme.fg("dim", formatScans(scans)), "info");
           setFooter(ctx, state);
           return;
@@ -504,9 +605,9 @@ export default function (pi: ExtensionAPI) {
     activeContext = ctx;
     ctx.modelRegistry.authStorage.reload();
     startCrossProcessSync(ctx);
-    const state = await maybeEnsureActiveProfile(pi);
+    const state = await maybeEnsureActiveProfile();
     setFooter(ctx, state);
-    startQuotaRefresh(pi, ctx);
+    startQuotaRefresh(ctx);
     if (isCodexContext(ctx)) void maybeRotateForQuotaSafely(pi, ctx, "session_start");
   });
 
@@ -559,7 +660,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("model_select", (_event, ctx) => {
     const state = readState();
     setFooter(ctx, state);
-    if (ctx === activeContext) void refreshFooterQuota(pi, ctx);
+    if (ctx === activeContext) void refreshFooterQuota(ctx);
     if (isCodexContext(ctx)) void maybeRotateForQuotaSafely(pi, ctx, "model_select");
   });
 

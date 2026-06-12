@@ -16,26 +16,37 @@ export type RotationConfig = {
   retryAfter429: RetryAfter429Policy;
 };
 
-export type CaProfile = {
+export type CodexProfile = {
   name: string;
   accountId?: string;
   email?: string;
 };
 
-export type CaListResult = {
-  profiles: CaProfile[];
+export type ProfileListResult = {
+  profiles: CodexProfile[];
   current?: string;
 };
 
-export type CaTokenResult = {
+export type ProfileCredentialResult = {
   name: string;
   credential: AuthCredential;
   accountId?: string;
   email?: string;
 };
 
+export type StoredCodexProfile = {
+  version: 1;
+  name: string;
+  provider: "openai-codex";
+  credential: AuthCredential;
+  accountId?: string;
+  email?: string;
+  savedAt: number;
+  lastUsedAt?: number;
+};
+
 export type QuotaWindow = {
-  label: "5h" | "7d";
+  label: "5h" | "7d" | "30d";
   usedPercent: number;
   remainingPercent: number;
   resetsAt: Date;
@@ -50,6 +61,9 @@ export type NormalizedQuota = {
   fetchedAt: number;
   fiveHourRemaining: number;
   weeklyRemaining: number;
+  secondaryLabel: "7d" | "30d";
+  hasFiveHourWindow?: boolean;
+  hasSecondaryWindow?: boolean;
   minRemaining: number;
   fiveHourResetsAt?: number;
   weeklyResetsAt?: number;
@@ -72,8 +86,8 @@ export type RotationState = {
 };
 
 export type CandidateScan = {
-  profile: CaProfile;
-  token?: CaTokenResult;
+  profile: CodexProfile;
+  token?: ProfileCredentialResult;
   quota?: QuotaResult;
   normalizedQuota?: NormalizedQuota;
   score?: number;

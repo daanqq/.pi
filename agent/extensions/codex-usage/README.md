@@ -1,11 +1,12 @@
 # Codex Usage Extension
 
-`codex-usage` is the unified Codex quota and OAuth profile usage extension for Pi.
+`codex-usage` is the unified Codex quota and native OAuth profile usage extension for Pi.
 
-It combines two responsibilities that used to be split across `codex-quotas.ts` and `codex-rotation/`:
+It:
 
-1. show current Codex subscription quota;
-2. rotate the `openai-codex` OAuth credential across saved `ca` profiles when quota is low or a profile is rate-limited.
+1. shows current Codex subscription quota;
+2. saves and switches `openai-codex` credentials as Pi-owned profiles;
+3. rotates across saved profiles when quota is low or a profile is rate-limited.
 
 ## Purpose
 
@@ -13,38 +14,57 @@ The extension keeps Codex usable without restarting Pi or manually editing auth 
 
 It:
 
-- fetches and displays Codex 5h and 7d quota windows;
+- fetches and displays Codex quota windows: 5h plus 7d/30d when present, or just 30d on accounts that expose only a monthly quota;
 - refreshes the active footer quota every 60 seconds so remaining percentages do not stay stale during long idle sessions;
+- stores named Codex profiles directly under Pi's agent directory;
 - tracks last known quota per saved profile;
 - rotates away from a profile whose weakest quota window is almost exhausted;
-- chooses the best saved profile by score: `min(5hRemaining, weeklyRemaining)`;
+- chooses the best saved profile by score: the weakest remaining quota window;
 - avoids switching auth while a provider request is in flight;
 - reacts to HTTP `429` by cooling down the current profile and trying another one;
 - synchronizes usage/rotation state and footer quota display across multiple Pi processes;
 - treats async quota checks that outlive `/new`, `/resume`, `/fork`, or `/reload` as cancellation so stale extension contexts do not crash Pi;
 - writes audit entries into the Pi session.
 
-## Requirements
+## Profile storage and security
 
-Profile rotation expects a `ca` command with JSON APIs:
+Native profiles are stored as plaintext JSON at:
 
-```bash
-ca list --json
-ca token <profile> --json
+```text
+~/.pi/agent/codex-usage-profiles/<name>.json
+~/.pi/agent/codex-usage-profiles/.current
 ```
 
-`ca token <profile> --json` must return the profile credential **without changing global active auth**.
+Profile files contain OAuth/API credentials for `openai-codex`. The extension writes them with best-effort `0600` permissions and keeps the directory private where the filesystem supports it, but there is no OS keychain or encryption layer.
 
-Optional fallback APIs:
+Profiles are not imported automatically from legacy `~/.codex/auth-profiles`. If you used a previous shell-based auth-profile workflow, migrate those profiles once into this new store.
 
-```bash
-ca restore <profile> --json
-ca current --json
+## Basic workflow
+
+Save the currently configured Pi `openai-codex` auth as a named profile:
+
+```text
+/codex:profile save main
+/codex:profile save alt
 ```
 
-If `ca` is not an executable in `PATH`, the wrapper can fall back to the `ca` zsh function from `~/.pi/agent/zshrc` when available.
+Inspect and switch profiles:
 
-The quota viewer can still query the currently configured `openai-codex` auth directly from Pi auth storage, with a fallback account id from `~/.codex/auth.json`.
+```text
+/codex:profile status
+/codex:profile list
+/codex:profile use main
+```
+
+Scan or rotate:
+
+```text
+/codex:rotate scan
+/codex:rotate now
+/codex:rotate profile alt
+```
+
+`/codex:profile save <name>` overwrites an existing profile with the same name and makes it current. `/codex:profile use <name>` switches auth and updates profile state, but does not change whether automatic rotation is enabled.
 
 ## Rotation rules
 
@@ -58,21 +78,21 @@ eligibleAbovePercent = 10;
 Current profile is considered low when:
 
 ```text
-min(5hRemaining, 7dRemaining) <= 5
+min(available remaining quota windows) <= 5
 ```
 
 A candidate is eligible when:
 
 ```text
 quota fetch succeeds
-AND min(5hRemaining, 7dRemaining) >= 10
+AND min(available remaining quota windows) >= 10
 AND profile is not in cooldown
 ```
 
 The selected profile is the eligible candidate with the highest score:
 
 ```text
-score = min(5hRemaining, 7dRemaining)
+score = min(available remaining quota windows)
 ```
 
 ## When rotation runs
@@ -124,13 +144,25 @@ Other Pi processes watch the state file, reload auth when `activeProfile` change
 
 Shows current Codex subscription quota for the active `openai-codex` credential.
 
-Output includes:
+### `/codex:profile status`
 
-- subscription email when available;
-- 5h remaining percentage and reset time;
-- 7d remaining percentage and reset time.
+Shows the current native profile marker, active state profile, current profile email when known, and saved profile count.
 
-This command is the migrated command-only behavior from the old `codex-quotas.ts` extension.
+### `/codex:profile list`
+
+Lists saved native profiles. The current profile is marked with `*`.
+
+### `/codex:profile save <name>`
+
+Saves the current Pi `openai-codex` credential to `<name>`, overwriting any existing profile with that name, and makes it active/current.
+
+### `/codex:profile use <name>`
+
+Switches Pi `openai-codex` auth to a saved profile and updates active profile state. This does not toggle automatic rotation.
+
+### `/codex:profile delete <name>`
+
+Deletes a saved native profile. If the deleted profile is current, `.current` and active profile state are cleared.
 
 ### `/codex:rotate status`
 
@@ -146,8 +178,6 @@ Shows current usage/rotation state:
 
 Forces a scan of saved profiles and switches to the best eligible profile.
 
-Use this when you want immediate rotation instead of waiting for `turn_end` or `agent_end`.
-
 ### `/codex:rotate on`
 
 Enables automatic rotation persistently.
@@ -160,22 +190,14 @@ Manual commands like `now` and `profile <name>` still work.
 
 ### `/codex:rotate profile <name>`
 
-Manually switches Codex auth to a specific saved `ca` profile.
-
-Example:
-
-```text
-/codex:rotate profile alt1
-```
-
-Before switching, the extension fetches the profile token and verifies quota is available.
+Manually switches Codex auth to a specific saved native profile after verifying quota is available.
 
 ### `/codex:rotate scan`
 
-Scans all saved `ca` profiles and displays:
+Scans all saved native profiles and displays:
 
 - profile name/email;
-- 5h and 7d quota;
+- 5h and 7d/30d quota windows when present;
 - score;
 - whether the profile is eligible;
 - skip reason for ineligible profiles.

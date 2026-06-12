@@ -1,4 +1,4 @@
-import type { CandidateScan, CaProfile, RotationState } from "./types";
+import type { CandidateScan, CodexProfile, RotationState } from "./types";
 
 export function isInCooldown(state: RotationState, profile: string, now = Date.now()): string | undefined {
   const cooldown = state.cooldowns[profile];
@@ -26,7 +26,7 @@ export function chooseBestCandidate(scans: CandidateScan[]): CandidateScan | und
     .sort((a, b) => (b.score ?? -1) - (a.score ?? -1) || a.profile.name.localeCompare(b.profile.name))[0];
 }
 
-export function profileLabel(profile?: Pick<CaProfile, "name" | "email">): string {
+export function profileLabel(profile?: Pick<CodexProfile, "name" | "email">): string {
   if (!profile) return "unknown";
   return profile.email ? `${profile.name} <${profile.email}>` : profile.name;
 }
