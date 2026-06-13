@@ -1,8 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { homedir } from "node:os";
-
-export const LOCK_PATH = join(homedir(), ".pi", "agent", "codex-usage.lock");
+import { ensureCodexUsageDir, LOCK_PATH } from "./paths";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
@@ -21,6 +19,7 @@ function lockAgeMs(): number | undefined {
 }
 
 function tryAcquire(staleMs: number): boolean {
+  ensureCodexUsageDir();
   try {
     mkdirSync(LOCK_PATH);
     writeFileSync(join(LOCK_PATH, "owner.json"), JSON.stringify({ pid: process.pid, createdAt: Date.now() }), "utf8");

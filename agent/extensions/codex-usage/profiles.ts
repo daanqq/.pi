@@ -1,14 +1,13 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { basename, join, sep } from "node:path";
 import type { ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AuthCredential, CodexProfile, ProfileCredentialResult, ProfileListResult, StoredCodexProfile } from "./types";
+import { ensureCodexUsageDir, PROFILE_DIR } from "./paths";
 import { CODEX_PROVIDER } from "./types";
-
-export const PROFILE_DIR = join(homedir(), ".pi", "agent", "codex-usage-profiles");
 const CURRENT_FILE = join(PROFILE_DIR, ".current");
 
 function ensureProfileDir(): void {
+  ensureCodexUsageDir();
   mkdirSync(PROFILE_DIR, { recursive: true, mode: 0o700 });
 }
 

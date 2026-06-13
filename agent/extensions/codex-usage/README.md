@@ -31,8 +31,8 @@ It:
 Native profiles are stored as plaintext JSON at:
 
 ```text
-~/.pi/agent/codex-usage-profiles/<name>.json
-~/.pi/agent/codex-usage-profiles/.current
+~/.pi/agent/codex-usage/profiles/<name>.json
+~/.pi/agent/codex-usage/profiles/.current
 ```
 
 Profile files contain OAuth/API credentials for `openai-codex`. The extension writes them with best-effort `0600` permissions and keeps the directory private where the filesystem supports it, but there is no OS keychain or encryption layer.
@@ -113,13 +113,7 @@ Rotation/checks happen at safer boundaries:
 State is stored at:
 
 ```text
-~/.pi/agent/codex-usage-state.json
-```
-
-For migration, the extension can read the legacy state file if the new one does not exist:
-
-```text
-~/.pi/agent/codex-rotation-state.json
+~/.pi/agent/codex-usage/state.json
 ```
 
 The state file records:
@@ -133,7 +127,7 @@ The state file records:
 A global lock is used during commit:
 
 ```text
-~/.pi/agent/codex-usage.lock
+~/.pi/agent/codex-usage/lock
 ```
 
 Other Pi processes watch the state file, reload auth when `activeProfile` changes, and redraw their footer from the shared last-known quota whenever the state changes. This keeps quota display in multiple Pi windows synchronized without forcing every window to fetch quota immediately.

@@ -1,10 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, watch, type FSWatcher } from "node:fs";
-import { dirname, join } from "node:path";
-import { homedir } from "node:os";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, watch, type FSWatcher } from "node:fs";
+import { dirname } from "node:path";
+import { ensureCodexUsageDir, STATE_PATH } from "./paths";
 import type { RotationState } from "./types";
-
-export const STATE_PATH = join(homedir(), ".pi", "agent", "codex-usage-state.json");
-const LEGACY_STATE_PATH = join(homedir(), ".pi", "agent", "codex-rotation-state.json");
 
 export function defaultState(): RotationState {
   return { version: 1, autoEnabled: true, cooldowns: {}, lastQuotaByProfile: {} };
@@ -24,15 +21,15 @@ function sanitizeState(data: any): RotationState {
 }
 
 export function ensureStateDir(): void {
-  mkdirSync(dirname(STATE_PATH), { recursive: true });
+  ensureCodexUsageDir();
+  mkdirSync(dirname(STATE_PATH), { recursive: true, mode: 0o700 });
 }
 
 export function readState(): RotationState {
   ensureStateDir();
-  const path = existsSync(STATE_PATH) ? STATE_PATH : LEGACY_STATE_PATH;
-  if (!existsSync(path)) return defaultState();
+  if (!existsSync(STATE_PATH)) return defaultState();
   try {
-    return sanitizeState(JSON.parse(readFileSync(path, "utf8")));
+    return sanitizeState(JSON.parse(readFileSync(STATE_PATH, "utf8")));
   } catch {
     return defaultState();
   }
@@ -41,8 +38,18 @@ export function readState(): RotationState {
 export function writeState(state: RotationState): void {
   ensureStateDir();
   const tmp = `${STATE_PATH}.${process.pid}.${Date.now()}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify(sanitizeState(state), null, 2)}\n`, "utf8");
+  writeFileSync(tmp, `${JSON.stringify(sanitizeState(state), null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  try {
+    chmodSync(tmp, 0o600);
+  } catch {
+    // chmod is best-effort on non-POSIX filesystems.
+  }
   renameSync(tmp, STATE_PATH);
+  try {
+    chmodSync(STATE_PATH, 0o600);
+  } catch {
+    // chmod is best-effort on non-POSIX filesystems.
+  }
 }
 
 export function updateState(mutator: (state: RotationState) => void): RotationState {
@@ -79,7 +86,7 @@ export function watchState(onChange: () => void, pollMs: number): () => void {
 
   try {
     watcher = watch(dirname(STATE_PATH), (event, filename) => {
-      if (filename?.toString() === "codex-usage-state.json" || filename?.toString() === "codex-rotation-state.json" || event === "rename") check();
+      if (filename?.toString() === "state.json" || event === "rename") check();
     });
   } catch {
     // Polling below is enough on filesystems without watch support.
