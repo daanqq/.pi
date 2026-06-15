@@ -47,7 +47,7 @@ Flags:
 - `--force` — allow starting even when the generated plan says `readiness: blocked`.
 - `--confirm` — ask for interactive confirmation before starting the fresh implementation session.
 
-Progress while `/handoff-implement` runs is refreshed every second.
+Progress while `/handoff-implement` runs is refreshed every second. `Esc` cancels in-flight handoff generation; `/quit` aborts it before shutdown.
 
 If artifact splitting fails, raw model output is saved as `handoff-implement-raw-*.md` and no new session is started.
 

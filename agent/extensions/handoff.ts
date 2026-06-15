@@ -132,6 +132,8 @@ type ProgressStatus = {
   clear: () => void;
 };
 
+type AbortControllerSet = Set<AbortController>;
+
 function timestampForFile(date = new Date()): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
@@ -143,6 +145,14 @@ function formatElapsed(ms: number): string {
   const minutes = Math.floor(seconds / 60);
   const rest = String(seconds % 60).padStart(2, "0");
   return `${minutes}m${rest}s`;
+}
+
+function abortActiveHandoffs(active: AbortControllerSet): void {
+  for (const controller of active) controller.abort();
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && (error.name === "AbortError" || error.message.toLowerCase().includes("aborted"));
 }
 
 function createProgressStatus(ctx: ExtensionCommandContext): ProgressStatus {
@@ -408,6 +418,7 @@ async function generateHandoffImplementArtifacts(
   gitSnapshot: GitSnapshot,
   ctx: ExtensionCommandContext,
   progress?: ProgressStatus,
+  signal?: AbortSignal,
 ): Promise<string | undefined> {
   progress?.set("checking model credentials");
   const auth = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model);
@@ -427,7 +438,7 @@ async function generateHandoffImplementArtifacts(
   const response = await complete(
     ctx.model,
     { systemPrompt: IMPLEMENT_SYSTEM_PROMPT, messages: [userMessage] },
-    { apiKey: auth.apiKey, headers: auth.headers },
+    { apiKey: auth.apiKey, headers: auth.headers, signal },
   );
 
   if (response.stopReason === "aborted") {
@@ -443,12 +454,47 @@ async function generateHandoffImplementArtifacts(
 }
 
 export default function (pi: ExtensionAPI) {
+  const activeHandoffControllers: AbortControllerSet = new Set();
+  let unsubscribeEsc: (() => void) | undefined;
+
+  pi.on("session_start", (_event, ctx) => {
+    unsubscribeEsc?.();
+    unsubscribeEsc = ctx.ui.onTerminalInput((data) => {
+      if (data !== "\x1b" || activeHandoffControllers.size === 0) return;
+      abortActiveHandoffs(activeHandoffControllers);
+      return { consume: true };
+    });
+  });
+
+  pi.on("input", (event) => {
+    if (event.text.trim() === "/quit" && activeHandoffControllers.size > 0) abortActiveHandoffs(activeHandoffControllers);
+    return { action: "continue" };
+  });
+
+  pi.on("session_shutdown", () => {
+    unsubscribeEsc?.();
+    unsubscribeEsc = undefined;
+    abortActiveHandoffs(activeHandoffControllers);
+  });
+
+  pi.registerCommand("quit", {
+    description: "Abort active handoff generation and quit",
+    handler: async (_args, ctx) => {
+      abortActiveHandoffs(activeHandoffControllers);
+      ctx.shutdown();
+    },
+  });
+
   pi.registerCommand("handoff", {
     description: "Write a handoff document to the OS temp directory",
     handler: async (args, ctx) => {
-      await ctx.waitForIdle();
+      const controller = new AbortController();
+      activeHandoffControllers.add(controller);
 
-      const focus = args.trim();
+      try {
+        await ctx.waitForIdle();
+
+        const focus = args.trim();
       const sessionFile = ctx.sessionManager.getSessionFile() ?? "ephemeral";
       const branch = ctx.sessionManager.getBranch() as unknown[];
       const conversation = redact(conversationFromBranch(branch));
@@ -475,7 +521,7 @@ export default function (pi: ExtensionAPI) {
       const response = await complete(
         ctx.model,
         { systemPrompt: SYSTEM_PROMPT, messages: [userMessage] },
-        { apiKey: auth.apiKey, headers: auth.headers },
+        { apiKey: auth.apiKey, headers: auth.headers, signal: controller.signal },
       );
 
       if (response.stopReason === "aborted") {
@@ -511,7 +557,16 @@ Sensitive values were redacted where detected.
 
       const file = await writeTempMarkdown("handoff", markdown);
 
-      ctx.ui.notify(`Handoff saved: ${file}`, "info");
+        ctx.ui.notify(`Handoff saved: ${file}`, "info");
+      } catch (error) {
+        if (isAbortError(error)) {
+          ctx.ui.notify("Handoff creation cancelled", "info");
+          return;
+        }
+        throw error;
+      } finally {
+        activeHandoffControllers.delete(controller);
+      }
     },
   });
 
@@ -519,7 +574,9 @@ Sensitive values were redacted where detected.
     description: "Create handoff + implementation plan artifacts, then start a fresh implementation session",
     handler: async (args, ctx) => {
       const progress = createProgressStatus(ctx);
+      const controller = new AbortController();
       let progressActive = true;
+      activeHandoffControllers.add(controller);
 
       try {
         progress.set("waiting for current turn");
@@ -539,7 +596,16 @@ Sensitive values were redacted where detected.
 
         progress.set("collecting git snapshot");
         const gitSnapshot = await collectGitSnapshot(pi, ctx);
-        const raw = await generateHandoffImplementArtifacts(conversation, flags.focus, ctx.cwd, sessionFile, gitSnapshot, ctx, progress);
+        const raw = await generateHandoffImplementArtifacts(
+          conversation,
+          flags.focus,
+          ctx.cwd,
+          sessionFile,
+          gitSnapshot,
+          ctx,
+          progress,
+          controller.signal,
+        );
         if (!raw) return;
 
         progress.set("parsing model output");
@@ -619,7 +685,14 @@ Sensitive values were redacted where detected.
         if (result.cancelled) {
           ctx.ui.notify(`New session cancelled. Implementation handoff saved: ${handoffFile} and ${planFile}`, "warning");
         }
+      } catch (error) {
+        if (isAbortError(error)) {
+          ctx.ui.notify("Implementation handoff creation cancelled", "info");
+          return;
+        }
+        throw error;
       } finally {
+        activeHandoffControllers.delete(controller);
         if (progressActive) progress.clear();
       }
     },
