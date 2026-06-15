@@ -162,7 +162,7 @@ function createProgressStatus(ctx: ExtensionCommandContext): ProgressStatus {
       timer = setInterval(() => {
         if (!current) return;
         notify(`${current} (${formatElapsed(Date.now() - phaseStarted)})`);
-      }, 15_000);
+      }, 1_000);
     },
     clear() {
       current = "";

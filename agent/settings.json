@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.79.2",
+  "lastChangelogVersion": "0.79.3",
   "defaultThinkingLevel": "medium",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.5",
@@ -29,7 +29,8 @@
         "-src/extension/index.ts"
       ]
     },
-    "npm:@ff-labs/pi-fff"
+    "npm:@ff-labs/pi-fff",
+    "git:github.com/DietrichGebert/ponytail"
   ],
   "hideThinkingBlock": false,
   "theme": "alabaster",
