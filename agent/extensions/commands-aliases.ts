@@ -65,6 +65,16 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
+  pi.registerCommand("s", {
+    description: "Alias for /status",
+    handler: async (args, ctx) => {
+      const executed = await runCapturedCommand("codex:quotas", args, ctx);
+      if (!executed) {
+        ctx.ui.notify("/codex:quotas command is not available", "warning");
+      }
+    },
+  });
+
   pi.registerCommand("n", {
     description: "Alias for /new",
     handler: async (_args, ctx) => {
