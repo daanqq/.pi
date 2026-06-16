@@ -290,7 +290,8 @@ function ringBell() {
 export default function (pi: ExtensionAPI) {
 	let renderTimer: ReturnType<typeof setInterval> | null = null;
 	let titleDoneTimer: ReturnType<typeof setTimeout> | null = null;
-	let message = "Thinking…";
+	let verb = "Thinking";
+	let activity = "waiting for provider";
 	let startTime = 0;
 	let totalPausedMs = 0;
 	let pauseStartTime: number | null = null;
@@ -347,7 +348,7 @@ export default function (pi: ExtensionAPI) {
 		const elapsedMs = getElapsedMs();
 		lastFrame = spinnerFrame(elapsedMs);
 		setThemedWidget(ctx, (base, bright) => {
-			const line = `${message} ${formatElapsed(elapsedMs)}`;
+			const line = `${verb}: ${activity}… ${formatElapsed(elapsedMs)}`;
 			return `${base(lastFrame)} ${renderShimmeredMessage(line, elapsedMs, base, bright)}`;
 		});
 	}
@@ -376,7 +377,7 @@ export default function (pi: ExtensionAPI) {
 
 		const elapsedMs = getElapsedMs();
 		lastFrame = spinnerFrame(elapsedMs);
-		ctx.ui.setTitle(`${lastFrame} ${message.replace(/…$/, "")} - ${contextLabel(pi, ctx)}`);
+		ctx.ui.setTitle(`${lastFrame} ${verb}: ${activity}… - ${contextLabel(pi, ctx)}`);
 	}
 
 	function renderActive(ctx: ExtensionContext) {
@@ -420,8 +421,8 @@ export default function (pi: ExtensionAPI) {
 	function start(ctx: ExtensionContext) {
 		resetToIdle(ctx);
 		totalOutputTokens = 0;
-		const verb = sampleVerb();
-		message = `${verb}…`;
+		verb = sampleVerb();
+		activity = "waiting for provider";
 		startTime = Date.now();
 		totalPausedMs = 0;
 		pauseStartTime = null;
@@ -471,14 +472,24 @@ export default function (pi: ExtensionAPI) {
 	pi.on("tool_execution_start", async (event, ctx) => {
 		activeTools.add(event.toolCallId);
 		lastToolName = event.toolName;
+		activity = `running ${event.toolName}`;
 		if (event.toolName === "answer_questions") pauseElapsed();
 		renderActive(ctx);
 	});
 
 	pi.on("tool_execution_end", async (event, ctx) => {
 		activeTools.delete(event.toolCallId);
-		if (activeTools.size === 0) lastToolName = undefined;
+		if (activeTools.size === 0) {
+			lastToolName = undefined;
+			activity = "waiting for provider after tool";
+		}
 		if (event.toolName === "answer_questions") resumeElapsed();
+		renderActive(ctx);
+	});
+
+	pi.on("message_update", async (event, ctx) => {
+		if (event.message.role !== "assistant") return;
+		activity = "streaming response";
 		renderActive(ctx);
 	});
 
