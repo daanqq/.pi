@@ -466,23 +466,10 @@ export default function (pi: ExtensionAPI) {
     });
   });
 
-  pi.on("input", (event) => {
-    if (event.text.trim() === "/quit" && activeHandoffControllers.size > 0) abortActiveHandoffs(activeHandoffControllers);
-    return { action: "continue" };
-  });
-
   pi.on("session_shutdown", () => {
     unsubscribeEsc?.();
     unsubscribeEsc = undefined;
     abortActiveHandoffs(activeHandoffControllers);
-  });
-
-  pi.registerCommand("quit", {
-    description: "Abort active handoff generation and quit",
-    handler: async (_args, ctx) => {
-      abortActiveHandoffs(activeHandoffControllers);
-      ctx.shutdown();
-    },
   });
 
   pi.registerCommand("handoff", {
