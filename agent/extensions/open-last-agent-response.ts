@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -49,7 +50,7 @@ export default function openLastAgentResponseExtension(pi: ExtensionAPI) {
         return;
       }
 
-      const filePath = join(tmpdir(), "pi-last-agent-response.md");
+      const filePath = join(tmpdir(), `pi-last-agent-response-${randomUUID()}.md`);
       await writeFile(filePath, `${text}\n`, "utf8");
 
       const editor = process.env.VISUAL || process.env.EDITOR || "code";

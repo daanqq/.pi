@@ -4,12 +4,7 @@
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.5",
   "packages": [
-    {
-      "source": "npm:pi-web-access",
-      "skills": [
-        "-skills/librarian/SKILL.md"
-      ]
-    },
+    "npm:pi-web-access",
     "npm:pi-rtk-optimizer",
     {
       "source": "npm:pi-subagents",
@@ -21,6 +16,12 @@
         "-prompts/parallel-research.md",
         "-prompts/parallel-review.md",
         "-prompts/review-loop.md"
+      ],
+      "skills": [
+        "-skills/pi-subagents/SKILL.md"
+      ],
+      "extensions": [
+        "-src/extension/index.ts"
       ]
     },
     "npm:@ff-labs/pi-fff",
@@ -52,20 +53,10 @@
     "blockImages": false
   },
   "enableSkillCommands": false,
-  "autocompleteMaxVisible": 5,
+  "autocompleteMaxVisible": 30,
   "followUpMode": "all",
   "enableInstallTelemetry": true,
   "doubleEscapeAction": "tree",
-  "warnings": {
-    "anthropicExtraUsage": false
-  },
-  "extensions": [
-    "-extensions/compact.ts",
-    "-extensions/answer/index.ts",
-    "-extensions/generation-stats.ts",
-    "-extensions/prompt-audit.ts",
-    "-extensions/open-last-agent-response.ts"
-  ],
   "httpIdleTimeoutMs": 120000,
   "skills": [
     "-skills/grill-with-docs/SKILL.md",
