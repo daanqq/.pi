@@ -37,7 +37,7 @@
     "openai-codex/gpt-5.5",
     "deepseek/deepseek-v4-pro"
   ],
-  "transport": "auto",
+  "transport": "sse",
   "collapseChangelog": true,
   "treeFilterMode": "default",
   "steeringMode": "all",

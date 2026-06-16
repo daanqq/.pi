@@ -67,6 +67,12 @@ If artifact splitting fails, raw model output is saved as `handoff-implement-raw
 | --- | --- |
 | `pi-extensions/` | Reference for writing and debugging pi extensions. |
 
+## Custom prompt templates
+
+| Template | What it does | Command |
+| --- | --- | --- |
+| `yeet.md` | Expands into the add/commit/push workflow: stage all changes, inspect the staged diff, commit with a concise generated message, push with upstream tracking when needed, and print the repository or pull-request URL. Extra arguments are included as additional instructions. | `/yeet [instructions]` |
+
 ## Custom extensions
 
 | Extension | What it does | Commands / shortcuts |
@@ -87,5 +93,4 @@ If artifact splitting fails, raw model output is saved as `handoff-implement-raw
 | `ui-footer.ts` | Installs a two-line custom footer with two-cell horizontal padding: the first line shows project path/git branch on the left and selected model/thinking level on the right; the second line shows token/cost/context stats on the left and extension statuses on the right. Subscription-backed model cost is shown as plain `$0.000` without a `(sub)` suffix. Context usage is shown as absolute current/window tokens (`44k/272k`) instead of a percentage. Footer text uses the active thinking-level theme color; extension-provided ANSI colors are stripped before display. | — |
 | `commands-aliases.ts` | Adds short slash-command aliases for quitting, starting a new session, and showing Codex quota status. | `/exit`, `/q`, `/e`, `/n`, `/status` |
 | `skill-dollar.ts` | Adds `$skill-name` shorthand for Pi skill commands: provides autocomplete items and rewrites leading `$skill-name [args]` input to built-in `/skill:name [args]`, preserving Pi's native skill expansion/rendering (`[skill] ... ctrl+o to expand`). The `$` autocomplete auto-trigger lives in `ui-editor.ts` because only one extension can own the custom editor. | `$<skill-name> [args]` shorthand |
-| `yeet.ts` | Adds a command that asks the agent to add all changes, inspect staged changes, generate a concise commit message, commit, push to the current branch/upstream, set upstream when needed, and print the repository or pull-request URL; `main` and `master` are both treated as default branches. Extra command arguments are appended as additional user instructions. | `/yeet [instructions]` |
 | `zsh.ts` | Runs user bash commands through non-interactive zsh (`PI_USER_BASH=1 zsh -fc ...`) while preserving pi's local bash operations. Avoids sourcing `~/.zshrc`; sources `~/.pi/agent/zshrc` instead for safe aliases/functions, then evals the command so aliases expand. Honors `PI_USER_BASH_SHELL`, `PI_USER_ZSHRC`, then falls back to `$SHELL` or `/bin/zsh`. | — |
