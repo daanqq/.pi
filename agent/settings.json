@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.79.4",
+  "lastChangelogVersion": "0.79.5",
   "defaultThinkingLevel": "low",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.5",
@@ -21,12 +21,6 @@
         "-prompts/parallel-research.md",
         "-prompts/parallel-review.md",
         "-prompts/review-loop.md"
-      ],
-      "skills": [
-        "-skills/pi-subagents/SKILL.md"
-      ],
-      "extensions": [
-        "-src/extension/index.ts"
       ]
     },
     "npm:@ff-labs/pi-fff",
@@ -69,7 +63,8 @@
     "-extensions/compact.ts",
     "-extensions/answer/index.ts",
     "-extensions/generation-stats.ts",
-    "-extensions/prompt-audit.ts"
+    "-extensions/prompt-audit.ts",
+    "-extensions/open-last-agent-response.ts"
   ],
   "httpIdleTimeoutMs": 120000,
   "skills": [

@@ -250,8 +250,8 @@ function formatElapsed(ms: number): string {
 	return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
 }
 
-function formatFinalDuration(ms: number): string {
-	return `Worked for ${formatElapsed(ms)}`;
+function formatFinalDuration(ms: number, tps: number): string {
+	return `Worked for ${formatElapsed(ms)}${tps > 0 ? ` · ${tps}tps` : ""}`;
 }
 
 function renderShimmeredMessage(message: string, elapsedMs: number, base: ColorFn, bright: ColorFn): string {
@@ -297,6 +297,7 @@ export default function (pi: ExtensionAPI) {
 	let active = false;
 	let lastFrame = "✻";
 	let lastToolName: string | undefined;
+	let totalOutputTokens = 0;
 	const activeTools = new Set<string>();
 	// Do not call pi.getThinkingLevel() during extension loading: action methods
 	// are only available after the runtime is initialized. The real value is
@@ -352,7 +353,9 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	function renderFinalWidget(ctx: ExtensionContext, finalElapsedMs: number) {
-		setThemedWidget(ctx, (base) => `${base("✻")} ${base(formatFinalDuration(finalElapsedMs))}`);
+		const seconds = finalElapsedMs / 1000;
+		const tps = totalOutputTokens > 0 && seconds > 0 ? Math.round(totalOutputTokens / seconds) : 0;
+		setThemedWidget(ctx, (base) => `${base("✻")} ${base(formatFinalDuration(finalElapsedMs, tps))}`);
 	}
 
 	function setIdleTitle(ctx: ExtensionContext) {
@@ -416,6 +419,7 @@ export default function (pi: ExtensionAPI) {
 
 	function start(ctx: ExtensionContext) {
 		resetToIdle(ctx);
+		totalOutputTokens = 0;
 		const verb = sampleVerb();
 		message = `${verb}…`;
 		startTime = Date.now();
@@ -476,6 +480,11 @@ export default function (pi: ExtensionAPI) {
 		if (activeTools.size === 0) lastToolName = undefined;
 		if (event.toolName === "answer_questions") resumeElapsed();
 		renderActive(ctx);
+	});
+
+	pi.on("message_end", async (event) => {
+		if (event.message.role !== "assistant") return;
+		totalOutputTokens += Math.max(0, event.message.usage.output);
 	});
 
 	pi.on("agent_end", async (_event, ctx) => {
