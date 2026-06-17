@@ -55,10 +55,4 @@ export default function deleteCurrentSessionExtension(pi: ExtensionAPI) {
     handler: async (_args, ctx) => deleteCurrentSession(ctx),
   });
 
-  pi.registerShortcut("delete", {
-    description: "Delete current session",
-    handler: async (ctx) => {
-      await deleteCurrentSession(ctx);
-    },
-  });
 }
