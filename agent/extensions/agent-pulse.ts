@@ -287,6 +287,10 @@ function ringBell() {
 	process.stdout.write("\x07");
 }
 
+declare global {
+	var __piAgentPulseEditorLine: ((width: number, borderColor: ColorFn) => string | undefined) | undefined;
+}
+
 export default function (pi: ExtensionAPI) {
 	let renderTimer: ReturnType<typeof setInterval> | null = null;
 	let titleDoneTimer: ReturnType<typeof setTimeout> | null = null;
@@ -324,30 +328,19 @@ export default function (pi: ExtensionAPI) {
 		}
 	}
 
-	function setThemedWidget(ctx: ExtensionContext, renderLineWithColors: (base: ColorFn, bright: ColorFn) => string) {
-		const level = frozenThinkingLevel;
-		ctx.ui.setWidget(
-			WIDGET_ID,
-			(_tui, theme) => ({
-				render: (width: number) => {
-					// Use the same resolver as the editor border to avoid tiny shade differences
-					// between the activity pulse and the input border/project label.
-					const borderColor = theme.getThinkingBorderColor(level);
-					// Keep the hue identical to the editor border, but make the shimmer band bold
-					// so the message visibly pulses while staying in the same color family.
-					const bright = (text: string) => theme.bold(borderColor(text));
-					return [truncateToWidth(`  ${renderLineWithColors(borderColor, bright)}`, width, "")];
-				},
-				invalidate: () => {},
-			}),
-			{ placement: "aboveEditor" },
-		);
+	function setEditorPulse(ctx: ExtensionContext, renderLineWithColors: (base: ColorFn, bright: ColorFn) => string) {
+		globalThis.__piAgentPulseEditorLine = (width, borderColor) => {
+			const bright = (text: string) => `\x1b[1m${borderColor(text)}\x1b[22m`;
+			return truncateToWidth(`  ${renderLineWithColors(borderColor, bright)}`, width, "");
+		};
+		// ponytail: empty widget is just a render tick; the pulse itself lives inside ui-editor.
+		ctx.ui.setWidget(WIDGET_ID, undefined);
 	}
 
 	function renderWidget(ctx: ExtensionContext) {
 		const elapsedMs = getElapsedMs();
 		lastFrame = spinnerFrame(elapsedMs);
-		setThemedWidget(ctx, (base, bright) => {
+		setEditorPulse(ctx, (base, bright) => {
 			const line = `${verb}: ${activity}… ${formatElapsed(elapsedMs)}`;
 			return `${base(lastFrame)} ${renderShimmeredMessage(line, elapsedMs, base, bright)}`;
 		});
@@ -356,7 +349,7 @@ export default function (pi: ExtensionAPI) {
 	function renderFinalWidget(ctx: ExtensionContext, finalElapsedMs: number) {
 		const seconds = finalElapsedMs / 1000;
 		const tps = totalOutputTokens > 0 && seconds > 0 ? Math.round(totalOutputTokens / seconds) : 0;
-		setThemedWidget(ctx, (base) => `${base("✻")} ${base(formatFinalDuration(finalElapsedMs, tps))}`);
+		setEditorPulse(ctx, (base) => `${base("✻")} ${base(formatFinalDuration(finalElapsedMs, tps))}`);
 	}
 
 	function setIdleTitle(ctx: ExtensionContext) {
@@ -402,6 +395,7 @@ export default function (pi: ExtensionAPI) {
 		clearRenderTimer();
 		clearTitleDoneTimer();
 		resetRuntimeState();
+		globalThis.__piAgentPulseEditorLine = undefined;
 		ctx.ui.setWidget(WIDGET_ID, undefined);
 		ctx.ui.setWorkingVisible(true);
 		setIdleTitle(ctx);

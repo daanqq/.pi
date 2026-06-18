@@ -5,6 +5,10 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { EditorTheme, TUI } from "@earendil-works/pi-tui";
 
+declare global {
+	var __piAgentPulseEditorLine: ((width: number, borderColor: (text: string) => string) => string | undefined) | undefined;
+}
+
 const SKILL_AUTOCOMPLETE_CONTEXT = /(?:^|[\s([{])\$[a-z0-9-]*$/;
 
 function stripAnsi(text: string) {
@@ -14,13 +18,15 @@ function stripAnsi(text: string) {
 
 class PiConfigEditor extends CustomEditor {
 	private autocompleteRequestVersion = 0;
+	private pulseBorderColor: (text: string) => string;
 
 	constructor(
 		tui: TUI,
-		theme: EditorTheme,
+		private readonly editorTheme: EditorTheme,
 		keybindings: KeybindingsManager,
 	) {
-		super(tui, theme, keybindings);
+		super(tui, editorTheme, keybindings);
+		this.pulseBorderColor = editorTheme.borderColor;
 	}
 
 	override handleInput(data: string): void {
@@ -53,10 +59,14 @@ class PiConfigEditor extends CustomEditor {
 	}
 
 	override render(width: number): string[] {
-		return super.render(width).filter((line) => {
+		const lines = super.render(width).filter((line) => {
 			const plain = stripAnsi(line).trim();
 			return !/^─{3,}(?: [↑↓] \d+ more ─*)?$/.test(plain);
 		});
+		const editorText = this.getLines().join("\n").trimStart();
+		if (!editorText.startsWith("!")) this.pulseBorderColor = this.borderColor;
+		const pulseLine = globalThis.__piAgentPulseEditorLine?.(width, this.pulseBorderColor);
+		return pulseLine ? [pulseLine, ...lines] : lines;
 	}
 }
 

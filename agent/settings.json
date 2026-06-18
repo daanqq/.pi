@@ -27,8 +27,7 @@
     "npm:@ff-labs/pi-fff",
     "git:github.com/DietrichGebert/ponytail",
     "git:github.com/daanqq/pi-diff-review",
-    "npm:@tifan/pi-recap",
-    "npm:@ayulab/pi-rewind"
+    "npm:@tifan/pi-recap"
   ],
   "hideThinkingBlock": false,
   "theme": "alabaster",
