@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.79.6",
+  "lastChangelogVersion": "0.79.8",
   "defaultThinkingLevel": "low",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.5",
@@ -30,7 +30,7 @@
     "npm:@tifan/pi-recap"
   ],
   "hideThinkingBlock": false,
-  "theme": "alabaster",
+  "theme": "poimandres",
   "quietStartup": false,
   "compaction": {
     "enabled": false
