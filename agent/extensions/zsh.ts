@@ -1,3 +1,4 @@
+import { accessSync, constants } from "node:fs";
 import { basename } from "node:path";
 import {
   createLocalBashOperations,
@@ -8,12 +9,27 @@ function shellQuote(value: string) {
   return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
-function getZshPath() {
-  if (process.env.PI_USER_BASH_SHELL) return process.env.PI_USER_BASH_SHELL;
-  if (process.env.SHELL && basename(process.env.SHELL) === "zsh") {
-    return process.env.SHELL;
+function canExecute(path: string) {
+  try {
+    accessSync(path, constants.X_OK);
+    return true;
+  } catch {
+    return false;
   }
-  return "/bin/zsh";
+}
+
+function getUsableZshPath() {
+  if (process.platform === "win32") return undefined;
+
+  const candidates = [
+    process.env.PI_USER_BASH_SHELL,
+    process.env.SHELL && basename(process.env.SHELL) === "zsh"
+      ? process.env.SHELL
+      : undefined,
+    "/bin/zsh",
+  ];
+
+  return candidates.find((path): path is string => !!path && canExecute(path));
 }
 
 function getPiZshrcPath() {
@@ -21,6 +37,9 @@ function getPiZshrcPath() {
 }
 
 export default function (pi: ExtensionAPI) {
+  const zshPath = getUsableZshPath();
+  if (!zshPath) return;
+
   const local = createLocalBashOperations();
 
   pi.on("user_bash", () => {
@@ -33,7 +52,7 @@ export default function (pi: ExtensionAPI) {
           // safe aliases/functions, then eval the user command so aliases expand.
           const initPath = getPiZshrcPath();
           const initCommand = `[[ -r ${shellQuote(initPath)} ]] && source ${shellQuote(initPath)}; eval ${shellQuote(command)}`;
-          const zshCommand = `PI_USER_BASH=1 exec ${shellQuote(getZshPath())} -fc ${shellQuote(initCommand)}`;
+          const zshCommand = `PI_USER_BASH=1 exec ${shellQuote(zshPath)} -fc ${shellQuote(initCommand)}`;
           return local.exec(zshCommand, cwd, options);
         },
       },

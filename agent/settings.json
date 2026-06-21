@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.79.8",
+  "lastChangelogVersion": "0.79.9",
   "defaultThinkingLevel": "low",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.5",
@@ -30,7 +30,7 @@
     "npm:@tifan/pi-recap"
   ],
   "hideThinkingBlock": false,
-  "theme": "poimandres",
+  "theme": "alabaster",
   "quietStartup": false,
   "compaction": {
     "enabled": false
@@ -58,6 +58,11 @@
   "followUpMode": "all",
   "enableInstallTelemetry": true,
   "doubleEscapeAction": "tree",
+  "extensions": [
+    "-extensions/compact.ts",
+    "-extensions/answer/index.ts",
+    "-extensions/generation-stats.ts"
+  ],
   "httpIdleTimeoutMs": 120000,
   "skills": [
     "-skills/grill-with-docs/SKILL.md",
