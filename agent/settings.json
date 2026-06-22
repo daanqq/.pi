@@ -25,7 +25,16 @@
       ]
     },
     "npm:@ff-labs/pi-fff",
-    "git:github.com/DietrichGebert/ponytail",
+    {
+      "source": "git:github.com/DietrichGebert/ponytail",
+      "skills": [
+        "+skills/ponytail/SKILL.md",
+        "+skills/ponytail-audit/SKILL.md",
+        "+skills/ponytail-debt/SKILL.md",
+        "+skills/ponytail-help/SKILL.md",
+        "+skills/ponytail-review/SKILL.md"
+      ]
+    },
     "git:github.com/daanqq/pi-diff-review",
     "npm:@tifan/pi-recap"
   ],
@@ -68,7 +77,8 @@
     "-skills/grill-with-docs/SKILL.md",
     "-skills/tdd/SKILL.md",
     "-skills/to-prd/SKILL.md",
-    "-skills/frontend-design/SKILL.md"
+    "-skills/frontend-design/SKILL.md",
+    "-skills/grilling/SKILL.md"
   ],
   "defaultProjectTrust": "always"
 }

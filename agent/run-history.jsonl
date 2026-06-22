@@ -1,2 +1,0 @@
-{"agent":"reviewer","task":"В репозитории /home/user/deploy/env/development/services/echat.business.service оцени риски регресса при переводе runtime Node.js с 14 на 24. Нужен краткий источник-aware вывод: какие зависимости/файл","ts":1780554301,"status":"ok","duration":299445}
-{"agent":"reviewer","task":"You are a delegated subagent running from a fork of the parent session. Treat the inherited conversation as reference-only context, not a live thread to continue. Do not continue or answer prior messa","ts":1780915380,"status":"error","duration":166,"exit":1}
