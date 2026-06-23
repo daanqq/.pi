@@ -1,8 +1,8 @@
 {
   "lastChangelogVersion": "0.79.9",
   "defaultThinkingLevel": "low",
-  "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-5.5",
+  "defaultProvider": "deepseek",
+  "defaultModel": "deepseek-v4-pro",
   "packages": [
     "npm:pi-web-access",
     "npm:pi-rtk-optimizer",
