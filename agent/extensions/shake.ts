@@ -167,9 +167,6 @@ export default function (pi: ExtensionAPI) {
 
       const result = await shake(ctx, mode);
       ctx.ui.notify(formatResult(result), result.toolResultsDropped || result.blocksDropped || result.imagesDropped ? "info" : "warning");
-      if (result.toolResultsDropped || result.blocksDropped || result.imagesDropped) {
-        await ctx.reload();
-      }
     },
   });
 }
