@@ -25,6 +25,9 @@ import * as path from "node:path";
 const EUTP_ID_RE = /EUTP-\d+/i;
 const TITLE_MAX_ATTEMPTS = 3;
 const MR_DESC_TMP = "/tmp/mr_description.md";
+const GENERATION_PROVIDER = "openai-codex";
+const GENERATION_MODEL = "gpt-5.4-mini";
+const GENERATION_THINKING = "high";
 
 const TITLE_SYSTEM_PROMPT = `You are a commit message generator for an EChat project.
 Given a git diff, output exactly one commit title.
@@ -199,14 +202,15 @@ async function generateText(
   diff: string,
   template: string | null,
 ): Promise<{ title: string; description: string | null } | null> {
-  if (!ctx.model) {
-    ctx.ui.notify("Нет активной модели", "error");
+  const model = ctx.modelRegistry.find(GENERATION_PROVIDER, GENERATION_MODEL);
+  if (!model) {
+    ctx.ui.notify(`Модель не найдена: ${GENERATION_PROVIDER}/${GENERATION_MODEL}`, "error");
     return null;
   }
 
-  const auth = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model);
+  const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
   if (!auth.ok || !auth.apiKey) {
-    ctx.ui.notify(`Нет API-ключа для ${ctx.model.provider}`, "error");
+    ctx.ui.notify(`Нет API-ключа для ${GENERATION_PROVIDER}`, "error");
     return null;
   }
 
@@ -229,9 +233,9 @@ async function generateText(
   ctx.ui.notify(template ? "Генерирую описание MR и заголовок коммита..." : "Генерирую заголовок коммита...", "info");
 
   const response = await complete(
-    ctx.model,
+    model,
     { systemPrompt: template ? LLM_SYSTEM_PROMPT : TITLE_SYSTEM_PROMPT, messages: [userMessage] },
-    { apiKey: auth.apiKey, headers: auth.headers },
+    { apiKey: auth.apiKey, headers: auth.headers, reasoningEffort: GENERATION_THINKING },
   );
 
   const text = response.content
