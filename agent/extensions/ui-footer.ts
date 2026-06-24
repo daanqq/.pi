@@ -2,9 +2,10 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 const RIGHT_STATUS_ORDER = ["generation-stats", "codex-usage", "deepseek-balance", "openrouter-balance"] as const;
-const RIGHT_STATUS_IDS = new Set<string>(RIGHT_STATUS_ORDER);
+const HIDDEN_STATUS_IDS = new Set<string>([...RIGHT_STATUS_ORDER, "ponytail"]);
 
 type ThemeColor =
   | "text"
@@ -33,44 +34,6 @@ const THINKING_LEVEL_COLOR: Record<string, ThemeColor> = {
 
 function stripAnsi(text: string) {
   return text.replace(/\x1b\[[0-9;]*m/g, "");
-}
-
-function visibleWidth(text: string) {
-  return stripAnsi(text).length;
-}
-
-function truncateToWidth(text: string, width: number, ellipsis = "...") {
-  if (width <= 0) return "";
-  if (visibleWidth(text) <= width) return text;
-  if (visibleWidth(ellipsis) > width) return stripAnsi(ellipsis).slice(0, width);
-
-  const max = Math.max(0, width - visibleWidth(ellipsis));
-  const ansiPattern = /\x1b\[[0-9;]*m/g;
-  let result = "";
-  let visible = 0;
-  let index = 0;
-  let sawAnsi = false;
-
-  for (const match of text.matchAll(ansiPattern)) {
-    const ansiIndex = match.index ?? 0;
-    const plain = text.slice(index, ansiIndex);
-    const take = Math.max(0, Math.min(plain.length, max - visible));
-    result += plain.slice(0, take);
-    visible += take;
-    if (visible >= max) break;
-
-    result += match[0];
-    sawAnsi = true;
-    index = ansiIndex + match[0].length;
-  }
-
-  if (visible < max) {
-    const plain = text.slice(index);
-    const take = Math.max(0, Math.min(plain.length, max - visible));
-    result += plain.slice(0, take);
-  }
-
-  return result + ellipsis + (sawAnsi ? "\x1b[0m" : "");
 }
 
 function sanitizeStatusText(text: string) {
@@ -140,14 +103,17 @@ function installFooter(pi: ExtensionAPI, ctx: ExtensionContext) {
       render(width: number): string[] {
         const horizontalPadding = 2;
         const contentWidth = Math.max(0, width - horizontalPadding * 2);
-        const padLine = (line: string) =>
-          " ".repeat(horizontalPadding) + line + " ".repeat(Math.max(0, contentWidth - visibleWidth(line))) + " ".repeat(horizontalPadding);
+        const padLine = (line: string) => {
+          const safeLine = truncateToWidth(line, contentWidth, "...");
+          return " ".repeat(horizontalPadding) + safeLine + " ".repeat(Math.max(0, contentWidth - visibleWidth(safeLine))) + " ".repeat(horizontalPadding);
+        };
 
         let totalInput = 0;
         let totalOutput = 0;
         let totalCacheRead = 0;
         let totalCacheWrite = 0;
         let totalCost = 0;
+        let latestCacheHitRate: number | undefined;
 
         for (const entry of ctx.sessionManager.getEntries()) {
           if (entry.type === "message" && entry.message.role === "assistant") {
@@ -156,6 +122,8 @@ function installFooter(pi: ExtensionAPI, ctx: ExtensionContext) {
             totalCacheRead += entry.message.usage.cacheRead;
             totalCacheWrite += entry.message.usage.cacheWrite;
             totalCost += entry.message.usage.cost.total;
+            const latestPromptTokens = entry.message.usage.input + entry.message.usage.cacheRead + entry.message.usage.cacheWrite;
+            latestCacheHitRate = latestPromptTokens > 0 ? (entry.message.usage.cacheRead / latestPromptTokens) * 100 : undefined;
           }
         }
 
@@ -168,6 +136,9 @@ function installFooter(pi: ExtensionAPI, ctx: ExtensionContext) {
         if (totalOutput) statsParts.push(footerText(theme, thinkingLevel, `↓${formatTokens(totalOutput)}`));
         if (totalCacheRead) statsParts.push(footerText(theme, thinkingLevel, `R${formatTokens(totalCacheRead)}`));
         if (totalCacheWrite) statsParts.push(footerText(theme, thinkingLevel, `W${formatTokens(totalCacheWrite)}`));
+        if ((totalCacheRead > 0 || totalCacheWrite > 0) && latestCacheHitRate !== undefined) {
+          statsParts.push(footerText(theme, thinkingLevel, `CH${latestCacheHitRate.toFixed(1)}%`));
+        }
 
         const usingSubscription = ctx.model ? ctx.modelRegistry.isUsingOAuth(ctx.model) : false;
         if (totalCost || usingSubscription) {
@@ -186,7 +157,7 @@ function installFooter(pi: ExtensionAPI, ctx: ExtensionContext) {
           .filter((text): text is string => Boolean(text))
           .map((text) => sanitizeStatusText(text));
         const otherStatuses = Array.from(extensionStatuses.entries())
-          .filter(([key]) => !RIGHT_STATUS_IDS.has(key))
+          .filter(([key]) => !HIDDEN_STATUS_IDS.has(key))
           .sort(([a], [b]) => a.localeCompare(b))
           .map(([, text]) => sanitizeStatusText(text));
         const statusText = [...prioritizedStatuses, ...otherStatuses].filter(Boolean).join("  ");
