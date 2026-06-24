@@ -406,7 +406,6 @@ export default function (pi: ExtensionAPI) {
           "mr", "create",
           "--title", commitTitle,
           "--description", descContent,
-          "--remove-source-branch",
           "--yes",
         ];
         if (username) {
