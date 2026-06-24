@@ -124,6 +124,11 @@ function fmt(val: unknown): string {
 }
 
 /** Построить сводную таблицу из данных API. */
+function renameSession(ctx: any, name: string): void {
+  const sessionManager = ctx.sessionManager as { appendSessionInfo?: (name: string) => void };
+  sessionManager.appendSessionInfo?.(name.replace(/\s+/g, " ").trim());
+}
+
 function buildSummary(data: Record<string, unknown>): string {
   const assignee = (data.assignee as Record<string, unknown>) ?? {};
   const sprints = (data.sprints as Array<Record<string, unknown>>) ?? [];
@@ -227,6 +232,7 @@ export default function (pi: ExtensionAPI) {
 
       // Заголовок
       const title = apiData?.title ? String(apiData.title) : id;
+      renameSession(ctx, `${id}: ${title}`);
       parts.push(`## Задача ${id}: ${title}`);
 
       // Сводка

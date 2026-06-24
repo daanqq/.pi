@@ -1,10 +1,11 @@
 /**
  * mr-echat — commit + push + создание MR через glab.
+ * Если MR для текущей ветки уже есть, генерирует только commit title.
  *
  * Заменяет agent/prompts/mr-echat.md: все механические шаги (git, glab,
  * файловый I/O, цикл подтверждения title) выполняются детерминированно
  * в коде. LLM (через complete()) используется только для генерации
- * MR description и commit title по диффу.
+ * MR description и commit title по диффу (или только commit title для существующего MR).
  *
  * Использование:
  *   /mr-echat [commit-title]
@@ -24,6 +25,22 @@ import * as path from "node:path";
 const EUTP_ID_RE = /EUTP-\d+/i;
 const TITLE_MAX_ATTEMPTS = 3;
 const MR_DESC_TMP = "/tmp/mr_description.md";
+
+const TITLE_SYSTEM_PROMPT = `You are a commit message generator for an EChat project.
+Given a git diff, output exactly one commit title.
+
+Commit title rules:
+- English, lowercase, imperative mood: add/fix/make/update/remove
+- Briefly describes the essence of changes
+- Ends with " #EUTP-NNNNNN"
+- Examples from the repo:
+  add cross-app text formatting copy-paste #EUTP-145771
+  fix chat closing animation on mobile #EUTP-146265
+  add invitation links #EUTP-115210
+  fix formatting toolbar on Android #EUTP-144804
+
+Output format (strict):
+TITLE: <commit title>`;
 
 // ---------------------------------------------------------------------------
 // System prompt for complete() — generates both title and description
@@ -105,6 +122,19 @@ async function getDiff(exec: ExecFn): Promise<string> {
   return diff.stdout;
 }
 
+/** Найти MR для текущей ветки. */
+async function getExistingMrUrl(exec: ExecFn, branch: string): Promise<string | null> {
+  const result = await exec("glab", ["mr", "list", "--source-branch", branch, "--output", "json"]);
+  if (result.code !== 0 || !result.stdout.trim() || result.stdout.trim() === "[]") return null;
+
+  try {
+    const mrs = JSON.parse(result.stdout);
+    return Array.isArray(mrs) && mrs.length > 0 ? mrs[0].web_url || null : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Получить username текущего glab-пользователя. */
 async function getGlabUser(exec: ExecFn): Promise<string | null> {
   try {
@@ -162,13 +192,13 @@ async function ensureGitRepo(
   return path.resolve(cwd, selected);
 }
 
-/** Вызвать LLM для генерации title + description. */
+/** Вызвать LLM для генерации title и, если передан template, description. */
 async function generateText(
   ctx: any,
   taskId: string,
   diff: string,
-  template: string,
-): Promise<{ title: string; description: string } | null> {
+  template: string | null,
+): Promise<{ title: string; description: string | null } | null> {
   if (!ctx.model) {
     ctx.ui.notify("Нет активной модели", "error");
     return null;
@@ -186,13 +216,9 @@ async function generateText(
     ctx.ui.notify(`Diff большой (${diffBlock.length} символов). Модель может не справиться.`, "warning");
   }
 
-  const prompt = [
-    `Task: ${taskId}`,
-    `Template:`,
-    template,
-    `Git diff:`,
-    diffBlock,
-  ].join("\n\n");
+  const prompt = template
+    ? [`Task: ${taskId}`, `Template:`, template, `Git diff:`, diffBlock].join("\n\n")
+    : [`Task: ${taskId}`, `Git diff:`, diffBlock].join("\n\n");
 
   const userMessage: Message = {
     role: "user",
@@ -200,11 +226,11 @@ async function generateText(
     timestamp: Date.now(),
   };
 
-  ctx.ui.notify("Генерирую описание MR и заголовок коммита...", "info");
+  ctx.ui.notify(template ? "Генерирую описание MR и заголовок коммита..." : "Генерирую заголовок коммита...", "info");
 
   const response = await complete(
     ctx.model,
-    { systemPrompt: LLM_SYSTEM_PROMPT, messages: [userMessage] },
+    { systemPrompt: template ? LLM_SYSTEM_PROMPT : TITLE_SYSTEM_PROMPT, messages: [userMessage] },
     { apiKey: auth.apiKey, headers: auth.headers },
   );
 
@@ -215,16 +241,16 @@ async function generateText(
 
   // Разбор ответа
   const titleMatch = text.match(/^TITLE:\s*(.+?)$/m);
-  const descMatch = text.match(/^DESC:\s*([\s\S]*)$/m);
+  const descMatch = template ? text.match(/^DESC:\s*([\s\S]*)$/m) : null;
 
-  if (!titleMatch || !descMatch) {
-    ctx.ui.notify("LLM вернул ответ не по формату. TITLE:/DESC: не найдены.", "error");
+  if (!titleMatch || (template && !descMatch)) {
+    ctx.ui.notify(template ? "LLM вернул ответ не по формату. TITLE:/DESC: не найдены." : "LLM вернул ответ не по формату. TITLE: не найден.", "error");
     return null;
   }
 
   return {
     title: titleMatch[1].trim(),
-    description: descMatch[1].trim(),
+    description: descMatch ? descMatch[1].trim() : null,
   };
 }
 
@@ -233,10 +259,9 @@ async function generateText(
 async function confirmTitle(
   ctx: any,
   taskId: string,
-  diff: string,
-  template: string,
   firstTitle: string,
   previousTitle: string | null,
+  generateAnother: () => Promise<string | null>,
 ): Promise<string | null> {
   let title = firstTitle;
   let attempts = 1;
@@ -269,9 +294,9 @@ async function confirmTitle(
     }
 
     ctx.ui.notify("Генерирую другой вариант...", "info");
-    const result = await generateText(ctx, taskId, diff, template);
-    if (!result) return null;
-    title = result.title;
+    const nextTitle = await generateAnother();
+    if (!nextTitle) return null;
+    title = nextTitle;
     attempts++;
   }
 }
@@ -307,14 +332,8 @@ export default function (pi: ExtensionAPI) {
           return;
         }
 
-        // 2. Прочитать и подготовить MR-шаблон
-        let template: string;
-        try {
-          template = readTemplate(repoDir, taskId);
-        } catch {
-          ctx.ui.notify("Не найден .gitlab/merge_request_templates/Default.md", "error");
-          return;
-        }
+        // 2. Проверить существующий MR до генерации описания
+        const existingMrUrl = await getExistingMrUrl(exec, branch);
 
         // 3. Получить diff
         const diff = await getDiff(exec);
@@ -323,20 +342,43 @@ export default function (pi: ExtensionAPI) {
           return;
         }
 
-        // 4. Сгенерировать описание и title
-        const result = await generateText(ctx, taskId, diff, template);
-        if (!result) return;
+        // 4. Сгенерировать title, а описание — только если MR ещё нет
+        let description: string | null = null;
+        let firstTitle: string | null = null;
+        let template: string | null = null;
 
-        // Сохраняем описание в любом случае
-        fs.writeFileSync(MR_DESC_TMP, result.description, "utf-8");
+        if (existingMrUrl) {
+          if (!userTitle) firstTitle = (await generateText(ctx, taskId, diff, null))?.title ?? null;
+        } else {
+          try {
+            template = readTemplate(repoDir, taskId);
+          } catch {
+            ctx.ui.notify("Не найден .gitlab/merge_request_templates/Default.md", "error");
+            return;
+          }
+
+          const result = await generateText(ctx, taskId, diff, template);
+          if (!result) return;
+          firstTitle = result.title;
+          description = result.description ?? "";
+          fs.writeFileSync(MR_DESC_TMP, description, "utf-8");
+        }
 
         // 5. Определить commit title
         let commitTitle: string;
         if (userTitle) {
           commitTitle = `${userTitle} #${taskId}`;
         } else {
+          if (!firstTitle) return;
           const previousTitle = await getPreviousCommitTitle(exec, taskId);
-          const confirmed = await confirmTitle(ctx, taskId, diff, template, result.title, previousTitle);
+          const confirmed = await confirmTitle(ctx, taskId, firstTitle, previousTitle, async () => {
+            if (existingMrUrl) return (await generateText(ctx, taskId, diff, null))?.title ?? null;
+            const result = await generateText(ctx, taskId, diff, template!);
+            if (!result) return null;
+            description = result.description ?? "";
+            fs.writeFileSync(MR_DESC_TMP, description, "utf-8");
+            return result.title;
+          });
           if (!confirmed) {
             ctx.ui.notify("Заголовок коммита не задан — отмена", "warning");
             return;
@@ -372,35 +414,22 @@ export default function (pi: ExtensionAPI) {
           return;
         }
 
-        const pushResult = await exec("git", ["push", "origin", "HEAD"]);
+        const pushResult = await exec("git", ["push", "-u", "origin", "HEAD"]);
         if (pushResult.code !== 0) {
           ctx.ui.notify(`Ошибка git push: ${pushResult.stderr}`, "error");
           return;
         }
         ctx.ui.notify("Запушено ✓", "info");
 
-        // 7. Проверить существующий MR
-        const mrListResult = await exec("glab", [
-          "mr", "list",
-          "--source-branch", branch,
-          "--output", "json",
-        ]);
-
-        if (mrListResult.code === 0 && mrListResult.stdout.trim() && mrListResult.stdout.trim() !== "[]") {
-          try {
-            const mrs = JSON.parse(mrListResult.stdout);
-            if (Array.isArray(mrs) && mrs.length > 0 && mrs[0].web_url) {
-              ctx.ui.notify(`MR уже существует: ${mrs[0].web_url}`, "info");
-              return;
-            }
-          } catch {
-            // не смогли разобрать JSON — продолжаем
-          }
+        // 7. Если MR уже был — на этом всё
+        if (existingMrUrl) {
+          ctx.ui.notify(`MR уже существует: ${existingMrUrl}`, "info");
+          return;
         }
 
         // 8. Создать MR
         const username = await getGlabUser(exec);
-        const descContent = fs.readFileSync(MR_DESC_TMP, "utf-8");
+        const descContent = description ?? fs.readFileSync(MR_DESC_TMP, "utf-8");
 
         const mrArgs = [
           "mr", "create",
