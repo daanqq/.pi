@@ -62,7 +62,7 @@ Output format (strict):
 TITLE: <commit title>`;
 
 // ---------------------------------------------------------------------------
-// System prompt for complete() — generates both title and description
+// System prompt for complete() — generates MR description
 // ---------------------------------------------------------------------------
 
 const UPDATE_MR_DESC_SYSTEM_PROMPT = `You update an existing GitLab MR description for an EChat project.
@@ -79,21 +79,8 @@ Output format (strict):
 DESC:
 <full updated MR description>`;
 
-const LLM_SYSTEM_PROMPT = `You are a commit message and MR description generator for an EChat project.
-Given a git diff and an MR template, output exactly:
-
-1. A commit title (English, lowercase, imperative mood: add/fix/make/update/remove)
-2. The filled MR description (Russian)
-
-Commit title rules:
-- English, lowercase, imperative (add/fix/make/update/remove)
-- Briefly describes the essence of changes
-- Ends with " #EUTP-NNNNNN"
-- Examples from the repo:
-  add cross-app text formatting copy-paste #EUTP-145771
-  fix chat closing animation on mobile #EUTP-146265
-  add invitation links #EUTP-115210
-  fix formatting toolbar on Android #EUTP-144804
+const MR_DESC_SYSTEM_PROMPT = `You are an MR description generator for an EChat project.
+Given a git diff and an MR template, output exactly the filled MR description in Russian.
 
 MR description rules:
 - Take the template and fill in the sections
@@ -105,7 +92,6 @@ MR description rules:
 - If no migrations — keep "Нет."
 
 Output format (strict):
-TITLE: <commit title>
 DESC:
 <filled MR description>`;
 
@@ -302,13 +288,8 @@ async function ensureGitRepo(
   return path.resolve(cwd, selected);
 }
 
-/** Вызвать LLM для генерации title и, если передан template, description. */
-async function generateText(
-  ctx: any,
-  taskId: string,
-  diff: string,
-  template: string | null,
-): Promise<{ title: string; description: string | null } | null> {
+/** Вызвать LLM для генерации commit title. */
+async function generateTitle(ctx: any, taskId: string, diff: string): Promise<string | null> {
   const model = ctx.modelRegistry.find(GENERATION_PROVIDER, GENERATION_MODEL);
   if (!model) {
     ctx.ui.notify(`Модель не найдена: ${GENERATION_PROVIDER}/${GENERATION_MODEL}`, "error");
@@ -321,27 +302,23 @@ async function generateText(
     return null;
   }
 
-  let diffBlock = diff;
+  const diffBlock = diff;
   // ponytail: diff без ограничения, проблема — если модель не влезает в контекст
   if (diffBlock.length > 80_000) {
     ctx.ui.notify(`Diff большой (${diffBlock.length} символов). Модель может не справиться.`, "warning");
   }
 
-  const prompt = template
-    ? [`Task: ${taskId}`, `Template:`, template, `Git diff:`, diffBlock].join("\n\n")
-    : [`Task: ${taskId}`, `Git diff:`, diffBlock].join("\n\n");
-
   const userMessage: Message = {
     role: "user",
-    content: [{ type: "text", text: prompt }],
+    content: [{ type: "text", text: [`Task: ${taskId}`, `Git diff:`, diffBlock].join("\n\n") }],
     timestamp: Date.now(),
   };
 
-  ctx.ui.notify(template ? "Генерирую описание MR и заголовок коммита..." : "Генерирую заголовок коммита...", "info");
+  ctx.ui.notify("Генерирую заголовок коммита...", "info");
 
   const response = await complete(
     model,
-    { systemPrompt: template ? LLM_SYSTEM_PROMPT : TITLE_SYSTEM_PROMPT, messages: [userMessage] },
+    { systemPrompt: TITLE_SYSTEM_PROMPT, messages: [userMessage] },
     { apiKey: auth.apiKey, headers: auth.headers, reasoningEffort: GENERATION_THINKING },
   );
 
@@ -350,19 +327,60 @@ async function generateText(
     .map((c: any) => c.text)
     .join("\n");
 
-  // Разбор ответа
   const titleMatch = text.match(/^TITLE:\s*(.+?)$/m);
-  const descMatch = template ? text.match(/^DESC:\s*([\s\S]*)$/m) : null;
-
-  if (!titleMatch || (template && !descMatch)) {
-    ctx.ui.notify(template ? "LLM вернул ответ не по формату. TITLE:/DESC: не найдены." : "LLM вернул ответ не по формату. TITLE: не найден.", "error");
+  if (!titleMatch) {
+    ctx.ui.notify("LLM вернул ответ не по формату. TITLE: не найден.", "error");
     return null;
   }
 
-  return {
-    title: titleMatch[1].trim(),
-    description: descMatch ? descMatch[1].trim() : null,
+  return titleMatch[1].trim();
+}
+
+/** Вызвать LLM для генерации MR description после выбора commit title. */
+async function generateDescription(
+  ctx: any,
+  taskId: string,
+  diff: string,
+  template: string,
+): Promise<string | null> {
+  const model = ctx.modelRegistry.find(GENERATION_PROVIDER, GENERATION_MODEL);
+  if (!model) {
+    ctx.ui.notify(`Модель не найдена: ${GENERATION_PROVIDER}/${GENERATION_MODEL}`, "error");
+    return null;
+  }
+
+  const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+  if (!auth.ok || !auth.apiKey) {
+    ctx.ui.notify(`Нет API-ключа для ${GENERATION_PROVIDER}`, "error");
+    return null;
+  }
+
+  if (diff.length > 80_000) {
+    ctx.ui.notify(`Diff большой (${diff.length} символов). Модель может не справиться.`, "warning");
+  }
+
+  const userMessage: Message = {
+    role: "user",
+    content: [{ type: "text", text: [`Task: ${taskId}`, `Template:`, template, `Git diff:`, diff].join("\n\n") }],
+    timestamp: Date.now(),
   };
+
+  ctx.ui.notify("Генерирую описание MR...", "info");
+  const response = await complete(
+    model,
+    { systemPrompt: MR_DESC_SYSTEM_PROMPT, messages: [userMessage] },
+    { apiKey: auth.apiKey, headers: auth.headers, reasoningEffort: GENERATION_THINKING },
+  );
+  const text = response.content
+    .filter((c: any): c is { type: "text"; text: string } => c.type === "text")
+    .map((c: any) => c.text)
+    .join("\n");
+  const descMatch = text.match(/^DESC:\s*([\s\S]*)$/m);
+  if (!descMatch) {
+    ctx.ui.notify("LLM вернул ответ не по формату. DESC: не найден.", "error");
+    return null;
+  }
+  return descMatch[1].trim();
 }
 
 /** Составить новое описание существующего MR из текущего описания и новых изменений. */
@@ -444,8 +462,18 @@ async function confirmTitle(
         return null;
       }
     } else {
-      const ok = await ctx.ui.confirm("Заголовок коммита", `${title}\n\nПодходит?`);
-      if (ok) return title;
+      const action = await ctx.ui.select("Заголовок коммита", [
+        `Использовать сгенерированный: ${title}`,
+        "Сгенерировать другой вариант",
+        "Ввести вручную",
+      ]);
+      if (!action) return null;
+      if (action.startsWith("Использовать сгенерированный")) return title;
+      if (action === "Ввести вручную") {
+        const manual = await ctx.ui.input("Введи название коммита (без #EUTP-XXX):");
+        if (manual) return `${manual.trim()} #${taskId}`;
+        return null;
+      }
     }
 
     if (attempts >= TITLE_MAX_ATTEMPTS) {
@@ -503,13 +531,10 @@ export default function (pi: ExtensionAPI) {
           return;
         }
 
-        // 4. Сгенерировать title, а описание — только если MR ещё нет
+        // 4. Подготовить MR-шаблон, но описание генерировать только после выбора title
         let description: string | null = null;
-        let firstTitle: string | null = null;
         let template: string | null = null;
-        const updateExistingMrDescription = existingMr
-          ? await ctx.ui.confirm("MR уже существует", "Дополнить описание MR новыми изменениями?")
-          : false;
+        let updateExistingMrDescription = false;
         const previousTitle = !userTitle ? await getPreviousCommitTitle(exec, taskId) : null;
 
         if (!existingMr) {
@@ -519,54 +544,46 @@ export default function (pi: ExtensionAPI) {
             ctx.ui.notify("Не найден .gitlab/merge_request_templates/Default.md", "error");
             return;
           }
-
-          const result = await generateText(ctx, taskId, diff, template);
-          if (!result) return;
-          firstTitle = result.title;
-          description = result.description ?? "";
-          fs.writeFileSync(MR_DESC_TMP, description, "utf-8");
         }
 
         // 5. Определить commit title
         let commitTitle: string;
         if (userTitle) {
           commitTitle = `${userTitle} #${taskId}`;
-        } else if (existingMr && previousTitle) {
-          const action = await ctx.ui.select("Заголовок коммита", [
-            `Использовать существующее сообщение: ${previousTitle}`,
-            "Сгенерировать новое",
-          ]);
-          if (!action) return;
-          if (action.startsWith("Использовать существующее")) {
-            commitTitle = previousTitle;
+        } else {
+          const titleChoices = previousTitle
+            ? [`Использовать существующее сообщение: ${previousTitle}`, "Сгенерировать название коммита", "Ввести своё"]
+            : ["Сгенерировать название коммита", "Ввести своё"];
+          const titleAction = await ctx.ui.select("Заголовок коммита", titleChoices);
+          if (!titleAction) return;
+
+          if (titleAction.startsWith("Использовать существующее")) {
+            commitTitle = previousTitle!;
+          } else if (titleAction === "Ввести своё") {
+            const manual = await ctx.ui.input("Введи название коммита (без #EUTP-XXX):");
+            if (!manual) {
+              ctx.ui.notify("Заголовок коммита не задан — отмена", "warning");
+              return;
+            }
+            commitTitle = `${manual.trim()} #${taskId}`;
           } else {
-            firstTitle = (await generateText(ctx, taskId, diff, null))?.title ?? null;
+            const firstTitle = await generateTitle(ctx, taskId, diff);
             if (!firstTitle) return;
-            const confirmed = await confirmTitle(ctx, taskId, firstTitle, previousTitle, async () => (await generateText(ctx, taskId, diff, null))?.title ?? null);
+            const confirmed = await confirmTitle(ctx, taskId, firstTitle, previousTitle, async () => generateTitle(ctx, taskId, diff));
             if (!confirmed) {
               ctx.ui.notify("Заголовок коммита не задан — отмена", "warning");
               return;
             }
             commitTitle = confirmed;
           }
+        }
+
+        if (existingMr) {
+          updateExistingMrDescription = await ctx.ui.confirm("MR уже существует", "Дополнить описание MR новыми изменениями?");
         } else {
-          if (!firstTitle) {
-            firstTitle = (await generateText(ctx, taskId, diff, null))?.title ?? null;
-          }
-          if (!firstTitle) return;
-          const confirmed = await confirmTitle(ctx, taskId, firstTitle, previousTitle, async () => {
-            if (existingMr) return (await generateText(ctx, taskId, diff, null))?.title ?? null;
-            const result = await generateText(ctx, taskId, diff, template!);
-            if (!result) return null;
-            description = result.description ?? "";
-            fs.writeFileSync(MR_DESC_TMP, description, "utf-8");
-            return result.title;
-          });
-          if (!confirmed) {
-            ctx.ui.notify("Заголовок коммита не задан — отмена", "warning");
-            return;
-          }
-          commitTitle = confirmed;
+          description = await generateDescription(ctx, taskId, diff, template!);
+          if (!description) return;
+          fs.writeFileSync(MR_DESC_TMP, description, "utf-8");
         }
 
         // 6. Commit + push
@@ -603,6 +620,9 @@ export default function (pi: ExtensionAPI) {
           return;
         }
         ctx.ui.notify("Запушено ✓", "info");
+        if (!existingMr) {
+          ctx.ui.notify(description ? "Готовлю создание MR..." : "Генерирую описание MR...", "info");
+        }
 
         // 7. Если MR уже был — при необходимости обновить описание и выйти
         if (existingMr) {

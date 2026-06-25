@@ -63,7 +63,7 @@
     "blockImages": false
   },
   "enableSkillCommands": false,
-  "autocompleteMaxVisible": 30,
+  "autocompleteMaxVisible": 10,
   "followUpMode": "all",
   "enableInstallTelemetry": true,
   "doubleEscapeAction": "tree",
