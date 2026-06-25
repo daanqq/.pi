@@ -7,6 +7,7 @@ const REVIEWS_ROOT = "/home/user/echat/reviews";
 const GITLAB_HOST = "https://git.esoft.tech";
 const EUTP_ID_RE = /(EUTP-\d+)/i;
 const MR_URL_RE = /^https:\/\/git\.esoft\.tech\/tidy\/([^/]+)\/-\/merge_requests\/(\d+)/;
+const MR_URL_SCAN_RE = /https:\/\/git\.esoft\.tech\/tidy\/([^/\s]+)\/-\/merge_requests\/(\d+)/g;
 const API_BASE = "https://urs.esoft.tech/api/user/youtrack/v1/issues";
 
 const THERMO_PROMPT = `Perform a deep code quality audit of the current branch's changes.
@@ -25,6 +26,7 @@ Apply these review rules:
 type MrRef = { repo: string; iid: string; url: string };
 type GitLabMr = { title?: string; description?: string; source_branch?: string; target_branch?: string; web_url?: string };
 type TaskData = Record<string, unknown>;
+type ReviewParams = { refs: MrRef[]; explicitSession?: string; extraInfo: string; relatedTaskIds: string[] };
 type ExecFn = (cmd: string, args: string[], opts?: Record<string, unknown>) => Promise<{ stdout: string; stderr?: string; code: number }>;
 
 export default function (pi: ExtensionAPI) {
@@ -36,19 +38,23 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      const refs = parseMrRefs(args);
+      const params = args.trim() ? parseArgs(args) : await promptReviewParams(ctx);
+      if (!params) return;
+
+      const { refs, explicitSession, extraInfo, relatedTaskIds } = params;
       if (refs.length === 0) {
-        ctx.ui.notify("Укажи MR URL: /mr-review https://git.esoft.tech/tidy/<repo>/-/merge_requests/<iid>", "error");
+        ctx.ui.notify("Укажи MR URL: /mr-review https://git.esoft.tech/tidy/<repo>/-/merge_requests/<iid> [pora_session]", "error");
         return;
       }
 
-      const session = await resolvePoraSession(ctx);
+      const session = await resolvePoraSession(ctx, explicitSession);
+      const relatedTasks = await fetchRelatedTasks(relatedTaskIds, session);
       const prompts: string[] = [];
       const errors: string[] = [];
 
       for (const ref of refs) {
         try {
-          prompts.push(await prepareOneMrReview(pi, ctx, ref, session));
+          prompts.push(await prepareOneMrReview(pi, ctx, ref, session, extraInfo, relatedTasks));
         } catch (err: any) {
           const message = `## ${ref.repo} MR !${ref.iid}\n\nОшибка: ${err.message}`;
           errors.push(message);
@@ -59,10 +65,8 @@ export default function (pi: ExtensionAPI) {
       if (prompts.length > 0) {
         pi.sendUserMessage(prompts.join("\n\n---\n\n"));
       }
-      if (errors.length > 0) {
-        const text = errors.join("\n\n---\n\n");
-        if (ctx.hasUI) ctx.ui.setEditorText(text);
-        else ctx.ui.notify(text, "error");
+      if (errors.length > 0 && !ctx.hasUI) {
+        ctx.ui.notify(errors.join("\n\n---\n\n"), "error");
       }
     },
   });
@@ -73,6 +77,8 @@ async function prepareOneMrReview(
   ctx: ExtensionCommandContext,
   ref: MrRef,
   poraSession: string | null,
+  extraInfo: string,
+  relatedTasks: Array<{ id: string; task: TaskData | null }>,
 ): Promise<string> {
   const repoDir = path.join(REVIEWS_ROOT, ref.repo);
   if (!fs.existsSync(path.join(repoDir, ".git"))) {
@@ -83,32 +89,102 @@ async function prepareOneMrReview(
   const mr = await fetchGitLabMr(pi, ref);
   const sourceBranch = mr?.source_branch ?? "";
   const targetBranch = `mr-${ref.iid}`;
-  await checkoutMaster(exec);
+  const baseBranch = await preferredBaseBranch(pi, repoDir, mr?.target_branch);
+  await checkoutBaseBranch(exec, baseBranch);
   await fetchMr(exec, ref.iid, targetBranch);
   const taskId = extractTaskId(sourceBranch)
     ?? extractTaskId(`${mr?.title ?? ""}\n${mr?.description ?? ""}`)
-    ?? await extractTaskIdFromCommits(exec, targetBranch);
+    ?? await extractTaskIdFromCommits(exec, targetBranch, baseBranch);
   if (!taskId) {
     throw new Error(`Не найден EUTP-ID в source_branch/title/description/commits MR: ${sourceBranch || "—"}`);
   }
-  const baseBranch = await preferredBaseBranch(pi, repoDir, mr?.target_branch);
+  renameSession(ctx, `${taskId} ${ref.repo} mr-${ref.iid} review`);
   const mergeBase = await resolveMergeBase(exec, targetBranch, baseBranch);
   const task = poraSession ? await fetchTask(taskId, poraSession) : null;
 
   ctx.ui.notify(`Подготовил ${ref.repo}!${ref.iid}: ${sourceBranch || targetBranch}, задача ${taskId}`, "info");
-  return buildReviewPrompt({ ref, mr, taskId, task, baseBranch, targetBranch, mergeBase });
+  return buildReviewPrompt({ ref, mr, taskId, task, baseBranch, targetBranch, mergeBase, extraInfo, relatedTasks });
 }
 
-function parseMrRefs(raw: string): MrRef[] {
-  return raw.split(/\s+/).map((url) => {
-    const m = url.match(MR_URL_RE);
-    return m ? { repo: m[1]!, iid: m[2]!, url } : null;
-  }).filter((x): x is MrRef => Boolean(x));
+function parseArgs(raw: string): ReviewParams {
+  const parts = raw.trim().split(/\s+/).filter(Boolean);
+  const refs: MrRef[] = [];
+  let explicitSession: string | undefined;
+
+  for (const [index, part] of parts.entries()) {
+    const m = part.match(MR_URL_RE);
+    if (m) {
+      refs.push({ repo: m[1]!, iid: m[2]!, url: part });
+    } else if (index === 1 && part !== "''") {
+      explicitSession = part;
+    }
+  }
+
+  return { refs, explicitSession, extraInfo: "", relatedTaskIds: [] };
+}
+
+async function promptReviewParams(ctx: ExtensionCommandContext): Promise<ReviewParams | null> {
+  if (!ctx.hasUI) {
+    ctx.ui.notify("Укажи MR URL: /mr-review <MR-URL> [pora_session]", "error");
+    return null;
+  }
+
+  const text = await ctx.ui.editor("Параметры MR review", `Ссылка на MR:
+Токен PORA:
+Дополнительная информация к задаче:
+Задачи Youtrack описание которых нужно спарсить и соотнести с задачей:
+`);
+  return text ? parseStructuredParams(text) : null;
+}
+
+function parseStructuredParams(text: string): ReviewParams {
+  const fields = readFields(text, [
+    "Ссылка на MR",
+    "Токен PORA",
+    "Дополнительная информация к задаче",
+    "Задачи Youtrack описание которых нужно спарсить и соотнести с задачей",
+  ]);
+  return {
+    refs: parseMrRefs(fields["Ссылка на MR"] ?? ""),
+    explicitSession: optionalField(fields["Токен PORA"]),
+    extraInfo: (fields["Дополнительная информация к задаче"] ?? "").trim(),
+    relatedTaskIds: extractTaskIds(fields["Задачи Youtrack описание которых нужно спарсить и соотнести с задачей"] ?? ""),
+  };
+}
+
+function readFields(text: string, labels: string[]): Record<string, string> {
+  const out: Record<string, string[]> = {};
+  let current: string | null = null;
+
+  for (const line of text.split(/\r?\n/)) {
+    const label = labels.find((x) => line.startsWith(`${x}:`));
+    if (label) {
+      current = label;
+      out[current] = [line.slice(label.length + 1).trim()];
+    } else if (current) {
+      out[current]!.push(line);
+    }
+  }
+
+  return Object.fromEntries(Object.entries(out).map(([key, lines]) => [key, lines.join("\n").trim()]));
+}
+
+function optionalField(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed && trimmed !== "''" ? trimmed : undefined;
+}
+
+function parseMrRefs(text: string): MrRef[] {
+  return [...text.matchAll(MR_URL_SCAN_RE)].map((m) => ({ repo: m[1]!, iid: m[2]!, url: m[0] }));
 }
 
 function extractTaskId(text: string): string | null {
   const m = text.match(EUTP_ID_RE);
   return m ? m[1]!.toUpperCase() : null;
+}
+
+function extractTaskIds(text: string): string[] {
+  return [...new Set([...text.matchAll(new RegExp(EUTP_ID_RE, "gi"))].map((m) => m[1]!.toUpperCase()))];
 }
 
 async function fetchGitLabMr(pi: ExtensionAPI, ref: MrRef): Promise<GitLabMr | null> {
@@ -142,12 +218,14 @@ function parseJsonObject<T extends object>(text: string): T | null {
   }
 }
 
-async function checkoutMaster(exec: ExecFn): Promise<void> {
+async function checkoutBaseBranch(exec: ExecFn, baseBranch: string): Promise<void> {
   const current = (await exec("git", ["branch", "--show-current"], { timeout: 5_000 })).stdout.trim();
-  if (current === "master") return;
+  const localBase = baseBranch.startsWith("origin/") ? baseBranch.slice("origin/".length) : baseBranch;
+  if (current === baseBranch || current === localBase) return;
 
-  const result = await exec("git", ["switch", "master"], { timeout: 15_000 });
-  if (result.code !== 0) throw new Error(`Не удалось переключиться на master: ${result.stderr || result.stdout}`);
+  const args = baseBranch.startsWith("origin/") ? ["switch", "--detach", baseBranch] : ["switch", baseBranch];
+  const result = await exec("git", args, { timeout: 15_000 });
+  if (result.code !== 0) throw new Error(`Не удалось переключиться на ${baseBranch}: ${result.stderr || result.stdout}`);
 }
 
 async function fetchMr(exec: ExecFn, iid: string, branch: string): Promise<void> {
@@ -155,18 +233,30 @@ async function fetchMr(exec: ExecFn, iid: string, branch: string): Promise<void>
   if (result.code !== 0) throw new Error(`git fetch MR failed: ${result.stderr || result.stdout}`);
 }
 
-async function extractTaskIdFromCommits(exec: ExecFn, branch: string): Promise<string | null> {
-  const result = await exec("git", ["log", branch, "--not", "origin/master", "--format=%B"], { timeout: 10_000 });
+async function extractTaskIdFromCommits(exec: ExecFn, branch: string, baseBranch: string): Promise<string | null> {
+  const result = await exec("git", ["log", branch, "--not", baseBranch, "--format=%B"], { timeout: 10_000 });
   return result.code === 0 ? extractTaskId(result.stdout) : null;
 }
 
 async function preferredBaseBranch(pi: ExtensionAPI, cwd: string, target?: string): Promise<string> {
-  const candidates = [target && `origin/${target}`, "origin/master", "origin/main", target, "master", "main"].filter(Boolean) as string[];
+  const candidates = [
+    target && `origin/${target}`,
+    target,
+    "origin/HEAD",
+    "origin/master",
+    "origin/main",
+    "origin/stage",
+    "origin/develop",
+    "master",
+    "main",
+    "stage",
+    "develop",
+  ].filter(Boolean) as string[];
   for (const branch of candidates) {
     const result = await pi.exec("git", ["rev-parse", "--verify", `${branch}^{commit}`], { cwd, timeout: 5_000 });
     if (result.code === 0) return branch;
   }
-  return "origin/master";
+  throw new Error("Не найдена базовая ветка: target/master/main/stage/develop");
 }
 
 async function resolveMergeBase(exec: ExecFn, targetBranch: string, baseBranch: string): Promise<string> {
@@ -175,7 +265,13 @@ async function resolveMergeBase(exec: ExecFn, targetBranch: string, baseBranch: 
   return result.stdout.trim();
 }
 
-async function resolvePoraSession(ctx: ExtensionCommandContext): Promise<string | null> {
+async function resolvePoraSession(ctx: ExtensionCommandContext, explicitSession?: string): Promise<string | null> {
+  if (explicitSession !== undefined) {
+    process.env.PORA_SESSION = explicitSession;
+    updateZshrc(explicitSession);
+    return explicitSession;
+  }
+
   if (process.env.PORA_SESSION) return process.env.PORA_SESSION;
   if (!ctx.hasUI) return null;
 
@@ -208,6 +304,16 @@ async function fetchTask(taskId: string, session: string): Promise<TaskData | nu
   return await res.json() as TaskData;
 }
 
+async function fetchRelatedTasks(taskIds: string[], session: string | null): Promise<Array<{ id: string; task: TaskData | null }>> {
+  return Promise.all(taskIds.map(async (id) => {
+    try {
+      return { id, task: session ? await fetchTask(id, session) : null };
+    } catch {
+      return { id, task: null };
+    }
+  }));
+}
+
 function taskSummary(taskId: string, task: TaskData | null): string {
   if (!task) return `- **ID**: ${taskId}\n- **Данные**: не загружены; сверяй минимум по заголовку MR/задачи.`;
   const assignee = task.assignee as Record<string, unknown> | undefined;
@@ -233,6 +339,11 @@ function fmt(value: unknown): string {
   return String(value);
 }
 
+function renameSession(ctx: ExtensionCommandContext, name: string): void {
+  const sessionManager = ctx.sessionManager as { appendSessionInfo?: (name: string) => void };
+  sessionManager.appendSessionInfo?.(name.replace(/\s+/g, " ").trim());
+}
+
 function buildReviewPrompt(input: {
   ref: MrRef;
   mr: GitLabMr | null;
@@ -241,8 +352,10 @@ function buildReviewPrompt(input: {
   baseBranch: string;
   targetBranch: string;
   mergeBase: string;
+  extraInfo: string;
+  relatedTasks: Array<{ id: string; task: TaskData | null }>;
 }): string {
-  const { ref, mr, taskId, task, baseBranch, targetBranch, mergeBase } = input;
+  const { ref, mr, taskId, task, baseBranch, targetBranch, mergeBase, extraInfo, relatedTasks } = input;
   return `Проведи ревью GitLab MR на русском.
 
 Проверяй в текущем репозитории: ${path.join(REVIEWS_ROOT, ref.repo)}
@@ -254,6 +367,12 @@ Merge base: ${mergeBase}
 
 ## Задача
 ${taskSummary(taskId, task)}
+${extraInfo ? `
+## Дополнительная информация
+${extraInfo}` : ""}
+${relatedTasks.length > 0 ? `
+## Связанные задачи для соотнесения
+${relatedTasks.map(({ id, task }) => `### ${id}\n${taskSummary(id, task)}`).join("\n\n")}` : ""}
 
 ## Стандарт ревью
 ${THERMO_PROMPT}
@@ -262,7 +381,8 @@ ${THERMO_PROMPT}
 1. Выполни \`git diff ${mergeBase}..${targetBranch}\` и прочитай изменённые файлы и их потребителей. Для протокольных/API изменений проверь обе стороны.
 2. Найди реальные blocker/major/minor проблемы. Не пиши косметические ниты.
 3. Отдельно сверяй реализацию с описанием задачи выше; если описание не загружено — сверяй по заголовку задачи/MR.
-4. Ответ строго в формате ниже. Не оборачивай ответ в markdown/code fences.
+4. Если есть связанные задачи, проверь не конфликтует ли MR с их требованиями и не упускает ли нужную связку.
+5. Ответ строго в формате ниже. Не оборачивай ответ в markdown/code fences.
 
 Проверял в \`${REVIEWS_ROOT}\`.
 

@@ -216,23 +216,7 @@ const MAX_SESSION_LENGTH = 36;
 const MAX_CWD_LENGTH = 24;
 const WIDGET_ID = "agent-pulse";
 
-type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
-
 type ColorFn = (text: string) => string;
-
-function normalizeThinkingLevel(level: string): ThinkingLevel {
-	switch (level) {
-		case "off":
-		case "minimal":
-		case "low":
-		case "medium":
-		case "high":
-		case "xhigh":
-			return level;
-		default:
-			return "medium";
-	}
-}
 
 function sampleVerb(): string {
 	return SPINNER_VERBS[Math.floor(Math.random() * SPINNER_VERBS.length)] ?? "Thinking";
@@ -303,11 +287,8 @@ export default function (pi: ExtensionAPI) {
 	let lastFrame = "✻";
 	let lastToolName: string | undefined;
 	let totalOutputTokens = 0;
+	let frozenPulseColor: ColorFn | null = null;
 	const activeTools = new Set<string>();
-	// Do not call pi.getThinkingLevel() during extension loading: action methods
-	// are only available after the runtime is initialized. The real value is
-	// captured on agent_start.
-	let frozenThinkingLevel: ThinkingLevel = "low";
 
 	function getElapsedMs(): number {
 		if (pauseStartTime !== null) return pauseStartTime - startTime - totalPausedMs;
@@ -330,8 +311,10 @@ export default function (pi: ExtensionAPI) {
 
 	function setEditorPulse(ctx: ExtensionContext, renderLineWithColors: (base: ColorFn, bright: ColorFn) => string) {
 		globalThis.__piAgentPulseEditorLine = (width, borderColor) => {
-			const bright = (text: string) => `\x1b[1m${borderColor(text)}\x1b[22m`;
-			return truncateToWidth(`  ${renderLineWithColors(borderColor, bright)}`, width, "");
+			const base = frozenPulseColor ?? borderColor;
+			frozenPulseColor = base;
+			const bright = (text: string) => `\x1b[1m${base(text)}\x1b[22m`;
+			return truncateToWidth(`  ${renderLineWithColors(base, bright)}`, width, "");
 		};
 		// ponytail: empty widget is just a render tick; the pulse itself lives inside ui-editor.
 		ctx.ui.setWidget(WIDGET_ID, undefined);
@@ -389,6 +372,7 @@ export default function (pi: ExtensionAPI) {
 		totalPausedMs = 0;
 		activeTools.clear();
 		lastToolName = undefined;
+		frozenPulseColor = null;
 	}
 
 	function resetToIdle(ctx: ExtensionContext) {
@@ -422,10 +406,7 @@ export default function (pi: ExtensionAPI) {
 		pauseStartTime = null;
 		active = true;
 		lastFrame = spinnerFrame(0);
-		// Freeze the thinking-level color for this whole model response.
-		// If the user changes thinking level mid-response, the loader keeps this color
-		// until the next agent_start.
-		frozenThinkingLevel = normalizeThinkingLevel(pi.getThinkingLevel());
+		frozenPulseColor = null;
 		ctx.ui.setWorkingVisible(false);
 		renderActive(ctx);
 		renderTimer = setInterval(() => renderActive(ctx), SPINNER_RENDER_INTERVAL_MS);

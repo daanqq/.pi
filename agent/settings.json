@@ -1,6 +1,6 @@
 {
   "lastChangelogVersion": "0.80.2",
-  "defaultThinkingLevel": "low",
+  "defaultThinkingLevel": "medium",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.5",
   "packages": [
@@ -54,7 +54,7 @@
   "steeringMode": "all",
   "terminal": {
     "showTerminalProgress": true,
-    "clearOnShrink": false
+    "clearOnShrink": true
   },
   "editorPaddingX": 0,
   "showHardwareCursor": false,
