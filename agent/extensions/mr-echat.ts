@@ -273,14 +273,14 @@ async function confirmTitle(
   while (true) {
     if (previousTitle) {
       const action = await ctx.ui.select("Заголовок коммита", [
-        `Использовать предложенный: ${title}`,
-        `Использовать предыдущее сообщение: ${previousTitle}`,
+        `Использовать сгенерированный: ${title}`,
+        `Использовать существующий: ${previousTitle}`,
         "Сгенерировать другой вариант",
         "Ввести вручную",
       ]);
       if (!action) return null;
-      if (action.startsWith("Использовать предложенный")) return title;
-      if (action.startsWith("Использовать предыдущее")) return previousTitle;
+      if (action.startsWith("Использовать сгенерированный")) return title;
+      if (action.startsWith("Использовать существующий")) return previousTitle;
       if (action === "Ввести вручную") {
         const manual = await ctx.ui.input("Введи название коммита (без #EUTP-XXX):");
         if (manual) return `${manual.trim()} #${taskId}`;
@@ -350,10 +350,9 @@ export default function (pi: ExtensionAPI) {
         let description: string | null = null;
         let firstTitle: string | null = null;
         let template: string | null = null;
+        const previousTitle = !userTitle ? await getPreviousCommitTitle(exec, taskId) : null;
 
-        if (existingMrUrl) {
-          if (!userTitle) firstTitle = (await generateText(ctx, taskId, diff, null))?.title ?? null;
-        } else {
+        if (!existingMrUrl) {
           try {
             template = readTemplate(repoDir, taskId);
           } catch {
@@ -372,9 +371,29 @@ export default function (pi: ExtensionAPI) {
         let commitTitle: string;
         if (userTitle) {
           commitTitle = `${userTitle} #${taskId}`;
+        } else if (existingMrUrl && previousTitle) {
+          const action = await ctx.ui.select("Заголовок коммита", [
+            `Использовать существующее сообщение: ${previousTitle}`,
+            "Сгенерировать новое",
+          ]);
+          if (!action) return;
+          if (action.startsWith("Использовать существующее")) {
+            commitTitle = previousTitle;
+          } else {
+            firstTitle = (await generateText(ctx, taskId, diff, null))?.title ?? null;
+            if (!firstTitle) return;
+            const confirmed = await confirmTitle(ctx, taskId, firstTitle, previousTitle, async () => (await generateText(ctx, taskId, diff, null))?.title ?? null);
+            if (!confirmed) {
+              ctx.ui.notify("Заголовок коммита не задан — отмена", "warning");
+              return;
+            }
+            commitTitle = confirmed;
+          }
         } else {
+          if (!firstTitle) {
+            firstTitle = (await generateText(ctx, taskId, diff, null))?.title ?? null;
+          }
           if (!firstTitle) return;
-          const previousTitle = await getPreviousCommitTitle(exec, taskId);
           const confirmed = await confirmTitle(ctx, taskId, firstTitle, previousTitle, async () => {
             if (existingMrUrl) return (await generateText(ctx, taskId, diff, null))?.title ?? null;
             const result = await generateText(ctx, taskId, diff, template!);
