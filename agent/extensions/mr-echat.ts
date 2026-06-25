@@ -162,6 +162,59 @@ async function getDiff(exec: ExecFn): Promise<string> {
 
 type ExistingMr = { ref: string; url: string };
 
+type ParentBranchCandidate = { branch: string; distance: number };
+
+function normalizeRemoteBranch(ref: string): string {
+  return ref.replace(/^origin\//, "");
+}
+
+/** Найти родительскую EUTP-ветку, если текущая ветка ответвлена от неё, а не от main/master. */
+async function getParentTaskBranch(exec: ExecFn, branch: string): Promise<string | null> {
+  const refsResult = await exec("git", ["for-each-ref", "--format=%(refname:short)", "refs/remotes/origin"]);
+  if (refsResult.code !== 0) return null;
+
+  const currentHead = (await exec("git", ["rev-parse", "HEAD"])).stdout.trim();
+  const refs = [...new Set(refsResult.stdout.trim().split("\n").filter(Boolean))];
+  const candidates = refs.filter((ref) => {
+    const normalized = normalizeRemoteBranch(ref);
+    return ref !== "origin/HEAD" && normalized !== branch && EUTP_ID_RE.test(normalized);
+  });
+  if (candidates.length === 0) return null;
+
+  const originHead = (await exec("git", ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"])).stdout.trim();
+  const defaultRefs = [originHead, "origin/main", "origin/master", "origin/develop", "origin/dev", "origin/stage", "origin/staging", "main", "master", "develop", "dev", "stage", "staging"].filter(Boolean);
+  let defaultMergeBase: string | null = null;
+  for (const ref of defaultRefs) {
+    const exists = await exec("git", ["rev-parse", "--verify", "--quiet", ref]);
+    if (exists.code !== 0) continue;
+    const base = await exec("git", ["merge-base", "HEAD", ref]);
+    if (base.code === 0 && base.stdout.trim()) {
+      defaultMergeBase = base.stdout.trim();
+      break;
+    }
+  }
+
+  const matches: ParentBranchCandidate[] = [];
+  for (const ref of candidates) {
+    const base = await exec("git", ["merge-base", "HEAD", ref]);
+    const mergeBase = base.stdout.trim();
+    if (base.code !== 0 || !mergeBase || mergeBase === currentHead || mergeBase === defaultMergeBase) continue;
+
+    if (defaultMergeBase) {
+      const isAfterDefault = await exec("git", ["merge-base", "--is-ancestor", defaultMergeBase, mergeBase]);
+      if (isAfterDefault.code !== 0) continue;
+    }
+
+    const distanceResult = await exec("git", ["rev-list", "--count", `${mergeBase}..HEAD`]);
+    const distance = Number(distanceResult.stdout.trim());
+    if (distanceResult.code !== 0 || !Number.isFinite(distance)) continue;
+    matches.push({ branch: normalizeRemoteBranch(ref), distance });
+  }
+
+  matches.sort((a, b) => a.distance - b.distance || a.branch.localeCompare(b.branch));
+  return matches[0]?.branch ?? null;
+}
+
 /** Найти MR для текущей ветки. */
 async function getExistingMr(exec: ExecFn, branch: string): Promise<ExistingMr | null> {
   const result = await exec("glab", ["mr", "list", "--source-branch", branch, "--output", "json"]);
@@ -575,6 +628,7 @@ export default function (pi: ExtensionAPI) {
         // 8. Создать MR
         const username = await getGlabUser(exec);
         const descContent = description ?? fs.readFileSync(MR_DESC_TMP, "utf-8");
+        const targetBranch = await getParentTaskBranch(exec, branch);
 
         const mrArgs = [
           "mr", "create",
@@ -585,8 +639,11 @@ export default function (pi: ExtensionAPI) {
         if (username) {
           mrArgs.push("--assignee", username);
         }
+        if (targetBranch) {
+          mrArgs.push("--target-branch", targetBranch);
+        }
 
-        ctx.ui.notify("Создаю MR...", "info");
+        ctx.ui.notify(targetBranch ? `Создаю MR в ${targetBranch}...` : "Создаю MR...", "info");
         const createResult = await exec("glab", mrArgs);
 
         if (createResult.code !== 0) {
