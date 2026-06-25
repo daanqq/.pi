@@ -28,6 +28,22 @@ const MR_DESC_TMP = "/tmp/mr_description.md";
 const GENERATION_PROVIDER = "openai-codex";
 const GENERATION_MODEL = "gpt-5.4-mini";
 const GENERATION_THINKING = "high";
+const GENERATED_DIFF_EXCLUDES = [
+  "**/package-lock.json",
+  "**/npm-shrinkwrap.json",
+  "**/yarn.lock",
+  "**/pnpm-lock.yaml",
+  "**/bun.lockb",
+  "**/bun.lock",
+  "**/dist/**",
+  "**/build/**",
+  "**/coverage/**",
+  "**/generated/**",
+  "**/__generated__/**",
+  "**/*.generated.*",
+  "**/*.gen.*",
+  "**/*.pb.*",
+];
 
 const TITLE_SYSTEM_PROMPT = `You are a commit message generator for an EChat project.
 Given a git diff, output exactly one commit title.
@@ -48,6 +64,20 @@ TITLE: <commit title>`;
 // ---------------------------------------------------------------------------
 // System prompt for complete() — generates both title and description
 // ---------------------------------------------------------------------------
+
+const UPDATE_MR_DESC_SYSTEM_PROMPT = `You update an existing GitLab MR description for an EChat project.
+Given the current MR description and a git diff with new changes, output the full updated MR description in Russian.
+
+Rules:
+- Keep the existing useful content and structure
+- Add only information from the new diff
+- Do not duplicate existing items
+- Keep Russian text
+- Remove HTML/markdown comments if present
+
+Output format (strict):
+DESC:
+<full updated MR description>`;
 
 const LLM_SYSTEM_PROMPT = `You are a commit message and MR description generator for an EChat project.
 Given a git diff and an MR template, output exactly:
@@ -108,31 +138,55 @@ function readTemplate(cwd: string, taskId: string): string {
   return text;
 }
 
+/** Аргументы git diff с исключением generated-файлов из текста для LLM. */
+function diffArgs(...args: string[]): string[] {
+  return ["diff", ...args, "--", ".", ...GENERATED_DIFF_EXCLUDES.map((p) => `:(exclude,glob)${p}`)];
+}
+
 /** Определить, какой diff использовать, и получить его. */
 async function getDiff(exec: ExecFn): Promise<string> {
-  const cached = await exec("git", ["diff", "--cached", "--name-only"]);
-  const unstaged = await exec("git", ["diff", "--name-only"]);
+  const cached = await exec("git", diffArgs("--cached", "--name-only"));
+  const unstaged = await exec("git", diffArgs("--name-only"));
 
   const hasCached = cached.stdout.trim().length > 0;
   const hasUnstaged = unstaged.stdout.trim().length > 0;
 
   if (hasCached) {
-    const diff = await exec("git", ["diff", "--cached"]);
+    const diff = await exec("git", diffArgs("--cached"));
     return diff.stdout;
   }
   // staged пуст — анализируем всё unstaged
-  const diff = await exec("git", ["diff"]);
+  const diff = await exec("git", diffArgs());
   return diff.stdout;
 }
 
+type ExistingMr = { ref: string; url: string };
+
 /** Найти MR для текущей ветки. */
-async function getExistingMrUrl(exec: ExecFn, branch: string): Promise<string | null> {
+async function getExistingMr(exec: ExecFn, branch: string): Promise<ExistingMr | null> {
   const result = await exec("glab", ["mr", "list", "--source-branch", branch, "--output", "json"]);
   if (result.code !== 0 || !result.stdout.trim() || result.stdout.trim() === "[]") return null;
 
   try {
     const mrs = JSON.parse(result.stdout);
-    return Array.isArray(mrs) && mrs.length > 0 ? mrs[0].web_url || null : null;
+    if (!Array.isArray(mrs) || mrs.length === 0) return null;
+    const mr = mrs[0];
+    const url = mr.web_url || mr.webUrl || mr.url;
+    const ref = String(mr.iid || mr.id || url || "");
+    return url && ref ? { ref, url } : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Получить текущее описание MR. */
+async function getMrDescription(exec: ExecFn, mrRef: string): Promise<string | null> {
+  const result = await exec("glab", ["mr", "view", mrRef, "--output", "json", "--fields", "description"]);
+  if (result.code !== 0 || !result.stdout.trim()) return null;
+
+  try {
+    const mr = JSON.parse(result.stdout);
+    return typeof mr.description === "string" ? mr.description : null;
   } catch {
     return null;
   }
@@ -258,6 +312,56 @@ async function generateText(
   };
 }
 
+/** Составить новое описание существующего MR из текущего описания и новых изменений. */
+async function generateUpdatedDescription(
+  ctx: any,
+  taskId: string,
+  currentDescription: string,
+  diff: string,
+): Promise<string | null> {
+  const model = ctx.modelRegistry.find(GENERATION_PROVIDER, GENERATION_MODEL);
+  if (!model) {
+    ctx.ui.notify(`Модель не найдена: ${GENERATION_PROVIDER}/${GENERATION_MODEL}`, "error");
+    return null;
+  }
+
+  const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+  if (!auth.ok || !auth.apiKey) {
+    ctx.ui.notify(`Нет API-ключа для ${GENERATION_PROVIDER}`, "error");
+    return null;
+  }
+
+  const prompt = [
+    `Task: ${taskId}`,
+    "Current MR description:",
+    currentDescription,
+    "New git diff:",
+    diff,
+  ].join("\n\n");
+  const userMessage: Message = {
+    role: "user",
+    content: [{ type: "text", text: prompt }],
+    timestamp: Date.now(),
+  };
+
+  ctx.ui.notify("Обновляю описание существующего MR...", "info");
+  const response = await complete(
+    model,
+    { systemPrompt: UPDATE_MR_DESC_SYSTEM_PROMPT, messages: [userMessage] },
+    { apiKey: auth.apiKey, headers: auth.headers, reasoningEffort: GENERATION_THINKING },
+  );
+  const text = response.content
+    .filter((c: any): c is { type: "text"; text: string } => c.type === "text")
+    .map((c: any) => c.text)
+    .join("\n");
+  const descMatch = text.match(/^DESC:\s*([\s\S]*)$/m);
+  if (!descMatch) {
+    ctx.ui.notify("LLM вернул ответ не по формату. DESC: не найден.", "error");
+    return null;
+  }
+  return descMatch[1].trim();
+}
+
 /** Цикл подтверждения commit title.
  *  Принимает уже сгенерированный первый вариант, чтобы избежать лишнего вызова complete(). */
 async function confirmTitle(
@@ -337,7 +441,7 @@ export default function (pi: ExtensionAPI) {
         }
 
         // 2. Проверить существующий MR до генерации описания
-        const existingMrUrl = await getExistingMrUrl(exec, branch);
+        const existingMr = await getExistingMr(exec, branch);
 
         // 3. Получить diff
         const diff = await getDiff(exec);
@@ -350,9 +454,12 @@ export default function (pi: ExtensionAPI) {
         let description: string | null = null;
         let firstTitle: string | null = null;
         let template: string | null = null;
+        const updateExistingMrDescription = existingMr
+          ? await ctx.ui.confirm("MR уже существует", "Дополнить описание MR новыми изменениями?")
+          : false;
         const previousTitle = !userTitle ? await getPreviousCommitTitle(exec, taskId) : null;
 
-        if (!existingMrUrl) {
+        if (!existingMr) {
           try {
             template = readTemplate(repoDir, taskId);
           } catch {
@@ -371,7 +478,7 @@ export default function (pi: ExtensionAPI) {
         let commitTitle: string;
         if (userTitle) {
           commitTitle = `${userTitle} #${taskId}`;
-        } else if (existingMrUrl && previousTitle) {
+        } else if (existingMr && previousTitle) {
           const action = await ctx.ui.select("Заголовок коммита", [
             `Использовать существующее сообщение: ${previousTitle}`,
             "Сгенерировать новое",
@@ -395,7 +502,7 @@ export default function (pi: ExtensionAPI) {
           }
           if (!firstTitle) return;
           const confirmed = await confirmTitle(ctx, taskId, firstTitle, previousTitle, async () => {
-            if (existingMrUrl) return (await generateText(ctx, taskId, diff, null))?.title ?? null;
+            if (existingMr) return (await generateText(ctx, taskId, diff, null))?.title ?? null;
             const result = await generateText(ctx, taskId, diff, template!);
             if (!result) return null;
             description = result.description ?? "";
@@ -444,9 +551,24 @@ export default function (pi: ExtensionAPI) {
         }
         ctx.ui.notify("Запушено ✓", "info");
 
-        // 7. Если MR уже был — на этом всё
-        if (existingMrUrl) {
-          ctx.ui.notify(`MR уже существует: ${existingMrUrl}`, "info");
+        // 7. Если MR уже был — при необходимости обновить описание и выйти
+        if (existingMr) {
+          if (updateExistingMrDescription) {
+            const currentDescription = await getMrDescription(exec, existingMr.ref);
+            if (currentDescription === null) {
+              ctx.ui.notify("Не удалось прочитать текущее описание MR", "error");
+              return;
+            }
+            const updatedDescription = await generateUpdatedDescription(ctx, taskId, currentDescription, diff);
+            if (!updatedDescription) return;
+            const updateResult = await exec("glab", ["mr", "update", existingMr.ref, "--description", updatedDescription]);
+            if (updateResult.code !== 0) {
+              ctx.ui.notify(`Ошибка glab mr update: ${updateResult.stderr}`, "error");
+              return;
+            }
+            ctx.ui.notify("Описание MR обновлено ✓", "info");
+          }
+          ctx.ui.notify(`MR уже существует: ${existingMr.url}`, "info");
           return;
         }
 
