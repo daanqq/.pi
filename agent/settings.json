@@ -1,24 +1,14 @@
 {
   "lastChangelogVersion": "0.80.2",
-  "defaultThinkingLevel": "medium",
+  "defaultThinkingLevel": "high",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.5",
   "packages": [
     "npm:pi-web-access",
     "npm:pi-rtk-optimizer",
     "npm:@ff-labs/pi-fff",
-    {
-      "source": "git:github.com/DietrichGebert/ponytail",
-      "skills": [
-        "-skills/ponytail-review/SKILL.md",
-        "-skills/ponytail-gain/SKILL.md",
-        "-skills/ponytail-help/SKILL.md",
-        "-skills/ponytail-debt/SKILL.md",
-        "-skills/ponytail-audit/SKILL.md",
-        "-skills/ponytail/SKILL.md"
-      ]
-    },
-    "git:github.com/daanqq/pi-diff-review"
+    "git:github.com/daanqq/pi-diff-review",
+    "npm:pi-schedule-prompt"
   ],
   "hideThinkingBlock": false,
   "theme": "alabaster",
@@ -55,12 +45,10 @@
     "-extensions/generation-stats.ts"
   ],
   "httpIdleTimeoutMs": 120000,
+  "defaultProjectTrust": "always",
   "skills": [
-    "-skills/grill-with-docs/SKILL.md",
-    "-skills/tdd/SKILL.md",
-    "-skills/to-prd/SKILL.md",
-    "-skills/frontend-design/SKILL.md",
-    "-skills/grilling/SKILL.md"
-  ],
-  "defaultProjectTrust": "always"
+    "-skills/grilling/SKILL.md",
+    "-skills/make-change-easy/SKILL.md",
+    "-skills/twelve-rules/SKILL.md"
+  ]
 }
