@@ -22,7 +22,7 @@
   ],
   "hideThinkingBlock": false,
   "theme": "alabaster",
-  "quietStartup": true,
+  "quietStartup": false,
   "compaction": {
     "enabled": false
   },
