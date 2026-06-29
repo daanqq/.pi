@@ -1,46 +1,28 @@
 {
   "lastChangelogVersion": "0.80.2",
-  "defaultThinkingLevel": "high",
-  "defaultProvider": "deepseek",
-  "defaultModel": "deepseek-v4-pro",
+  "defaultThinkingLevel": "medium",
+  "defaultProvider": "openai-codex",
+  "defaultModel": "gpt-5.5",
   "packages": [
     "npm:pi-web-access",
     "npm:pi-rtk-optimizer",
-    {
-      "source": "npm:pi-subagents",
-      "prompts": [
-        "-prompts/gather-context-and-clarify.md",
-        "-prompts/parallel-cleanup.md",
-        "-prompts/parallel-context-build.md",
-        "-prompts/parallel-handoff-plan.md",
-        "-prompts/parallel-research.md",
-        "-prompts/parallel-review.md",
-        "-prompts/review-loop.md"
-      ],
-      "skills": [
-        "-skills/pi-subagents/SKILL.md"
-      ],
-      "extensions": [
-        "-src/extension/index.ts"
-      ]
-    },
     "npm:@ff-labs/pi-fff",
     {
       "source": "git:github.com/DietrichGebert/ponytail",
       "skills": [
-        "+skills/ponytail/SKILL.md",
-        "+skills/ponytail-audit/SKILL.md",
-        "+skills/ponytail-debt/SKILL.md",
-        "+skills/ponytail-help/SKILL.md",
-        "+skills/ponytail-review/SKILL.md"
+        "-skills/ponytail-review/SKILL.md",
+        "-skills/ponytail-gain/SKILL.md",
+        "-skills/ponytail-help/SKILL.md",
+        "-skills/ponytail-debt/SKILL.md",
+        "-skills/ponytail-audit/SKILL.md",
+        "-skills/ponytail/SKILL.md"
       ]
     },
-    "git:github.com/daanqq/pi-diff-review",
-    "npm:@tifan/pi-recap"
+    "git:github.com/daanqq/pi-diff-review"
   ],
   "hideThinkingBlock": false,
   "theme": "alabaster",
-  "quietStartup": false,
+  "quietStartup": true,
   "compaction": {
     "enabled": false
   },
@@ -54,7 +36,7 @@
   "steeringMode": "all",
   "terminal": {
     "showTerminalProgress": true,
-    "clearOnShrink": true
+    "clearOnShrink": false
   },
   "editorPaddingX": 0,
   "showHardwareCursor": false,
