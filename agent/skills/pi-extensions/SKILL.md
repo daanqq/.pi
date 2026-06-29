@@ -31,52 +31,6 @@ Comprehensive catalog of pi extension APIs and patterns. Use together with the [
 | **Resources** | `resources_discover` | Add skills, prompts, themes |
 | **Autocomplete** | `ctx.ui.addAutocompleteProvider()` | Custom autocomplete in the editor |
 
-## Quick Patterns
-
-### Custom tool
-```ts
-import { Type } from "typebox";
-import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-
-export default function (pi: ExtensionAPI) {
-  pi.registerTool(defineTool({
-    name: "my_tool",
-    label: "My Tool",
-    description: "What it does",
-    parameters: Type.Object({ input: Type.String() }),
-    async execute(_id, params, _signal, _onUpdate, _ctx) {
-      return { content: [{ type: "text", text: `Result: ${params.input}` }], details: {} };
-    },
-  }));
-}
-```
-
-### Block dangerous tool calls
-```ts
-pi.on("tool_call", async (event, ctx) => {
-  if (event.toolName === "bash" && event.input.command?.includes("rm -rf")) {
-    const ok = await ctx.ui.confirm("Dangerous!", "Allow rm -rf?");
-    if (!ok) return { block: true, reason: "Blocked" };
-  }
-});
-```
-
-### Modify system prompt
-```ts
-pi.on("before_agent_start", async (event) => {
-  return { systemPrompt: event.systemPrompt + "\n\nCustom instructions here." };
-});
-```
-
-### Transform user input
-```ts
-pi.on("input", async (event) => {
-  if (event.text.startsWith("?quick "))
-    return { action: "transform", text: `Respond briefly: ${event.text.slice(7)}` };
-  return { action: "continue" };
-});
-```
-
 ## Full Examples Catalog
 
 See [REFERENCE.md](REFERENCE.md) for the complete list of 50+ examples organized by API category, with descriptions of what each one does.
