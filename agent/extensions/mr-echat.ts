@@ -146,7 +146,7 @@ async function getDiff(exec: ExecFn): Promise<string> {
   return diff.stdout;
 }
 
-type ExistingMr = { ref: string; url: string };
+type ExistingMr = { ref: string; url: string; targetBranch: string | null };
 
 type ParentBranchCandidate = { branch: string; distance: number };
 
@@ -212,7 +212,8 @@ async function getExistingMr(exec: ExecFn, branch: string): Promise<ExistingMr |
     const mr = mrs[0];
     const url = mr.web_url || mr.webUrl || mr.url;
     const ref = String(mr.iid || mr.id || url || "");
-    return url && ref ? { ref, url } : null;
+    const targetBranch = typeof mr.target_branch === "string" ? mr.target_branch : null;
+    return url && ref ? { ref, url, targetBranch } : null;
   } catch {
     return null;
   }
@@ -224,6 +225,19 @@ async function getMrDescription(exec: ExecFn, mrRef: string): Promise<string | n
   if (result.code !== 0) return null;
 
   return result.stdout.trim();
+}
+
+/** Получить diff всех изменений ветки относительно target branch существующего MR. */
+async function getBranchDiff(exec: ExecFn, targetBranch: string | null): Promise<string> {
+  if (!targetBranch) return "";
+
+  await exec("git", ["fetch", "--quiet", "origin", targetBranch]);
+  const remoteTarget = `origin/${targetBranch}`;
+  const remoteDiff = await exec("git", diffArgs(`${remoteTarget}...HEAD`));
+  if (remoteDiff.code === 0) return remoteDiff.stdout;
+
+  const localDiff = await exec("git", diffArgs(`${targetBranch}...HEAD`));
+  return localDiff.code === 0 ? localDiff.stdout : "";
 }
 
 /** Получить username текущего glab-пользователя. */
@@ -522,7 +536,31 @@ export default function (pi: ExtensionAPI) {
         // 3. Получить diff
         const diff = await getDiff(exec);
         if (!diff.trim()) {
-          ctx.ui.notify("Нет изменений для коммита", "error");
+          if (!existingMr) {
+            ctx.ui.notify("Нет изменений для коммита", "error");
+            return;
+          }
+
+          const currentDescription = await getMrDescription(exec, existingMr.ref);
+          if (currentDescription === null) {
+            ctx.ui.notify("Не удалось прочитать текущее описание MR", "error");
+            return;
+          }
+
+          const branchDiff = await getBranchDiff(exec, existingMr.targetBranch);
+          if (!branchDiff.trim()) {
+            ctx.ui.notify("Нет локальных изменений и не удалось получить diff ветки MR", "error");
+            return;
+          }
+
+          const updatedDescription = await generateUpdatedDescription(ctx, taskId, currentDescription, branchDiff);
+          if (!updatedDescription) return;
+          const updateResult = await exec("glab", ["mr", "update", existingMr.ref, "--description", updatedDescription]);
+          if (updateResult.code !== 0) {
+            ctx.ui.notify(`Ошибка glab mr update: ${updateResult.stderr}`, "error");
+            return;
+          }
+          ctx.ui.notify(`Описание MR обновлено по изменениям ветки: ${existingMr.url}`, "info");
           return;
         }
 
