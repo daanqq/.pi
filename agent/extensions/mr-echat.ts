@@ -220,15 +220,10 @@ async function getExistingMr(exec: ExecFn, branch: string): Promise<ExistingMr |
 
 /** Получить текущее описание MR. */
 async function getMrDescription(exec: ExecFn, mrRef: string): Promise<string | null> {
-  const result = await exec("glab", ["mr", "view", mrRef, "--output", "json", "--fields", "description"]);
-  if (result.code !== 0 || !result.stdout.trim()) return null;
+  const result = await exec("glab", ["mr", "view", mrRef, "--output", "json", "--jq", ".description"]);
+  if (result.code !== 0) return null;
 
-  try {
-    const mr = JSON.parse(result.stdout);
-    return typeof mr.description === "string" ? mr.description : null;
-  } catch {
-    return null;
-  }
+  return result.stdout.trim();
 }
 
 /** Получить username текущего glab-пользователя. */
