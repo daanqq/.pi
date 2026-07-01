@@ -1,6 +1,6 @@
 {
-  "lastChangelogVersion": "0.80.2",
-  "defaultThinkingLevel": "medium",
+  "lastChangelogVersion": "0.80.3",
+  "defaultThinkingLevel": "low",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.5",
   "packages": [
@@ -12,7 +12,7 @@
   ],
   "hideThinkingBlock": false,
   "theme": "alabaster",
-  "quietStartup": false,
+  "quietStartup": true,
   "compaction": {
     "enabled": false
   },
@@ -28,7 +28,7 @@
     "showTerminalProgress": true,
     "clearOnShrink": false
   },
-  "editorPaddingX": 0,
+  "editorPaddingX": 1,
   "showHardwareCursor": false,
   "images": {
     "autoResize": true,
@@ -50,5 +50,6 @@
     "-skills/grilling/SKILL.md",
     "-skills/make-change-easy/SKILL.md",
     "-skills/twelve-rules/SKILL.md"
-  ]
+  ],
+  "outputPad": 1
 }
