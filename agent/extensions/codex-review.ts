@@ -44,8 +44,7 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			if (ctx.hasUI) ctx.ui.setEditorText(text);
-			else ctx.ui.notify(text, "info");
+			ctx.ui.notify(text, "info");
 		},
 	});
 }
