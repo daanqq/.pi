@@ -1,14 +1,14 @@
 {
   "lastChangelogVersion": "0.80.3",
-  "defaultThinkingLevel": "medium",
+  "defaultThinkingLevel": "low",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.5",
   "packages": [
     "npm:pi-web-access",
     "npm:pi-rtk-optimizer",
     "npm:@ff-labs/pi-fff",
-    "git:github.com/daanqq/pi-diff-review",
-    "npm:pi-schedule-prompt"
+    "npm:pi-schedule-prompt",
+    "git:github.com/daanqq/pi-diff-review"
   ],
   "hideThinkingBlock": false,
   "theme": "alabaster",
