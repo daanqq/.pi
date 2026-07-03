@@ -1,6 +1,6 @@
 {
   "lastChangelogVersion": "0.80.3",
-  "defaultThinkingLevel": "low",
+  "defaultThinkingLevel": "high",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.5",
   "packages": [
@@ -20,7 +20,7 @@
     "openai-codex/gpt-5.5",
     "deepseek/deepseek-v4-pro"
   ],
-  "transport": "sse",
+  "transport": "websocket-cached",
   "collapseChangelog": true,
   "treeFilterMode": "default",
   "steeringMode": "all",

@@ -27,6 +27,17 @@ type MrRef = { repo: string; iid: string; url: string };
 type GitLabMr = { title?: string; description?: string; source_branch?: string; target_branch?: string; web_url?: string };
 type TaskData = Record<string, unknown>;
 type ReviewParams = { refs: MrRef[]; explicitSession?: string; extraInfo: string; relatedTaskIds: string[] };
+type PreparedMrReview = {
+  ref: MrRef;
+  mr: GitLabMr | null;
+  taskId: string;
+  task: TaskData | null;
+  repoDir: string;
+  baseBranch: string;
+  targetBranch: string;
+  mergeBase: string;
+  sourceBranch: string;
+};
 type ExecFn = (cmd: string, args: string[], opts?: Record<string, unknown>) => Promise<{ stdout: string; stderr?: string; code: number }>;
 
 export default function (pi: ExtensionAPI) {
@@ -49,12 +60,12 @@ export default function (pi: ExtensionAPI) {
 
       const session = await resolvePoraSession(ctx, explicitSession);
       const relatedTasks = await fetchRelatedTasks(relatedTaskIds, session);
-      const prompts: string[] = [];
+      const prepared: PreparedMrReview[] = [];
       const errors: string[] = [];
 
       for (const ref of refs) {
         try {
-          prompts.push(await prepareOneMrReview(pi, ctx, ref, session, extraInfo, relatedTasks));
+          prepared.push(await prepareOneMrReview(pi, ctx, ref, session));
         } catch (err: any) {
           const message = `## ${ref.repo} MR !${ref.iid}\n\nОшибка: ${err.message}`;
           errors.push(message);
@@ -62,8 +73,10 @@ export default function (pi: ExtensionAPI) {
         }
       }
 
-      if (prompts.length > 0) {
-        pi.sendUserMessage(prompts.join("\n\n---\n\n"));
+      if (prepared.length > 0) {
+        renameSession(ctx, sessionNameForPreparedReviews(prepared));
+        const manifestPath = writeReviewManifest(prepared, extraInfo, relatedTasks);
+        pi.sendUserMessage(buildReviewPrompt({ reviews: prepared, extraInfo, relatedTasks, manifestPath }));
       }
       if (errors.length > 0 && !ctx.hasUI) {
         ctx.ui.notify(errors.join("\n\n---\n\n"), "error");
@@ -77,9 +90,7 @@ async function prepareOneMrReview(
   ctx: ExtensionCommandContext,
   ref: MrRef,
   poraSession: string | null,
-  extraInfo: string,
-  relatedTasks: Array<{ id: string; task: TaskData | null }>,
-): Promise<string> {
+): Promise<PreparedMrReview> {
   const repoDir = path.join(REVIEWS_ROOT, ref.repo);
   if (!fs.existsSync(path.join(repoDir, ".git"))) {
     throw new Error(`Не найден локальный репозиторий: ${repoDir}`);
@@ -100,10 +111,19 @@ async function prepareOneMrReview(
   }
   const mergeBase = await resolveMergeBase(exec, targetBranch, baseBranch);
   const task = poraSession ? await fetchTask(taskId, poraSession) : null;
-  renameSession(ctx, sessionNameForReview(taskId, ref, task));
 
   ctx.ui.notify(`Подготовил ${ref.repo}!${ref.iid}: ${sourceBranch || targetBranch}, задача ${taskId}`, "info");
-  return buildReviewPrompt({ ref, mr, taskId, task, baseBranch, targetBranch, mergeBase, extraInfo, relatedTasks });
+  return {
+    ref,
+    mr,
+    taskId,
+    task,
+    repoDir,
+    baseBranch,
+    targetBranch,
+    mergeBase,
+    sourceBranch,
+  };
 }
 
 function parseArgs(raw: string): ReviewParams {
@@ -344,9 +364,11 @@ function renameSession(ctx: ExtensionCommandContext, name: string): void {
   sessionManager.appendSessionInfo?.(name.replace(/\s+/g, " ").trim());
 }
 
-function sessionNameForReview(taskId: string, ref: MrRef, task: TaskData | null): string {
-  const title = taskTitle(task);
-  const baseName = `${taskId} ${ref.repo} mr-${ref.iid} review`;
+function sessionNameForPreparedReviews(reviews: PreparedMrReview[]): string {
+  const primary = reviews[0]!;
+  const title = taskTitle(primary.task);
+  const repos = reviews.map((review) => review.ref.repo).join("+");
+  const baseName = `${primary.taskId} ${repos} review`;
   return title ? `${baseName}: ${title}` : baseName;
 }
 
@@ -355,29 +377,72 @@ function taskTitle(task: TaskData | null): string | null {
   return typeof title === "string" && title.trim() ? title.trim() : null;
 }
 
+function writeReviewManifest(
+  reviews: PreparedMrReview[],
+  extraInfo: string,
+  relatedTasks: Array<{ id: string; task: TaskData | null }>,
+): string {
+  const primary = reviews[0]!;
+  const dir = path.join(REVIEWS_ROOT, ".mr-review");
+  fs.mkdirSync(dir, { recursive: true });
+  const fileName = `${primary.taskId}-${reviews.map((review) => review.ref.repo).join("+")}.md`.replace(/[^a-z0-9_.+-]+/gi, "-");
+  const filePath = path.join(dir, fileName);
+  fs.writeFileSync(filePath, buildReviewManifest(reviews, extraInfo, relatedTasks), "utf-8");
+  return filePath;
+}
+
+function buildReviewManifest(
+  reviews: PreparedMrReview[],
+  extraInfo: string,
+  relatedTasks: Array<{ id: string; task: TaskData | null }>,
+): string {
+  const primary = reviews[0]!;
+  return `# ${primary.taskId} multi-repo review manifest
+
+## MRs
+${reviewTable(reviews)}
+
+## Primary task
+${taskSummary(primary.taskId, primary.task)}
+
+## Tasks detected from MRs
+${detectedTaskSummaries(reviews)}
+${extraInfo ? `
+## Additional information
+${extraInfo}` : ""}
+${relatedTasks.length > 0 ? `
+## Related tasks
+${relatedTasks.map(({ id, task }) => `### ${id}\n${taskSummary(id, task)}`).join("\n\n")}` : ""}
+
+## Diff commands
+${reviews.map((review) => `- \`git -C ${review.repoDir} diff ${review.mergeBase}..${review.targetBranch}\``).join("\n")}
+`;
+}
+
 function buildReviewPrompt(input: {
-  ref: MrRef;
-  mr: GitLabMr | null;
-  taskId: string;
-  task: TaskData | null;
-  baseBranch: string;
-  targetBranch: string;
-  mergeBase: string;
+  reviews: PreparedMrReview[];
   extraInfo: string;
   relatedTasks: Array<{ id: string; task: TaskData | null }>;
+  manifestPath: string;
 }): string {
-  const { ref, mr, taskId, task, baseBranch, targetBranch, mergeBase, extraInfo, relatedTasks } = input;
+  const { reviews, extraInfo, relatedTasks, manifestPath } = input;
+  const primary = reviews[0]!;
+  const multiRepo = reviews.length > 1;
   return `Проведи ревью GitLab MR на русском.
 
-Проверяй в текущем репозитории: ${path.join(REVIEWS_ROOT, ref.repo)}
-MR: ${ref.url}
-Source branch: ${mr?.source_branch ?? "—"}
-Base branch: ${baseBranch}
-Target branch: ${targetBranch}
-Merge base: ${mergeBase}
+${multiRepo ? `## Важно: multi-repo реализация
+Эта задача реализована не в одном репозитории, а в нескольких MR. Ревью должно оценивать их как единую систему и один logical change. Не делай финальный вывод по одному MR изолированно: сначала восстанови общий flow, затем проверь контракты между всеми перечисленными репозиториями.
+
+Контекст multi-repo review сохранён здесь: \`${manifestPath}\`. Сначала прочитай его.` : `Проверяй MR как single-repo изменение. Контекст review сохранён здесь: \`${manifestPath}\`.`}
+
+## Репозитории/MR в scope
+${reviewTable(reviews)}
 
 ## Задача
-${taskSummary(taskId, task)}
+${taskSummary(primary.taskId, primary.task)}
+
+## Задачи, найденные в MR
+${detectedTaskSummaries(reviews)}
 ${extraInfo ? `
 ## Дополнительная информация
 ${extraInfo}` : ""}
@@ -389,26 +454,54 @@ ${relatedTasks.map(({ id, task }) => `### ${id}\n${taskSummary(id, task)}`).join
 ${THERMO_PROMPT}
 
 ## Что сделать
-1. Выполни \`git diff ${mergeBase}..${targetBranch}\` и прочитай изменённые файлы и их потребителей. Для протокольных/API изменений проверь обе стороны.
-2. Найди реальные blocker/major/minor проблемы. Не пиши косметические ниты.
-3. Отдельно сверяй реализацию с описанием задачи выше; если описание не загружено — сверяй по заголовку задачи/MR.
-4. Если есть связанные задачи, проверь не конфликтует ли MR с их требованиями и не упускает ли нужную связку.
-5. Ответ строго в формате ниже. Не оборачивай ответ в markdown/code fences.
+1. Прочитай manifest: \`${manifestPath}\`.
+2. Для каждого repo выполни diff через явный path: \`git -C <repoDir> diff <mergeBase>..<targetBranch>\`, прочитай изменённые файлы, их тесты и ближайших потребителей.
+${multiRepo ? `3. Сначала построь общую карту изменения между репозиториями: client/server/rest/API/DTO/schema/event/feature-flag/migration flow.
+4. Найди изменённые публичные контракты и для каждого проверь producer/consumer во всех repo из scope. Каждый cross-repo finding должен ссылаться минимум на место изменения контракта и место его потребления/несоответствия.
+5. Отдельно проверь compatibility/deploy риски: server-first deploy, client-first deploy, rollback одного repo, nullable/default значения, миграции, feature flags, graceful degradation.
+6. Если в MR найдены разные EUTP-задачи, проверь, что изменения действительно относятся к одной связанной реализации, а не смешивают независимые scope.
+7. Найди реальные blocker/major/minor проблемы. Не пиши косметические ниты.
+8. Отдельно сверяй реализацию с описанием задачи выше; если описание не загружено — сверяй по заголовку задачи/MR.
+9. Если есть связанные задачи, проверь не конфликтует ли изменение с их требованиями и не упускает ли нужную связку.
+10. Ответ строго в формате ниже. Не оборачивай ответ в markdown/code fences.` : `3. Для протокольных/API изменений проверь обе стороны контракта и ближайших потребителей.
+4. Найди реальные blocker/major/minor проблемы. Не пиши косметические ниты.
+5. Отдельно сверяй реализацию с описанием задачи выше; если описание не загружено — сверяй по заголовку задачи/MR.
+6. Если есть связанные задачи, проверь не конфликтует ли изменение с их требованиями и не упускает ли нужную связку.
+7. Ответ строго в формате ниже. Не оборачивай ответ в markdown/code fences.`}
 
 Проверял в \`${REVIEWS_ROOT}\`.
 
 ## Задача
-- **ID**: ${taskId}
+- **ID**: ${primary.taskId}
 - **Суть**: 2–3 предложения
 
-## ${ref.repo} MR !${ref.iid}
+${multiRepo ? `## Общая карта изменения
+- **Flow**: ...
+- **Изменённые контракты**: ...
+- **Deploy/rollback риски**: ...
+
+## Cross-repo findings
 
 ### Blocker / Major / Minor: <краткий заголовок>
 
-- **Файл**: \`<path>:<line>\`
+- **Репозитории**: \`<repo-a>\`, \`<repo-b>\`
+- **Файлы**:
+  - \`<repo-a>/<path>:<line>\`
+  - \`<repo-b>/<path>:<line>\`
 - **Проблема**: ...
 - **Влияние**: ...
 - **Предложение**: ...
+
+## Findings по репозиториям` : "## Findings"}
+
+${reviews.map((review) => `## ${review.ref.repo} MR !${review.ref.iid}
+
+### Blocker / Major / Minor: <краткий заголовок>
+
+- **Файл**: \`${review.ref.repo}/<path>:<line>\`
+- **Проблема**: ...
+- **Влияние**: ...
+- **Предложение**: ...`).join("\n\n")}
 
 ## Сверка с задачей
 
@@ -418,5 +511,21 @@ ${THERMO_PROMPT}
 
 Примечания: тесты не запускались / задача не скачана / etc.
 
-Если находок нет — явно напиши, что критичных замечаний нет, но всё равно заполни сверку с задачей.`;
+Если находок нет — явно напиши, что критичных замечаний нет, но всё равно заполни сверку с задачей${multiRepo ? " и compatibility/deploy риски" : ""}.`;
+}
+
+function detectedTaskSummaries(reviews: PreparedMrReview[]): string {
+  const unique = new Map<string, TaskData | null>();
+  for (const review of reviews) {
+    if (!unique.has(review.taskId)) unique.set(review.taskId, review.task);
+  }
+  return [...unique.entries()].map(([taskId, task]) => `### ${taskId}\n${taskSummary(taskId, task)}`).join("\n\n");
+}
+
+function reviewTable(reviews: PreparedMrReview[]): string {
+  return [
+    "| Repo | Path | MR | Source branch | Base branch | Target branch | Merge base |",
+    "|------|------|----|---------------|-------------|---------------|------------|",
+    ...reviews.map((review) => `| ${review.ref.repo} | \`${review.repoDir}\` | ${review.ref.url} | ${review.sourceBranch || "—"} | ${review.baseBranch} | ${review.targetBranch} | \`${review.mergeBase}\` |`),
+  ].join("\n");
 }
