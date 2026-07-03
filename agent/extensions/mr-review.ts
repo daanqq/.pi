@@ -98,9 +98,9 @@ async function prepareOneMrReview(
   if (!taskId) {
     throw new Error(`Не найден EUTP-ID в source_branch/title/description/commits MR: ${sourceBranch || "—"}`);
   }
-  renameSession(ctx, `${taskId} ${ref.repo} mr-${ref.iid} review`);
   const mergeBase = await resolveMergeBase(exec, targetBranch, baseBranch);
   const task = poraSession ? await fetchTask(taskId, poraSession) : null;
+  renameSession(ctx, sessionNameForReview(taskId, ref, task));
 
   ctx.ui.notify(`Подготовил ${ref.repo}!${ref.iid}: ${sourceBranch || targetBranch}, задача ${taskId}`, "info");
   return buildReviewPrompt({ ref, mr, taskId, task, baseBranch, targetBranch, mergeBase, extraInfo, relatedTasks });
@@ -342,6 +342,17 @@ function fmt(value: unknown): string {
 function renameSession(ctx: ExtensionCommandContext, name: string): void {
   const sessionManager = ctx.sessionManager as { appendSessionInfo?: (name: string) => void };
   sessionManager.appendSessionInfo?.(name.replace(/\s+/g, " ").trim());
+}
+
+function sessionNameForReview(taskId: string, ref: MrRef, task: TaskData | null): string {
+  const title = taskTitle(task);
+  const baseName = `${taskId} ${ref.repo} mr-${ref.iid} review`;
+  return title ? `${baseName}: ${title}` : baseName;
+}
+
+function taskTitle(task: TaskData | null): string | null {
+  const title = task?.title ?? task?.summary;
+  return typeof title === "string" && title.trim() ? title.trim() : null;
 }
 
 function buildReviewPrompt(input: {
