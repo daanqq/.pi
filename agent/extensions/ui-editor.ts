@@ -7,6 +7,7 @@ import type { EditorTheme, TUI } from "@earendil-works/pi-tui";
 
 declare global {
 	var __piAgentPulseEditorLine: ((width: number, borderColor: (text: string) => string) => string | undefined) | undefined;
+	var __piBeforeEditorSubmit: ((text: string) => boolean | Promise<boolean>) | undefined;
 }
 
 const SKILL_AUTOCOMPLETE_CONTEXT = /(?:^|[\s([{])\$[a-z0-9-]*$/;
@@ -19,6 +20,7 @@ function stripAnsi(text: string) {
 class PiConfigEditor extends CustomEditor {
 	private autocompleteRequestVersion = 0;
 	private pulseBorderColor: (text: string) => string;
+	private wrappedSubmit?: (text: string) => void;
 
 	constructor(
 		tui: TUI,
@@ -26,7 +28,32 @@ class PiConfigEditor extends CustomEditor {
 		keybindings: KeybindingsManager,
 	) {
 		super(tui, editorTheme, keybindings);
+		delete (this as { onSubmit?: (text: string) => void }).onSubmit;
 		this.pulseBorderColor = editorTheme.borderColor;
+	}
+
+	override get onSubmit(): ((text: string) => void) | undefined {
+		return this.wrappedSubmit;
+	}
+
+	override set onSubmit(handler: ((text: string) => void) | undefined) {
+		if (!handler) {
+			this.wrappedSubmit = undefined;
+			return;
+		}
+
+		this.wrappedSubmit = (text: string) => {
+			const beforeSubmit = globalThis.__piBeforeEditorSubmit;
+			if (!beforeSubmit) {
+				handler(text);
+				return;
+			}
+
+			void Promise.resolve(beforeSubmit(text.trim())).then((handled) => {
+				if (handled) this.setText("");
+				else handler(text);
+			});
+		};
 	}
 
 	override handleInput(data: string): void {

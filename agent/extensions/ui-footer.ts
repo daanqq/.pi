@@ -128,7 +128,10 @@ function installFooter(pi: ExtensionAPI, ctx: ExtensionContext) {
         }
 
         const thinkingLevel = pi.getThinkingLevel();
-        const infoLeft = footerText(theme, thinkingLevel, formatProjectLabel(ctx.cwd, footerData.getGitBranch()));
+        const sessionName = pi.getSessionName();
+        const projectLabel = formatProjectLabel(ctx.cwd, footerData.getGitBranch());
+        const infoLeftText = sessionName ? projectLabel : `${projectLabel} unnamed`;
+        const infoLeft = footerText(theme, thinkingLevel, infoLeftText);
         const infoRight = footerText(theme, thinkingLevel, formatModelLabel(ctx.model?.id, ctx.model?.reasoning, thinkingLevel));
 
         const statsParts: string[] = [];
