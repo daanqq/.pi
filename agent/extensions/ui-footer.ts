@@ -137,8 +137,6 @@ function installFooter(pi: ExtensionAPI, ctx: ExtensionContext) {
         const statsParts: string[] = [];
         if (totalInput) statsParts.push(footerText(theme, thinkingLevel, `↑${formatTokens(totalInput)}`));
         if (totalOutput) statsParts.push(footerText(theme, thinkingLevel, `↓${formatTokens(totalOutput)}`));
-        if (totalCacheRead) statsParts.push(footerText(theme, thinkingLevel, `R${formatTokens(totalCacheRead)}`));
-        if (totalCacheWrite) statsParts.push(footerText(theme, thinkingLevel, `W${formatTokens(totalCacheWrite)}`));
         if ((totalCacheRead > 0 || totalCacheWrite > 0) && latestCacheHitRate !== undefined) {
           statsParts.push(footerText(theme, thinkingLevel, `CH${latestCacheHitRate.toFixed(1)}%`));
         }
