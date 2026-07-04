@@ -1,6 +1,6 @@
 {
   "lastChangelogVersion": "0.80.3",
-  "defaultThinkingLevel": "high",
+  "defaultThinkingLevel": "medium",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.5",
   "packages": [
@@ -8,7 +8,8 @@
     "npm:pi-rtk-optimizer",
     "npm:@ff-labs/pi-fff",
     "npm:pi-schedule-prompt",
-    "git:github.com/daanqq/pi-diff-review"
+    "git:github.com/daanqq/pi-diff-review",
+    "npm:pi-system-prompt"
   ],
   "hideThinkingBlock": false,
   "theme": "alabaster",
@@ -47,7 +48,6 @@
   "httpIdleTimeoutMs": 120000,
   "defaultProjectTrust": "always",
   "skills": [
-    "-skills/grilling/SKILL.md",
     "-skills/make-change-easy/SKILL.md",
     "-skills/twelve-rules/SKILL.md"
   ],
