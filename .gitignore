@@ -10,6 +10,8 @@ agent/auth.json
 agent/trust.json
 agent/codex-usage/
 agent/sessions/
+cache/
+logs/
 memory/
 session-search/
 *.db
