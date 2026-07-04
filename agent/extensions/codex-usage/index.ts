@@ -117,9 +117,8 @@ function setFooter(ctx: ExtensionContext | ExtensionCommandContext, state = read
     }
     const profile = state.activeProfile ?? "?";
     const knownQuota = quota ?? (profile !== "?" ? state.lastQuotaByProfile[profile] : undefined);
-    const low = knownQuota && knownQuota.minRemaining <= CONFIG.rotateBelowPercent ? " low" : "";
-    const text = `${profile}${low} ${formatFooterQuota(knownQuota)}`;
-    ctx.ui.setStatus(EXTENSION_ID, low ? ctx.ui.theme.fg("warning", text) : text);
+    const text = `${profile} ${formatFooterQuota(knownQuota)}`;
+    ctx.ui.setStatus(EXTENSION_ID, text);
   } catch (error) {
     if (!isStaleContextError(error)) throw error;
   }

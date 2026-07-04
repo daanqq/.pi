@@ -204,10 +204,10 @@ Compact status format shows the active profile, time until each window resets, a
 main 3h12m:84% 5d4h:42%
 ```
 
-Low quota example:
+Low quota keeps the same compact footer format:
 
 ```text
-main low 12m:4% 5d4h:42%
+main 12m:4% 5d4h:42%
 ```
 
 ## Audit trail

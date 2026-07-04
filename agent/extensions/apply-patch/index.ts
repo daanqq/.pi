@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { renderDiff, withFileMutationQueue } from "@earendil-works/pi-coding-agent";
+import { keyHint, renderDiff, withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { Box, Container, Spacer, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 
@@ -81,6 +81,7 @@ interface ModelLike {
 
 const renderStates = new Map<string, RenderState>();
 const EMPTY_RESULT: ExecutePatchResult = { changedFiles: [], createdFiles: [], deletedFiles: [], movedFiles: [], fuzz: 0 };
+const COLLAPSED_PREVIEW_LINE_LIMIT = 40;
 
 export default function (pi: ExtensionAPI) {
 	let editHiddenByGptToolPolicy = false;
@@ -275,7 +276,7 @@ function buildApplyPatchCallComponent(
 	component: ApplyPatchCallRenderComponent,
 	args: { input?: unknown },
 	theme: { fg(role: string, text: string): string; bold(text: string): string; bg(role: string, text: string): string },
-	context?: { cwd?: string | undefined; argsComplete?: boolean | undefined },
+	context?: { cwd?: string | undefined; argsComplete?: boolean | undefined; expanded?: boolean | undefined },
 ): ApplyPatchCallRenderComponent {
 	component.setBgFn(getApplyPatchHeaderBg(component, theme));
 	component.clear();
@@ -283,7 +284,7 @@ function buildApplyPatchCallComponent(
 
 	if (context?.argsComplete === false || !component.preview) return component;
 
-	const body = "error" in component.preview ? theme.fg("error", component.preview.error) : renderPatchPreview(component.preview, theme, component.settledStatus, component.failedTargets);
+	const body = "error" in component.preview ? theme.fg("error", component.preview.error) : renderPatchPreview(component.preview, theme, component.settledStatus, component.failedTargets, context?.expanded === true);
 	if (body.trim().length === 0) return component;
 	component.addChild(new Spacer(1));
 	component.addChild(new Text(body, 0, 0));
@@ -323,8 +324,10 @@ function renderPatchPreview(
 	theme: { fg(role: string, text: string): string },
 	status: "success" | "partial_failure" | "failed" | undefined,
 	failedTargets?: string[] | undefined,
+	expanded = false,
 ): string {
 	let body = renderDiff(preview.diff);
+	if (!expanded) body = collapseLongOutput(body, COLLAPSED_PREVIEW_LINE_LIMIT, theme);
 	if (status === "partial_failure" || status === "failed") {
 		const role = status === "failed" ? "error" : "warning";
 		body = body
@@ -333,6 +336,16 @@ function renderPatchPreview(
 			.join("\n");
 	}
 	return body;
+}
+
+function collapseLongOutput(body: string, lineLimit: number, theme: { fg(role: string, text: string): string }): string {
+	const lines = body.split("\n");
+	if (lines.length <= lineLimit) return body;
+	const hiddenCount = lines.length - lineLimit;
+	return [
+		...lines.slice(0, lineLimit),
+		theme.fg("muted", `... (${hiddenCount} more lines; ${keyHint("app.tools.expand", "to expand")})`),
+	].join("\n");
 }
 
 function getBundledApplyPatchBinaryPath(): string | undefined {
