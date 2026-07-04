@@ -71,6 +71,9 @@ type ApplyPatchCallRenderComponent = Box & {
 	previewArgsKey?: string | undefined;
 	settledStatus?: "success" | "partial_failure" | "failed" | undefined;
 	failedTargets?: string[] | undefined;
+	spinnerFrame?: string | undefined;
+	spinnerStartedAt?: number | undefined;
+	spinnerTimer?: ReturnType<typeof setInterval> | undefined;
 };
 
 interface ModelLike {
@@ -82,6 +85,8 @@ interface ModelLike {
 const renderStates = new Map<string, RenderState>();
 const EMPTY_RESULT: ExecutePatchResult = { changedFiles: [], createdFiles: [], deletedFiles: [], movedFiles: [], fuzz: 0 };
 const COLLAPSED_PREVIEW_LINE_LIMIT = 40;
+const APPLY_PATCH_SPINNER_FRAMES = [".", "‥", "…"] as const;
+const APPLY_PATCH_SPINNER_INTERVAL_MS = 300;
 
 export default function (pi: ExtensionAPI) {
 	let editHiddenByGptToolPolicy = false;
@@ -200,6 +205,7 @@ export default function (pi: ExtensionAPI) {
 			const patchText = typeof (args as { input?: unknown })?.input === "string" ? (args as { input: string }).input : "";
 			const argsKey = patchText || undefined;
 			if (component.previewArgsKey !== argsKey) {
+				stopApplyPatchSpinner(component);
 				component.preview = undefined;
 				component.previewArgsKey = argsKey;
 				component.settledStatus = undefined;
@@ -213,6 +219,8 @@ export default function (pi: ExtensionAPI) {
 				component.settledStatus = cached.status;
 				component.failedTargets = cached.failedTargets;
 			}
+			if (!context.isPartial && !component.settledStatus) component.settledStatus = context.isError ? "failed" : "success";
+			updateApplyPatchSpinner(component, context.isPartial === true && !component.settledStatus, context.invalidate);
 			return buildApplyPatchCallComponent(component, args as { input?: unknown }, theme, context);
 		},
 		renderResult(result, { isPartial }, theme, context) {
@@ -222,6 +230,7 @@ export default function (pi: ExtensionAPI) {
 			if (callComponent) {
 				callComponent.settledStatus = result.details.status;
 				if (result.details.status === "partial_failure") callComponent.failedTargets = result.details.failedTargets;
+				stopApplyPatchSpinner(callComponent);
 				buildApplyPatchCallComponent(callComponent, context.args as { input?: unknown }, theme, context);
 			}
 			return new Container();
@@ -250,7 +259,37 @@ function createApplyPatchCallRenderComponent(): ApplyPatchCallRenderComponent {
 		previewArgsKey: undefined as string | undefined,
 		settledStatus: undefined as "success" | "partial_failure" | "failed" | undefined,
 		failedTargets: undefined as string[] | undefined,
+		spinnerFrame: undefined as string | undefined,
+		spinnerStartedAt: undefined as number | undefined,
+		spinnerTimer: undefined as ReturnType<typeof setInterval> | undefined,
 	});
+}
+
+function updateApplyPatchSpinner(component: ApplyPatchCallRenderComponent, active: boolean, invalidate: () => void): void {
+	if (!active) {
+		stopApplyPatchSpinner(component);
+		return;
+	}
+	component.spinnerStartedAt ??= Date.now();
+	component.spinnerFrame = currentApplyPatchSpinnerFrame(component.spinnerStartedAt);
+	if (component.spinnerTimer) return;
+	component.spinnerTimer = setInterval(() => {
+		component.spinnerFrame = currentApplyPatchSpinnerFrame(component.spinnerStartedAt ?? Date.now());
+		invalidate();
+	}, APPLY_PATCH_SPINNER_INTERVAL_MS);
+	if (typeof component.spinnerTimer !== "number") component.spinnerTimer.unref?.();
+}
+
+function stopApplyPatchSpinner(component: ApplyPatchCallRenderComponent): void {
+	if (component.spinnerTimer) clearInterval(component.spinnerTimer);
+	component.spinnerTimer = undefined;
+	component.spinnerStartedAt = undefined;
+	component.spinnerFrame = undefined;
+}
+
+function currentApplyPatchSpinnerFrame(startedAt: number): string {
+	const elapsed = Date.now() - startedAt;
+	return APPLY_PATCH_SPINNER_FRAMES[Math.floor(elapsed / APPLY_PATCH_SPINNER_INTERVAL_MS) % APPLY_PATCH_SPINNER_FRAMES.length] ?? "…";
 }
 
 function getApplyPatchCallRenderComponent(state: Record<string, unknown>, lastComponent: unknown): ApplyPatchCallRenderComponent {
@@ -267,6 +306,7 @@ function getApplyPatchCallRenderComponent(state: Record<string, unknown>, lastCo
 
 function getApplyPatchHeaderBg(component: ApplyPatchCallRenderComponent, theme: { bg(role: string, text: string): string }): (text: string) => string {
 	if (component.settledStatus === "failed" || component.settledStatus === "partial_failure") return (text: string) => theme.bg("toolErrorBg", text);
+	if (component.spinnerFrame) return (text: string) => theme.bg("toolPendingBg", text);
 	if (component.settledStatus === "success" || (component.preview && !("error" in component.preview))) return (text: string) => theme.bg("toolSuccessBg", text);
 	if (component.preview && "error" in component.preview) return (text: string) => theme.bg("toolErrorBg", text);
 	return (text: string) => theme.bg("toolPendingBg", text);
@@ -276,13 +316,22 @@ function buildApplyPatchCallComponent(
 	component: ApplyPatchCallRenderComponent,
 	args: { input?: unknown },
 	theme: { fg(role: string, text: string): string; bold(text: string): string; bg(role: string, text: string): string },
-	context?: { cwd?: string | undefined; argsComplete?: boolean | undefined; expanded?: boolean | undefined },
+	context?: { cwd?: string | undefined; argsComplete?: boolean | undefined; expanded?: boolean | undefined; isPartial?: boolean | undefined },
 ): ApplyPatchCallRenderComponent {
 	component.setBgFn(getApplyPatchHeaderBg(component, theme));
 	component.clear();
-	component.addChild(new Text(formatApplyPatchHeader(args, component.preview, theme, context?.cwd ?? process.cwd()), 0, 0));
+	component.addChild(new Text(formatApplyPatchHeader(args, component.preview, theme, context?.cwd ?? process.cwd(), context?.isPartial === true && !component.settledStatus, component.spinnerFrame), 0, 0));
 
-	if (context?.argsComplete === false || !component.preview) return component;
+	if (!component.preview) {
+		const activeBody = context?.isPartial === true ? formatInProgressApplyPatchBody(typeof args.input === "string" ? args.input : "", context?.cwd ?? process.cwd()) : "";
+		if (activeBody.trim().length > 0) {
+			component.addChild(new Spacer(1));
+			component.addChild(new Text(theme.fg("muted", activeBody), 0, 0));
+		}
+		return component;
+	}
+
+	if (context?.argsComplete === false) return component;
 
 	const body = "error" in component.preview ? theme.fg("error", component.preview.error) : renderPatchPreview(component.preview, theme, component.settledStatus, component.failedTargets, context?.expanded === true);
 	if (body.trim().length === 0) return component;
@@ -296,16 +345,66 @@ function formatApplyPatchHeader(
 	preview: PatchPreview | undefined,
 	theme: { fg(role: string, text: string): string; bold(text: string): string },
 	cwd: string,
+	showInProgress: boolean,
+	spinnerFrame?: string | undefined,
 ): string {
 	let title = theme.fg("toolTitle", theme.bold("apply_patch"));
+	const patchText = typeof args.input === "string" ? args.input : "";
+	const inProgress = showInProgress ? formatInProgressApplyPatchSummary(patchText, cwd) : "";
+	if (inProgress) {
+		const loader = isPureMoveOnlyPatch(patchText) ? "" : ` ${spinnerFrame ?? "…"}`;
+		return `${title} ${theme.fg("muted", `${inProgress}${loader}`)}`;
+	}
 	if (preview && !("error" in preview) && preview.summary) {
 		const summary = preview.summary.replace(/^•\s*/, "");
-		return `${title} ${theme.fg("muted", summary)}`;
+		return `${title} ${formatApplyPatchHeaderSummary(summary, theme)}`;
 	}
-	const patchText = typeof args.input === "string" ? args.input : "";
 	const fallback = formatApplyPatchSummary(patchText, cwd).replace(/^•\s*/, "");
-	if (fallback) title += ` ${theme.fg("muted", fallback)}`;
+	if (fallback) title += ` ${formatApplyPatchHeaderSummary(fallback, theme)}`;
 	return title;
+}
+
+function formatApplyPatchHeaderSummary(summary: string, theme: { fg(role: string, text: string): string }): string {
+	return summary
+		.split(/([+-]\d+)/g)
+		.map((part) => part.startsWith("+") ? theme.fg("toolDiffAdded", part) : part.startsWith("-") ? theme.fg("toolDiffRemoved", part) : theme.fg("muted", part))
+		.join("");
+}
+
+function formatInProgressApplyPatchSummary(patchText: string, cwd: string): string {
+	const actions = parsePatchActionHeaders(patchText);
+	if (actions.length === 0) return "";
+	if (actions.length === 1) return formatPatchTarget(actions[0]!.path, actions[0]!.movePath, cwd);
+	return `${actions.length} files`;
+}
+
+function formatInProgressApplyPatchBody(patchText: string, cwd: string): string {
+	const actions = parsePatchActionHeaders(patchText);
+	if (actions.length <= 1) return "";
+	return actions.map((action) => `  └ ${formatPatchTarget(action.path, action.movePath, cwd)}`).join("\n");
+}
+
+function isPureMoveOnlyPatch(patchText: string): boolean {
+	const actions = safeParseActions(patchText);
+	return actions.length > 0 && actions.every((action) => {
+		if (action.type !== "update" || !action.movePath) return false;
+		const diffLines = (action.lines ?? []).filter((line) => line.startsWith("+") || line.startsWith("-"));
+		return diffLines.length === 0;
+	});
+}
+
+function parsePatchActionHeaders(text: string): Array<{ path: string; movePath?: string | undefined }> {
+	const actions: Array<{ path: string; movePath?: string | undefined }> = [];
+	let current: { path: string; movePath?: string | undefined } | undefined;
+	for (const line of text.split("\n")) {
+		if (line.startsWith("*** Add File: ") || line.startsWith("*** Delete File: ") || line.startsWith("*** Update File: ")) {
+			current = { path: normalizePatchPath(line.slice(line.indexOf(": ") + 2)) };
+			actions.push(current);
+			continue;
+		}
+		if (current && line.startsWith("*** Move to: ")) current.movePath = normalizePatchPath(line.slice("*** Move to: ".length));
+	}
+	return actions.filter((action) => action.path.length > 0);
 }
 
 function previewPatch(patchText: string, cwd: string): PatchPreview {
@@ -326,7 +425,7 @@ function renderPatchPreview(
 	failedTargets?: string[] | undefined,
 	expanded = false,
 ): string {
-	let body = renderDiff(preview.diff);
+	let body = colorPatchCountPairs(renderDiff(preview.diff), theme);
 	if (!expanded) body = collapseLongOutput(body, COLLAPSED_PREVIEW_LINE_LIMIT, theme);
 	if (status === "partial_failure" || status === "failed") {
 		const role = status === "failed" ? "error" : "warning";
@@ -336,6 +435,10 @@ function renderPatchPreview(
 			.join("\n");
 	}
 	return body;
+}
+
+function colorPatchCountPairs(text: string, theme: { fg(role: string, text: string): string }): string {
+	return text.replace(/\+(\d+)\s+-(\d+)/g, `${theme.fg("toolDiffAdded", "+$1")} ${theme.fg("toolDiffRemoved", "-$2")}`);
 }
 
 function collapseLongOutput(body: string, lineLimit: number, theme: { fg(role: string, text: string): string }): string {
@@ -598,7 +701,8 @@ function renderApplyPatchCall(args: { input?: unknown }, theme: { fg(role: strin
 
 function renderFailureCall(base: string, theme: { fg(role: string, text: string): string }, role: "warning" | "error", title: string, failedTargets?: string[]): string {
 	const lines = base.split("\n");
-	lines[0] = lines[0]!.replace(/^(?:•\s*)?(Added|Deleted|Edited|Moved)\b/, title);
+	const firstLineWithoutVerb = lines[0]!.replace(/^(?:•\s*)?(Added|Deleted|Moved)\b\s*/, "");
+	lines[0] = `${title} ${firstLineWithoutVerb}`.trimEnd();
 	return lines
 		.map((line, index) => {
 			const isFailed = failedTargets?.some((target) => line.includes(target));
@@ -614,9 +718,10 @@ function formatApplyPatchSummary(patchText: string, cwd: string): string {
 	const totals = files.reduce((acc, file) => ({ added: acc.added + file.added, removed: acc.removed + file.removed }), { added: 0, removed: 0 });
 	if (files.length === 1) {
 		const file = files[0]!;
-		return `${bulletHeader(file.verb, formatPatchTarget(file.path, file.movePath, cwd))} ${renderCounts(file.added, file.removed)}`;
+		if (file.verb === "update") return withCounts(formatPatchTarget(file.path, file.movePath, cwd), file.added, file.removed);
+		return withCounts(bulletHeader(file.verb, formatPatchTarget(file.path, file.movePath, cwd)), file.added, file.removed);
 	}
-	return [`${bulletHeader("Edited", `${files.length} files`)} ${renderCounts(totals.added, totals.removed)}`, ...files.map((file) => `  └ ${formatPatchTarget(file.path, file.movePath, cwd)} ${renderCounts(file.added, file.removed)}`)].join("\n");
+	return [withCounts(`${files.length} files`, totals.added, totals.removed), ...files.map((file) => `  └ ${withCounts(formatPatchTarget(file.path, file.movePath, cwd), file.added, file.removed)}`)].join("\n");
 }
 
 function formatApplyPatchPreview(patchText: string, cwd: string): string {
@@ -638,14 +743,14 @@ function formatApplyPatchDiff(patchText: string, cwd: string): string {
 	const lines: string[] = [];
 	for (const [index, file] of files.entries()) {
 		if (index > 0) lines.push("");
-		if (files.length > 1) lines.push(`${formatPatchTarget(file.path, file.movePath, cwd)} ${renderCounts(file.added, file.removed)}`);
+		if (files.length > 1) lines.push(withCounts(formatPatchTarget(file.path, file.movePath, cwd), file.added, file.removed));
 		lines.push(...file.lines);
 		if (file.lines.length === 0 && file.movePath) lines.push(`  moved to ${file.movePath}`);
 	}
 	return lines.join("\n");
 }
 
-function buildFilePreviews(patchText: string, cwd: string): Array<{ verb: "Added" | "Deleted" | "Edited" | "Moved"; path: string; movePath?: string; added: number; removed: number; lines: string[] }> {
+function buildFilePreviews(patchText: string, cwd: string): Array<{ verb: "Added" | "Deleted" | "update" | "Moved"; path: string; movePath?: string; added: number; removed: number; lines: string[] }> {
 	try {
 		return parsePatchActions(patchText).map((action) => {
 			if (action.type === "add") {
@@ -662,7 +767,7 @@ function buildFilePreviews(patchText: string, cwd: string): Array<{ verb: "Added
 				.map(normalizePatchDiffLine);
 			const added = diffLines.filter((line) => line.startsWith("+")).length;
 			const removed = diffLines.filter((line) => line.startsWith("-")).length;
-			return { verb: action.movePath && added === 0 && removed === 0 ? "Moved" : "Edited", path: action.path, movePath: action.movePath, added, removed, lines: diffLines };
+			return { verb: action.movePath && added === 0 && removed === 0 ? "Moved" : "update", path: action.path, movePath: action.movePath, added, removed, lines: diffLines };
 		});
 	} catch {
 		return [];
@@ -699,8 +804,14 @@ function bulletHeader(verb: string, label: string): string {
 	return `${verb} ${label}`;
 }
 
+function withCounts(label: string, added: number, removed: number): string {
+	const counts = renderCounts(added, removed);
+	return counts ? `${label} ${counts}` : label;
+}
+
 function renderCounts(added: number, removed: number): string {
-	return `(+${added} -${removed})`;
+	if (added === 0 && removed === 0) return "";
+	return `+${added} -${removed}`;
 }
 
 function formatPatchTarget(path: string, movePath: string | undefined, cwd: string): string {
