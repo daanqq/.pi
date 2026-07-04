@@ -9,9 +9,10 @@ import { Type } from "typebox";
 
 const APPLY_PATCH_PARAMETERS = Type.Object({
 	input: Type.String({
-		description: "Full patch text. Use *** Begin Patch / *** End Patch with Add/Update/Delete File sections.",
+		description:
+			"Required. The complete patch text, starting with *** Begin Patch and ending with *** End Patch. Do not use fields named patch, patchText, command, or content.",
 	}),
-});
+}, { additionalProperties: false });
 
 interface ParsedPatchAction {
 	type: "add" | "delete" | "update";
@@ -135,18 +136,22 @@ export default function (pi: ExtensionAPI) {
 		renderShell: "self",
 		promptSnippet: "Edit files with a patch.",
 		promptGuidelines: [
-			"Use apply_patch to create, update, delete, or move files with one Codex-style patch when making file edits.",
+			"Use apply_patch to create, update, delete, or move files. Always call apply_patch with exactly one JSON field: input.",
+			"The apply_patch input value must contain the full patch text from *** Begin Patch through *** End Patch.",
+			"Do not call apply_patch with patch, patchText, command, content, or raw text outside the input field.",
 			"Group related edits in one apply_patch call, and read failed files before retrying after partial_failure.",
 		],
 		parameters: APPLY_PATCH_PARAMETERS,
 		prepareArguments(args) {
 			if (args && typeof args === "object") {
-				const input = args as { input?: unknown; patch?: unknown; patchText?: unknown };
+				const input = args as { input?: unknown; patch?: unknown; patchText?: unknown; command?: unknown; content?: unknown };
 				if (typeof input.input === "string") return { input: input.input };
 				if (typeof input.patchText === "string") return { input: input.patchText };
 				if (typeof input.patch === "string") return { input: input.patch };
+				if (typeof input.command === "string") return { input: input.command };
+				if (typeof input.content === "string") return { input: input.content };
 			}
-			return args;
+			return args as { input: string };
 		},
 		async execute(toolCallId, params, signal, _onUpdate, ctx) {
 			if (signal?.aborted) throw new Error("apply_patch aborted");
@@ -225,7 +230,7 @@ export default function (pi: ExtensionAPI) {
 
 function parseApplyPatchParams(params: unknown): string {
 	if (!params || typeof params !== "object" || !("input" in params) || typeof params.input !== "string") {
-		throw new Error("apply_patch requires a string 'input' parameter");
+		throw new Error('apply_patch requires {"input":"*** Begin Patch\\n...\\n*** End Patch"}. Retry the same patch using the input field.');
 	}
 	return params.input;
 }
