@@ -17,7 +17,9 @@ const MAX_SUGGESTIONS = 100;
 const SKILL_TOKEN_BEFORE_CURSOR = /(?:^|[\s([{])\$([a-z0-9-]*)$/;
 const SKILL_AUTOCOMPLETE_CONTEXT = /(?:^|[\s([{])\$[a-z0-9-]*$/;
 const TRAILING_SKILL_TOKEN_WITH_SPACES = /(?:^|[\s([{])\$([a-z0-9-]*)\s*$/;
-const LEADING_SKILL_INVOCATION = /^\s*\$([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)(?:\s+([\s\S]*))?$/;
+
+const SYSTEM_PROMPT_INSTRUCTION =
+	"When the user mentions one or more available skills as $skill-name, treat each mention as an explicit request to use that skill: read its SKILL.md file before applying it. Do not require /skill:name syntax for such references.";
 
 function getSkills(pi: ExtensionAPI): SkillInfo[] {
 	return pi
@@ -119,35 +121,13 @@ function createSkillAutocompleteProvider(pi: ExtensionAPI, current: Autocomplete
 	};
 }
 
-function expandLeadingDollarSkill(text: string): { skillName: string; transformed: string } | undefined {
-	const match = text.match(LEADING_SKILL_INVOCATION);
-	const skillName = match?.[1];
-	if (!skillName) return undefined;
-
-	const args = match[2]?.trim();
-	return {
-		skillName,
-		transformed: args ? `/skill:${skillName} ${args}` : `/skill:${skillName}`,
-	};
-}
-
 export default function skillDollarExtension(pi: ExtensionAPI) {
+	pi.on("before_agent_start", (event) => ({
+		systemPrompt: `${event.systemPrompt}\n\n${SYSTEM_PROMPT_INSTRUCTION}`,
+	}));
 
 	pi.on("session_start", (_event, ctx) => {
 		if (!ctx.hasUI) return;
 		ctx.ui.addAutocompleteProvider((current) => createSkillAutocompleteProvider(pi, current));
-	});
-
-	pi.on("input", async (event, ctx) => {
-		const expansion = expandLeadingDollarSkill(event.text);
-		if (!expansion) return { action: "continue" };
-
-		const skill = getSkills(pi).find((skill) => skill.name === expansion.skillName);
-		if (!skill) {
-			ctx.ui.notify(`Unknown skill: $${expansion.skillName}`, "warning");
-			return { action: "continue" };
-		}
-
-		return { action: "transform", text: expansion.transformed };
 	});
 }

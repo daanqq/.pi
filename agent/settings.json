@@ -7,13 +7,12 @@
     "npm:pi-web-access",
     "npm:pi-rtk-optimizer",
     "npm:@ff-labs/pi-fff",
-    "npm:pi-schedule-prompt",
     "git:github.com/daanqq/pi-diff-review",
     "npm:pi-system-prompt"
   ],
   "hideThinkingBlock": false,
   "theme": "alabaster",
-  "quietStartup": true,
+  "quietStartup": false,
   "compaction": {
     "enabled": false
   },
@@ -21,6 +20,7 @@
     "openai-codex/gpt-5.5",
     "deepseek/deepseek-v4-pro"
   ],
+  "externalEditor": "code --wait",
   "transport": "websocket-cached",
   "collapseChangelog": true,
   "treeFilterMode": "default",
@@ -29,7 +29,7 @@
     "showTerminalProgress": true,
     "clearOnShrink": false
   },
-  "editorPaddingX": 1,
+  "editorPaddingX": 0,
   "showHardwareCursor": false,
   "images": {
     "autoResize": true,
@@ -43,13 +43,18 @@
   "extensions": [
     "-extensions/compact.ts",
     "-extensions/answer/index.ts",
-    "-extensions/generation-stats.ts"
+    "-extensions/generation-stats.ts",
+    "-extensions/open-last-agent-response.ts",
+    "-extensions/prompt-audit.ts",
+    "+extensions/skill-dollar.ts",
+    "-extensions/system-info.ts"
   ],
   "httpIdleTimeoutMs": 120000,
   "defaultProjectTrust": "always",
   "skills": [
     "-skills/make-change-easy/SKILL.md",
-    "-skills/twelve-rules/SKILL.md"
+    "-skills/twelve-rules/SKILL.md",
+    "+skills/pi-extensions/SKILL.md"
   ],
-  "outputPad": 1
+  "outputPad": 0
 }
