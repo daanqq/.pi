@@ -4,7 +4,12 @@
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.5",
   "packages": [
-    "npm:pi-web-access",
+    {
+      "source": "npm:pi-web-access",
+      "skills": [
+        "-skills/librarian/SKILL.md"
+      ]
+    },
     "npm:pi-rtk-optimizer",
     "npm:@ff-labs/pi-fff",
     "git:github.com/daanqq/pi-diff-review",
@@ -45,16 +50,13 @@
     "-extensions/answer/index.ts",
     "-extensions/generation-stats.ts",
     "-extensions/open-last-agent-response.ts",
-    "-extensions/prompt-audit.ts",
-    "+extensions/skill-dollar.ts",
-    "-extensions/system-info.ts"
+    "-extensions/prompt-audit.ts"
   ],
   "httpIdleTimeoutMs": 120000,
   "defaultProjectTrust": "always",
   "skills": [
     "-skills/make-change-easy/SKILL.md",
-    "-skills/twelve-rules/SKILL.md",
-    "+skills/pi-extensions/SKILL.md"
+    "-skills/twelve-rules/SKILL.md"
   ],
   "outputPad": 0
 }
