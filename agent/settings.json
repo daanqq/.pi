@@ -34,7 +34,7 @@
     "showTerminalProgress": true,
     "clearOnShrink": false
   },
-  "editorPaddingX": 0,
+  "editorPaddingX": 1,
   "showHardwareCursor": false,
   "images": {
     "autoResize": true,
