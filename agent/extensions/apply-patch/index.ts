@@ -71,9 +71,6 @@ type ApplyPatchCallRenderComponent = Box & {
 	previewArgsKey?: string | undefined;
 	settledStatus?: "success" | "partial_failure" | "failed" | undefined;
 	failedTargets?: string[] | undefined;
-	progressLabel?: string | undefined;
-	progressStartedAt?: number | undefined;
-	progressTimer?: ReturnType<typeof setInterval> | undefined;
 };
 
 interface ModelLike {
@@ -85,7 +82,6 @@ interface ModelLike {
 const renderStates = new Map<string, RenderState>();
 const EMPTY_RESULT: ExecutePatchResult = { changedFiles: [], createdFiles: [], deletedFiles: [], movedFiles: [], fuzz: 0 };
 const COLLAPSED_PREVIEW_LINE_LIMIT = 40;
-const APPLY_PATCH_PROGRESS_INTERVAL_MS = 1000;
 
 export default function (pi: ExtensionAPI) {
 	let editHiddenByGptToolPolicy = false;
@@ -204,7 +200,6 @@ export default function (pi: ExtensionAPI) {
 			const patchText = typeof (args as { input?: unknown })?.input === "string" ? (args as { input: string }).input : "";
 			const argsKey = patchText || undefined;
 			if (component.previewArgsKey !== argsKey) {
-				stopApplyPatchProgress(component);
 				component.preview = undefined;
 				component.previewArgsKey = argsKey;
 				component.settledStatus = undefined;
@@ -219,7 +214,6 @@ export default function (pi: ExtensionAPI) {
 				component.failedTargets = cached.failedTargets;
 			}
 			if (!context.isPartial && !component.settledStatus) component.settledStatus = context.isError ? "failed" : "success";
-			updateApplyPatchProgress(component, context.isPartial === true && !component.settledStatus, context.invalidate);
 			return buildApplyPatchCallComponent(component, args as { input?: unknown }, theme, context);
 		},
 		renderResult(result, { isPartial }, theme, context) {
@@ -229,7 +223,6 @@ export default function (pi: ExtensionAPI) {
 			if (callComponent) {
 				callComponent.settledStatus = result.details.status;
 				if (result.details.status === "partial_failure") callComponent.failedTargets = result.details.failedTargets;
-				stopApplyPatchProgress(callComponent);
 				buildApplyPatchCallComponent(callComponent, context.args as { input?: unknown }, theme, context);
 			}
 			return new Container();
@@ -258,38 +251,9 @@ function createApplyPatchCallRenderComponent(): ApplyPatchCallRenderComponent {
 		previewArgsKey: undefined as string | undefined,
 		settledStatus: undefined as "success" | "partial_failure" | "failed" | undefined,
 		failedTargets: undefined as string[] | undefined,
-		progressLabel: undefined as string | undefined,
-		progressStartedAt: undefined as number | undefined,
-		progressTimer: undefined as ReturnType<typeof setInterval> | undefined,
 	});
 }
 
-function updateApplyPatchProgress(component: ApplyPatchCallRenderComponent, active: boolean, invalidate: () => void): void {
-	if (!active) {
-		stopApplyPatchProgress(component);
-		return;
-	}
-	component.progressStartedAt ??= Date.now();
-	component.progressLabel = currentApplyPatchProgressLabel(component.progressStartedAt);
-	if (component.progressTimer) return;
-	component.progressTimer = setInterval(() => {
-		component.progressLabel = currentApplyPatchProgressLabel(component.progressStartedAt ?? Date.now());
-		invalidate();
-	}, APPLY_PATCH_PROGRESS_INTERVAL_MS);
-	if (typeof component.progressTimer !== "number") component.progressTimer.unref?.();
-}
-
-function stopApplyPatchProgress(component: ApplyPatchCallRenderComponent): void {
-	if (component.progressTimer) clearInterval(component.progressTimer);
-	component.progressTimer = undefined;
-	component.progressStartedAt = undefined;
-	component.progressLabel = undefined;
-}
-
-function currentApplyPatchProgressLabel(startedAt: number): string {
-	const elapsed = Date.now() - startedAt;
-	return `${Math.floor(elapsed / 1000)}s`;
-}
 
 function getApplyPatchCallRenderComponent(state: Record<string, unknown>, lastComponent: unknown): ApplyPatchCallRenderComponent {
 	if (lastComponent instanceof Box) {
@@ -305,7 +269,6 @@ function getApplyPatchCallRenderComponent(state: Record<string, unknown>, lastCo
 
 function getApplyPatchHeaderBg(component: ApplyPatchCallRenderComponent, theme: { bg(role: string, text: string): string }): (text: string) => string {
 	if (component.settledStatus === "failed" || component.settledStatus === "partial_failure") return (text: string) => theme.bg("toolErrorBg", text);
-	if (component.progressLabel) return (text: string) => theme.bg("toolPendingBg", text);
 	if (component.settledStatus === "success" || (component.preview && !("error" in component.preview))) return (text: string) => theme.bg("toolSuccessBg", text);
 	if (component.preview && "error" in component.preview) return (text: string) => theme.bg("toolErrorBg", text);
 	return (text: string) => theme.bg("toolPendingBg", text);
@@ -319,7 +282,7 @@ function buildApplyPatchCallComponent(
 ): ApplyPatchCallRenderComponent {
 	component.setBgFn(getApplyPatchHeaderBg(component, theme));
 	component.clear();
-	component.addChild(new Text(formatApplyPatchHeader(args, component.preview, theme, context?.cwd ?? process.cwd(), context?.isPartial === true && !component.settledStatus, component.progressLabel), 0, 0));
+	component.addChild(new Text(formatApplyPatchHeader(args, component.preview, theme, context?.cwd ?? process.cwd(), context?.isPartial === true && !component.settledStatus), 0, 0));
 
 	if (!component.preview) {
 		const activeBody = context?.isPartial === true ? formatInProgressApplyPatchBody(typeof args.input === "string" ? args.input : "", context?.cwd ?? process.cwd()) : "";
@@ -345,13 +308,13 @@ function formatApplyPatchHeader(
 	theme: { fg(role: string, text: string): string; bold(text: string): string },
 	cwd: string,
 	showInProgress: boolean,
-	progressLabel?: string | undefined,
 ): string {
 	let title = theme.fg("toolTitle", theme.bold("apply_patch"));
 	const patchText = typeof args.input === "string" ? args.input : "";
-	const inProgress = showInProgress ? formatInProgressApplyPatchSummary(patchText, cwd) : "";
-	if (inProgress) {
-		return `${title} ${theme.fg("muted", `${inProgress} ${progressLabel ?? "0s"}`)}`;
+	if (showInProgress) {
+		const summary = formatInProgressApplyPatchSummary(patchText, cwd);
+		if (summary) return `${title} ${theme.fg("muted", summary)}`;
+		return title;
 	}
 	if (preview && !("error" in preview) && preview.summary) {
 		const summary = preview.summary.replace(/^•\s*/, "");
