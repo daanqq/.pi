@@ -21,11 +21,7 @@ type ThemeColor =
 
 type FooterTheme = {
   fg(color: ThemeColor, text: string): string;
-  bg(color: "userMessageBg", text: string): string;
 };
-
-const RESET = "\x1b[0m";
-const BG_RESET = "\x1b[49m";
 
 const THINKING_LEVEL_COLOR: Record<string, ThemeColor> = {
   off: "thinkingOff",
@@ -71,13 +67,6 @@ function thinkingLevelColor(level: string | undefined) {
 
 function footerText(theme: FooterTheme, thinkingLevel: string, text: string) {
   return theme.fg(thinkingLevelColor(thinkingLevel), text);
-}
-
-function withUserMessageBackground(theme: FooterTheme, line: string) {
-  const bgStart = theme.bg("userMessageBg", "").replace(BG_RESET, "");
-  return theme.bg("userMessageBg", line
-    .replaceAll(RESET, `${RESET}${bgStart}`)
-    .replaceAll(BG_RESET, `${BG_RESET}${bgStart}`));
 }
 
 function twoColumnLine(left: string, right: string, width: number) {
@@ -179,10 +168,7 @@ function installFooter(pi: ExtensionAPI, ctx: ExtensionContext) {
         const infoLine = twoColumnLine(infoLeft, infoRight, contentWidth);
         const statsLine = twoColumnLine(statsLeft, statusRight, contentWidth);
 
-        return [
-          withUserMessageBackground(theme, padLine(infoLine)),
-          withUserMessageBackground(theme, padLine(statsLine)),
-        ];
+        return [padLine(infoLine), padLine(statsLine)];
       },
     };
   });

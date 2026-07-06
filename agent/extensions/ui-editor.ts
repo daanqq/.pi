@@ -3,7 +3,7 @@ import {
 	type ExtensionAPI,
 	type KeybindingsManager,
 } from "@earendil-works/pi-coding-agent";
-import { visibleWidth, type EditorTheme, type TUI } from "@earendil-works/pi-tui";
+import type { EditorTheme, TUI } from "@earendil-works/pi-tui";
 
 declare global {
 	var __piAgentPulseEditorLine: ((width: number, borderColor: (text: string) => string) => string | undefined) | undefined;
@@ -11,19 +11,9 @@ declare global {
 }
 
 const SKILL_AUTOCOMPLETE_CONTEXT = /(?:^|[\s([{])\$[a-z0-9-]*$/;
-const RESET = "\x1b[0m";
-const BG_RESET = "\x1b[49m";
 
 function stripAnsi(text: string) {
 	return text.replace(/\x1b\[[0-9;]*m/g, "");
-}
-
-function withEditorBackground(line: string, background: (text: string) => string, width: number) {
-	const bgStart = background("").replace(BG_RESET, "");
-	const paddedLine = line + " ".repeat(Math.max(0, width - visibleWidth(line)));
-	return background(paddedLine
-		.replaceAll(RESET, `${RESET}${bgStart}`)
-		.replaceAll(BG_RESET, `${BG_RESET}${bgStart}`));
 }
 
 
@@ -35,7 +25,6 @@ class PiConfigEditor extends CustomEditor {
 	constructor(
 		tui: TUI,
 		private readonly editorTheme: EditorTheme,
-		private readonly background: (text: string) => string,
 		keybindings: KeybindingsManager,
 	) {
 		super(tui, editorTheme, keybindings);
@@ -104,11 +93,7 @@ class PiConfigEditor extends CustomEditor {
 		const editorText = this.getLines().join("\n").trimStart();
 		if (!editorText.startsWith("!")) this.pulseBorderColor = this.borderColor;
 		const pulseLine = globalThis.__piAgentPulseEditorLine?.(width, this.pulseBorderColor);
-		const backgroundLines = lines.map((line) => withEditorBackground(line, this.background, width));
-		const paddingLine = withEditorBackground(" ".repeat(width), this.background, width);
-		return pulseLine
-			? [paddingLine, withEditorBackground(pulseLine, this.background, width), paddingLine, ...backgroundLines]
-			: [paddingLine, ...backgroundLines];
+		return pulseLine ? [pulseLine, ...lines] : lines;
 	}
 }
 
@@ -117,7 +102,7 @@ export default function editorUiExtension(pi: ExtensionAPI) {
 		if (!ctx.hasUI) return;
 
 		ctx.ui.setEditorComponent((tui, editorTheme, keybindings) =>
-			new PiConfigEditor(tui, editorTheme, (text) => ctx.ui.theme.bg("userMessageBg", text), keybindings),
+			new PiConfigEditor(tui, editorTheme, keybindings),
 		);
 	});
 
