@@ -1,6 +1,6 @@
 {
   "lastChangelogVersion": "0.80.3",
-  "defaultThinkingLevel": "medium",
+  "defaultThinkingLevel": "high",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.5",
   "packages": [
@@ -26,7 +26,7 @@
     "deepseek/deepseek-v4-pro"
   ],
   "externalEditor": "code --wait",
-  "transport": "websocket-cached",
+  "transport": "sse",
   "collapseChangelog": true,
   "treeFilterMode": "default",
   "steeringMode": "all",
@@ -40,7 +40,7 @@
     "autoResize": true,
     "blockImages": false
   },
-  "enableSkillCommands": false,
+  "enableSkillCommands": true,
   "autocompleteMaxVisible": 10,
   "followUpMode": "all",
   "enableInstallTelemetry": true,

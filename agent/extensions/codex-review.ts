@@ -8,6 +8,7 @@ const CODEX_REVIEW_PROMPT = "# Review guidelines:\n\nYou are acting as a reviewe
 
 
 const BRANCH_SELECTOR_VISIBLE_ITEMS = 12;
+const DETACHED_REVIEW_TIMEOUT_MS = 30 * 60_000;
 
 type ReviewTarget = {
 	repoPath: string;
@@ -170,20 +171,36 @@ async function runDetachedReview(
 	cwd: string,
 	targets: ReviewTarget[],
 ): Promise<string> {
+	const sessionName = reviewSessionName(targets);
 	const result = await pi.exec(
 		"pi",
 		[
 			"-p",
-			"--no-session",
 			"--no-extensions",
+			"--name",
+			sessionName,
 			"--append-system-prompt",
 			buildDetachedReviewSystemPrompt(targets),
 			buildReviewPrompt(targets),
 		],
-		{ cwd: targets[0]?.repoPath ?? cwd, timeout: 10 * 60_000 },
+		{ cwd: targets[0]?.repoPath ?? cwd, timeout: DETACHED_REVIEW_TIMEOUT_MS },
 	);
 
-	return result.code === 0 ? result.stdout : `${result.stdout}\n${result.stderr ?? ""}`.trim();
+	const output = result.code === 0 ? result.stdout.trim() : `${result.stdout}\n${result.stderr ?? ""}`.trim();
+	if (output) return output;
+
+	return [
+		`Detached review returned empty output (exit code ${result.code}).`,
+		`Review session was saved as: ${sessionName}`,
+		`If the review was interrupted by the ${Math.round(DETACHED_REVIEW_TIMEOUT_MS / 60_000)} minute timeout, resume that session to inspect or continue it.`,
+	].join("\n");
+}
+
+function reviewSessionName(targets: ReviewTarget[]): string {
+	const labels = targets.map((target) => target.repoLabel).join("+") || "repo";
+	const primary = targets[0];
+	const branch = primary?.targetBranch ? ` ${primary.targetBranch}` : "";
+	return `codex-review ${labels}${branch}`.replace(/\s+/g, " ").trim();
 }
 
 function buildDetachedReviewSystemPrompt(targets: ReviewTarget[]): string {

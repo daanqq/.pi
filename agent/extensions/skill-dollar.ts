@@ -1,4 +1,4 @@
-import type { ExtensionAPI, SourceInfo } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
 	type AutocompleteItem,
 	type AutocompleteProvider,
@@ -10,16 +10,13 @@ type SkillInfo = {
 	name: string;
 	commandName: string;
 	description?: string;
-	sourceInfo: SourceInfo;
 };
 
 const MAX_SUGGESTIONS = 100;
 const SKILL_TOKEN_BEFORE_CURSOR = /(?:^|[\s([{])\$([a-z0-9-]*)$/;
+const SKILL_MARKER = /(^|[\s([{])\$([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)/g;
 const SKILL_AUTOCOMPLETE_CONTEXT = /(?:^|[\s([{])\$[a-z0-9-]*$/;
 const TRAILING_SKILL_TOKEN_WITH_SPACES = /(?:^|[\s([{])\$([a-z0-9-]*)\s*$/;
-
-const SYSTEM_PROMPT_INSTRUCTION =
-	"When the user mentions one or more available skills as $skill-name, treat each mention as an explicit request to use that skill: read its SKILL.md file before applying it. Do not require /skill:name syntax for such references.";
 
 function getSkills(pi: ExtensionAPI): SkillInfo[] {
 	return pi
@@ -29,7 +26,6 @@ function getSkills(pi: ExtensionAPI): SkillInfo[] {
 			name: command.name.slice("skill:".length),
 			commandName: command.name,
 			description: command.description,
-			sourceInfo: command.sourceInfo,
 		}))
 		.sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -121,13 +117,36 @@ function createSkillAutocompleteProvider(pi: ExtensionAPI, current: Autocomplete
 	};
 }
 
-export default function skillDollarExtension(pi: ExtensionAPI) {
-	pi.on("before_agent_start", (event) => ({
-		systemPrompt: `${event.systemPrompt}\n\n${SYSTEM_PROMPT_INSTRUCTION}`,
-	}));
+function expandFirstDollarSkill(text: string, skills: SkillInfo[]): string | undefined {
+	const skillsByName = new Map(skills.map((skill) => [skill.name, skill]));
 
+	for (const match of text.matchAll(SKILL_MARKER)) {
+		const prefix = match[1] ?? "";
+		const name = match[2];
+		const skill = name ? skillsByName.get(name) : undefined;
+		if (!skill || match.index === undefined) continue;
+
+		const beforeMarker = text.slice(0, match.index) + prefix;
+		const markerEnd = match.index + prefix.length + name.length + 1;
+		const afterMarker = text.slice(markerEnd);
+		const args = `${beforeMarker}${afterMarker}`.trim();
+
+		return args ? `/${skill.commandName} ${args}` : `/${skill.commandName}`;
+	}
+
+	return undefined;
+}
+
+export default function skillDollarExtension(pi: ExtensionAPI) {
 	pi.on("session_start", (_event, ctx) => {
 		if (!ctx.hasUI) return;
 		ctx.ui.addAutocompleteProvider((current) => createSkillAutocompleteProvider(pi, current));
+	});
+
+	pi.on("input", async (event) => {
+		const transformed = expandFirstDollarSkill(event.text, getSkills(pi));
+		if (!transformed) return { action: "continue" };
+
+		return { action: "transform", text: transformed };
 	});
 }
