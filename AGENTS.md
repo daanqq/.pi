@@ -1,3 +1,3 @@
 # Rules
 
-1. Update README.md after significant agent/extensions changes
+1. Update README.md after changes if needed

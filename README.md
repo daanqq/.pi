@@ -66,7 +66,6 @@ If artifact splitting fails, raw model output is saved as `handoff-implement-raw
 | Skill | What it does |
 | --- | --- |
 | `librarian/` | Caches and refreshes remote git repositories under `~/.cache/checkouts/<host>/<org>/<repo>` with a reusable `checkout.sh` helper. |
-| `pi-extensions/` | Reference for writing and debugging pi extensions. |
 
 ## Custom prompt templates
 
