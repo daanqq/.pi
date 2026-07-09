@@ -10,7 +10,6 @@
         "-skills/librarian/SKILL.md"
       ]
     },
-    "npm:pi-rtk-optimizer",
     "npm:@ff-labs/pi-fff",
     "git:github.com/daanqq/pi-diff-review",
     "npm:pi-system-prompt"
