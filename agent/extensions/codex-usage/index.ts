@@ -6,6 +6,7 @@ import { deleteProfile, getCurrentProfile, getProfileCredential, listProfiles, s
 import { withRotationLock } from "./lock";
 import { fetchQuotaForCredential, formatFooterQuota, formatQuota, formatQuotaCommandOutput, normalizeQuota, quotaReason } from "./quota";
 import { chooseBestCandidate, isInCooldown, profileLabel, scoreCandidate } from "./scoring";
+import { consumeResetCredit, fetchResetCredits } from "./resets";
 import { pruneCooldowns, readState, updateState, watchState, writeState } from "./state";
 import type { CandidateScan, CodexProfile, NormalizedQuota, RotationConfig, RotationResult, RotationState, StoredCodexProfile } from "./types";
 import { CODEX_PROVIDER, EXTENSION_ID } from "./types";
@@ -479,6 +480,69 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
+  pi.registerCommand("reset-usage", {
+    description: "Use an available Codex usage limit reset",
+    handler: async (args, ctx) => {
+      try {
+        if (!isCodexContext(ctx)) throw new Error("Select an openai-codex model first");
+        if (!ctx.hasUI) throw new Error("This command requires an interactive Pi session");
+        const credential = getCurrentCredential(ctx);
+        if (!credential || credential.type !== "oauth") throw new Error("ChatGPT OAuth authentication is required");
+        const accountId = getCurrentAccountId(ctx);
+        const credits = await fetchResetCredits(credential, accountId, safeSignal(ctx));
+        if (credits.availableCount <= 0) {
+          notify(ctx, "No Codex usage limit resets are available.", "info");
+          return;
+        }
+
+        const requestedId = args.trim() || undefined;
+        let creditId = requestedId;
+        let label = requestedId ?? "the next available reset";
+        if (requestedId && credits.credits.length > 0 && !credits.credits.some((credit) => credit.id === requestedId)) {
+          throw new Error(`Reset '${requestedId}' is not available`);
+        }
+        if (!requestedId && credits.credits.length > 0) {
+          const choices = credits.credits.map((credit) => {
+            const expiry = credit.expiresAt ? `, expires ${new Date(credit.expiresAt).toLocaleString()}` : "";
+            return `${credit.title ?? "Usage reset"} [${credit.id}]${expiry}`;
+          });
+          const selected = await ctx.ui.select(`${credits.availableCount} usage reset(s) available`, choices);
+          if (!selected) return;
+          const index = choices.indexOf(selected);
+          creditId = credits.credits[index]?.id;
+          label = selected;
+        }
+
+        const confirmed = await ctx.ui.confirm("Use Codex usage reset?", `${label}\nThis will reset the currently eligible usage-limit windows.`);
+        if (!confirmed) return;
+        const outcome = await consumeResetCredit(credential, accountId, creditId, safeSignal(ctx));
+        if (outcome === "nothing_to_reset") {
+          notify(ctx, "Current Codex usage does not need a reset.", "info");
+          return;
+        }
+        if (outcome === "no_credit") {
+          notify(ctx, "No Codex usage limit resets are available.", "warning");
+          return;
+        }
+
+        quotaCache = undefined;
+        const refreshed = await fetchCurrentQuotaResult(ctx);
+        const quota = normalizeQuota(refreshed);
+        if (quota) {
+          const state = readState();
+          if (state.activeProfile) state.lastQuotaByProfile[state.activeProfile] = quota;
+          writeState(state);
+          setFooter(ctx, state, quota);
+        }
+        audit(pi, "codex-usage-reset", { creditId, outcome });
+        const remaining = refreshed.success ? refreshed.availableResetCount : undefined;
+        notify(ctx, `Codex usage reset applied.${remaining != null ? ` ${remaining} reset(s) remaining.` : ""}`, "info");
+      } catch (error) {
+        notify(ctx, `Codex usage reset failed: ${error instanceof Error ? error.message : String(error)}`, "error");
+      }
+    },
+  });
+
   pi.registerCommand("codex:profile", {
     description: "Manage native Codex auth profiles: status|list|save <name>|use <name>|delete <name>",
     getArgumentCompletions: (prefix: string) => {
@@ -594,6 +658,19 @@ export default function (pi: ExtensionAPI) {
           return;
         }
         notify(ctx, "Usage: /codex:rotate status|now|on|off|profile <name>|scan", "warning");
+      } catch (error) {
+        notify(ctx, `Codex rotation error: ${error instanceof Error ? error.message : String(error)}`, "error");
+      }
+    },
+  });
+
+  pi.registerCommand("rotate", {
+    description: "Alias for /codex:rotate now",
+    handler: async (_args, ctx) => {
+      try {
+        await ctx.waitForIdle();
+        const result = await rotateToBest(pi, ctx, "manual_now", { force: true });
+        if (!result.rotated) notify(ctx, `Codex rotation skipped: ${result.reason}`, "warning");
       } catch (error) {
         notify(ctx, `Codex rotation error: ${error instanceof Error ? error.message : String(error)}`, "error");
       }

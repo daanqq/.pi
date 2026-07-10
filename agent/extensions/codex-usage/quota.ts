@@ -30,6 +30,12 @@ function parseSubscriptionMail(data: any): string | undefined {
   return looksLikeEmail(email) ? email : undefined;
 }
 
+function parseAvailableResetCount(data: any): number | undefined {
+  const value = data?.rate_limit_reset_credits?.available_count;
+  const count = Number(value);
+  return Number.isFinite(count) && count >= 0 ? Math.floor(count) : undefined;
+}
+
 function isTimeoutReason(reason: unknown): boolean {
   return (
     (reason instanceof DOMException && reason.name === "TimeoutError") ||
@@ -205,6 +211,7 @@ export function formatQuotaCommandOutput(result: QuotaResult): string {
     `  resets: in ${resetText(window.resetsAt)}`,
     "",
   ]));
+  lines.push(`available usage resets: ${result.availableResetCount ?? "unknown"}`);
   return lines.join("\n").trimEnd();
 }
 
@@ -253,7 +260,13 @@ async function fetchQuotaOnce(credential: AuthCredential | undefined, accountIdO
     }
 
     const data = await response.json();
-    return { success: true, windows: parseCodexWindows(data), subscriptionMail: parseSubscriptionMail(data), fetchedAt };
+    return {
+      success: true,
+      windows: parseCodexWindows(data),
+      subscriptionMail: parseSubscriptionMail(data),
+      availableResetCount: parseAvailableResetCount(data),
+      fetchedAt,
+    };
   } catch (error) {
     const isAbort = combined.aborted || (error instanceof DOMException && error.name === "AbortError");
     if (isAbort) {

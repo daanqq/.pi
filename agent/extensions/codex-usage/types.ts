@@ -54,8 +54,25 @@ export type QuotaWindow = {
 };
 
 export type QuotaResult =
-  | { success: true; windows: QuotaWindow[]; subscriptionMail?: string; fetchedAt: number }
+  | { success: true; windows: QuotaWindow[]; subscriptionMail?: string; availableResetCount?: number; fetchedAt: number }
   | { success: false; error: { kind: "config" | "http" | "timeout" | "cancelled" | "network" | "parse"; message: string }; fetchedAt: number };
+
+export type RateLimitResetCredit = {
+  id: string;
+  resetType: string;
+  status: string;
+  grantedAt?: string;
+  expiresAt?: string;
+  title?: string;
+  description?: string;
+};
+
+export type RateLimitResetCredits = {
+  availableCount: number;
+  credits: RateLimitResetCredit[];
+};
+
+export type ConsumeResetOutcome = "reset" | "already_redeemed" | "nothing_to_reset" | "no_credit";
 
 export type NormalizedQuota = {
   fetchedAt: number;

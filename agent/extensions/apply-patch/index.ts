@@ -287,7 +287,6 @@ function buildApplyPatchCallComponent(
 	if (!component.preview) {
 		const activeBody = context?.isPartial === true ? formatInProgressApplyPatchBody(typeof args.input === "string" ? args.input : "", context?.cwd ?? process.cwd()) : "";
 		if (activeBody.trim().length > 0) {
-			component.addChild(new Spacer(1));
 			component.addChild(new Text(theme.fg("muted", activeBody), 0, 0));
 		}
 		return component;

@@ -7,6 +7,7 @@ It:
 1. shows current Codex subscription quota;
 2. saves and switches `openai-codex` credentials as Pi-owned profiles;
 3. rotates across saved profiles when quota is low or a profile is rate-limited.
+4. displays earned usage-limit resets and redeems them with explicit confirmation.
 
 ## Purpose
 
@@ -136,7 +137,11 @@ Other Pi processes watch the state file, reload auth when `activeProfile` change
 
 ### `/codex:quotas`
 
-Shows current Codex subscription quota for the active `openai-codex` credential.
+Shows current Codex subscription quota and the number of available usage-limit resets for the active `openai-codex` credential.
+
+### `/reset-usage`
+
+Fetches earned Codex usage-limit resets for the active OAuth profile, lets you select one when details are available, asks for confirmation, redeems it, and refreshes quota. Pass an opaque credit ID as `/reset-usage <credit-id>` to select it directly.
 
 ### `/codex:profile status`
 
@@ -171,6 +176,10 @@ Shows current usage/rotation state:
 ### `/codex:rotate now`
 
 Forces a scan of saved profiles and switches to the best eligible profile.
+
+### `/rotate`
+
+Short alias for `/codex:rotate now`.
 
 ### `/codex:rotate on`
 
