@@ -256,6 +256,26 @@ async function getGlabUser(exec: ExecFn): Promise<string | null> {
   return null;
 }
 
+/**
+ * Обновить origin/<branch> и проверить, есть ли в удалённой ветке коммиты,
+ * которых нет в локальном HEAD. Обновлённый ref также служит безопасной
+ * точкой ожидания для последующего --force-with-lease.
+ */
+async function remoteHasCommitsMissingLocally(exec: ExecFn, branch: string): Promise<boolean> {
+  const remoteRef = `refs/remotes/origin/${branch}`;
+  const fetchResult = await exec("git", [
+    "fetch",
+    "--quiet",
+    "origin",
+    `+refs/heads/${branch}:${remoteRef}`,
+  ]);
+  if (fetchResult.code !== 0) return false;
+
+  const missingResult = await exec("git", ["rev-list", "--count", `HEAD..${remoteRef}`]);
+  const missingCount = Number(missingResult.stdout.trim());
+  return missingResult.code === 0 && Number.isFinite(missingCount) && missingCount > 0;
+}
+
 /** Тип для exec-обёртки с фиксированным cwd. */
 type ExecFn = (cmd: string, args: string[], opts?: Record<string, unknown>) => Promise<{ stdout: string; stderr?: string; code: number }>;
 
@@ -662,9 +682,21 @@ export default function (pi: ExtensionAPI) {
           return;
         }
 
-        const pushResult = await exec("git", ["push", "-u", "origin", "HEAD"]);
+        let pushResult = await exec("git", ["push", "-u", "origin", "HEAD"]);
+        if (pushResult.code !== 0 && await remoteHasCommitsMissingLocally(exec, branch)) {
+          const forceAction = await ctx.ui.select(
+            "Удалённая ветка содержит коммиты, которых нет локально. Выполнить push with lease?",
+            ["Нет", "Да — push --force-with-lease"],
+          );
+          if (forceAction !== "Да — push --force-with-lease") {
+            ctx.ui.notify("Push отменён: удалённая ветка не перезаписана", "warning");
+            return;
+          }
+
+          pushResult = await exec("git", ["push", "--force-with-lease", "-u", "origin", "HEAD"]);
+        }
         if (pushResult.code !== 0) {
-          ctx.ui.notify(`Ошибка git push: ${pushResult.stderr}`, "error");
+          ctx.ui.notify(`Ошибка git push: ${pushResult.stderr || pushResult.stdout}`, "error");
           return;
         }
         ctx.ui.notify("Запушено ✓", "info");
