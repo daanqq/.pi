@@ -22,6 +22,9 @@ const CONFIG: RotationConfig = {
   retryAfter429: "ask",
 };
 
+const SUSPICIOUS_QUOTA_INCREASE = 10;
+const QUOTA_CONFIRM_DELAY_MS = 750;
+
 let quotaCache: { key: string; quota: NormalizedQuota; fetchedAt: number } | undefined;
 let quotaFetchInFlight: { key: string; promise: Promise<NormalizedQuota | undefined> } | undefined;
 let quotaRefreshTimer: ReturnType<typeof setInterval> | undefined;
@@ -82,19 +85,119 @@ function cacheKeyForCredential(credential: any): string {
   return `${credential?.type ?? "none"}:${credential?.accountId ?? credential?.account_id ?? ""}:${credential?.access ?? credential?.key ?? ""}`;
 }
 
+type CurrentQuotaTarget = {
+  credential: any;
+  accountId?: string;
+  key: string;
+  profile?: string;
+  email?: string;
+  previous?: NormalizedQuota;
+};
+
+function captureCurrentQuotaTarget(ctx: ExtensionContext | ExtensionCommandContext): CurrentQuotaTarget {
+  const credential = getCurrentCredential(ctx);
+  const accountId = credential?.accountId ?? credential?.account_id ?? getFallbackCodexAccountId();
+  const state = readState();
+  const profile = state.activeProfile;
+  return {
+    credential,
+    accountId,
+    key: `${cacheKeyForCredential(credential)}:${accountId ?? ""}`,
+    profile,
+    email: state.activeEmail,
+    previous: profile ? state.lastQuotaByProfile[profile] : undefined,
+  };
+}
+
+function targetIsCurrent(ctx: ExtensionContext | ExtensionCommandContext, target: CurrentQuotaTarget): boolean {
+  const current = captureCurrentQuotaTarget(ctx);
+  return current.key === target.key && current.profile === target.profile;
+}
+
+function quotaWindowIncreasedBeforeReset(previous: NormalizedQuota, next: NormalizedQuota): boolean {
+  const now = Date.now();
+  const fiveHourIncrease =
+    previous.hasFiveHourWindow !== false &&
+    next.hasFiveHourWindow !== false &&
+    (previous.fiveHourResetsAt ?? 0) > now &&
+    next.fiveHourRemaining - previous.fiveHourRemaining >= SUSPICIOUS_QUOTA_INCREASE;
+  const secondaryIncrease =
+    previous.hasSecondaryWindow !== false &&
+    next.hasSecondaryWindow !== false &&
+    (previous.weeklyResetsAt ?? 0) > now &&
+    next.weeklyRemaining - previous.weeklyRemaining >= SUSPICIOUS_QUOTA_INCREASE;
+  return fiveHourIncrease || secondaryIncrease;
+}
+
+function quotasAgree(left: NormalizedQuota, right: NormalizedQuota): boolean {
+  return (
+    left.hasFiveHourWindow === right.hasFiveHourWindow &&
+    left.hasSecondaryWindow === right.hasSecondaryWindow &&
+    Math.abs(left.fiveHourRemaining - right.fiveHourRemaining) <= 2 &&
+    Math.abs(left.weeklyRemaining - right.weeklyRemaining) <= 2
+  );
+}
+
+async function waitForQuotaConfirmation(signal?: AbortSignal): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) return resolve(false);
+    const timer = setTimeout(() => resolve(true), QUOTA_CONFIRM_DELAY_MS);
+    timer.unref?.();
+    signal?.addEventListener("abort", () => {
+      clearTimeout(timer);
+      resolve(false);
+    }, { once: true });
+  });
+}
+
+function storeQuotaIfCurrent(profile: string | undefined, quota: NormalizedQuota): RotationState | undefined {
+  if (!profile) return undefined;
+  let stored = false;
+  const state = updateState((draft) => {
+    if (draft.activeProfile !== profile) return;
+    const previous = draft.lastQuotaByProfile[profile];
+    if (previous && previous.fetchedAt > quota.fetchedAt) return;
+    draft.lastQuotaByProfile[profile] = quota;
+    stored = true;
+  });
+  return stored ? state : undefined;
+}
+
 async function fetchCurrentQuotaResult(ctx: ExtensionContext | ExtensionCommandContext) {
   return fetchQuotaForCredential(getCurrentCredential(ctx), getCurrentAccountId(ctx), safeSignal(ctx));
 }
 
 async function fetchCurrentQuota(ctx: ExtensionContext | ExtensionCommandContext, force = false): Promise<NormalizedQuota | undefined> {
-  const credential = getCurrentCredential(ctx);
-  const key = `${cacheKeyForCredential(credential)}:${getCurrentAccountId(ctx) ?? ""}`;
+  const target = captureCurrentQuotaTarget(ctx);
+  const key = target.key;
   if (!force && quotaCache?.key === key && Date.now() - quotaCache.fetchedAt < CONFIG.quotaCacheTtlMs) return quotaCache.quota;
   if (quotaFetchInFlight?.key === key) return quotaFetchInFlight.promise;
 
   const promise = (async () => {
-    const result = await fetchCurrentQuotaResult(ctx);
-    const quota = normalizeQuota(result);
+    let result = await fetchQuotaForCredential(target.credential, target.accountId, safeSignal(ctx));
+    let quota = normalizeQuota(result);
+    if (!targetIsCurrent(ctx, target)) return undefined;
+    if (result.success && target.email && result.subscriptionMail && result.subscriptionMail.toLowerCase() !== target.email.toLowerCase()) return undefined;
+
+    // Remaining quota should not jump substantially before the old window's
+    // reset. Confirm such a response once so a transient backend/cache result
+    // or a response associated with another account never flashes in footer.
+    if (quota && target.previous && quotaWindowIncreasedBeforeReset(target.previous, quota)) {
+      if (!await waitForQuotaConfirmation(safeSignal(ctx)) || !targetIsCurrent(ctx, target)) return undefined;
+      result = await fetchQuotaForCredential(target.credential, target.accountId, safeSignal(ctx));
+      const confirmed = normalizeQuota(result);
+      if (!targetIsCurrent(ctx, target)) return undefined;
+      const wrongSubscription =
+        result.success &&
+        target.email &&
+        result.subscriptionMail &&
+        result.subscriptionMail.toLowerCase() !== target.email.toLowerCase();
+      // Keep rendering the last trusted value when confirmation disagrees.
+      // Returning undefined here would replace a harmless transient jump with
+      // a noisy "quota unavailable" warning at turn/agent boundaries.
+      if (!confirmed || wrongSubscription || !quotasAgree(quota, confirmed)) return target.previous;
+      quota = confirmed;
+    }
     if (quota) quotaCache = { key, quota, fetchedAt: Date.now() };
     return quota;
   })().finally(() => {
@@ -167,14 +270,27 @@ async function scanCandidates(state: RotationState, skipProfile?: string, signal
     }),
   );
 
-  writeState(state);
+  // The scan spends time on network requests. Merge only the fields it owns
+  // into a fresh snapshot instead of writing the stale pre-request state over
+  // profile/quota changes made by another Pi process.
+  updateState((latest) => {
+    pruneCooldowns(latest);
+    for (const scan of scans) {
+      const quota = scan.normalizedQuota;
+      const previous = latest.lastQuotaByProfile[scan.profile.name];
+      if (quota && (!previous || quota.fetchedAt >= previous.fetchedAt)) latest.lastQuotaByProfile[scan.profile.name] = quota;
+    }
+    for (const [profile, cooldown] of Object.entries(state.cooldowns)) {
+      const previous = latest.cooldowns[profile];
+      if (cooldown.until > Date.now() && (!previous || cooldown.until > previous.until)) latest.cooldowns[profile] = cooldown;
+    }
+  });
   return scans;
 }
 
 async function commitRotation(
   pi: ExtensionAPI,
   ctx: ExtensionContext | ExtensionCommandContext,
-  state: RotationState,
   winner: CandidateScan,
   from: string | undefined,
   reason: string,
@@ -183,18 +299,24 @@ async function commitRotation(
 
   const activeToken = useProfile(ctx, winner.profile.name);
 
-  state.activeProfile = winner.profile.name;
-  state.activeAccountId = activeToken.accountId ?? winner.token.accountId ?? winner.profile.accountId;
-  state.activeEmail = activeToken.email ?? winner.token.email ?? winner.profile.email;
-  state.lastRotationAt = Date.now();
-  if (winner.normalizedQuota) state.lastQuotaByProfile[winner.profile.name] = winner.normalizedQuota;
-  writeState(state);
+  // Re-read after candidate network requests so committing a rotation cannot
+  // erase a newer quota written by a footer refresh.
+  const latest = readState();
+  latest.activeProfile = winner.profile.name;
+  latest.activeAccountId = activeToken.accountId ?? winner.token.accountId ?? winner.profile.accountId;
+  latest.activeEmail = activeToken.email ?? winner.token.email ?? winner.profile.email;
+  latest.lastRotationAt = Date.now();
+  if (winner.normalizedQuota) {
+    const previous = latest.lastQuotaByProfile[winner.profile.name];
+    if (!previous || winner.normalizedQuota.fetchedAt >= previous.fetchedAt) latest.lastQuotaByProfile[winner.profile.name] = winner.normalizedQuota;
+  }
+  writeState(latest);
   quotaCache = undefined;
 
   const result: RotationResult = { rotated: true, from, to: winner.profile.name, reason, quota: winner.normalizedQuota };
   audit(pi, "codex-usage", { from, to: winner.profile.name, reason, quota: winner.normalizedQuota });
   notify(ctx, `Codex auth rotated: ${from ?? "unknown"} -> ${winner.profile.name}; reason: ${reason}`, "info");
-  setFooter(ctx, state, winner.normalizedQuota);
+  setFooter(ctx, latest, winner.normalizedQuota);
   return result;
 }
 
@@ -222,11 +344,10 @@ async function rotateToBest(
     const scans = await scanCandidates(state, skipProfile, signal);
     const winner = chooseBestCandidate(scans);
     if (!winner) {
-      writeState(state);
       audit(pi, "codex-usage-skip", { from, reason, detail: "no eligible profiles", scans: summarizeScans(scans) });
       return { rotated: false, reason: "no eligible profiles", scans };
     }
-    return commitRotation(pi, ctx, state, winner, from, reason);
+    return commitRotation(pi, ctx, winner, from, reason);
   });
 }
 
@@ -244,7 +365,7 @@ async function rotateToProfile(pi: ExtensionAPI, ctx: ExtensionCommandContext, p
     const normalizedQuota = normalizeQuota(quotaResult);
     if (!quotaResult.success || !normalizedQuota) throw new Error(`Cannot switch to ${profile}: quota unavailable`);
     const scan: CandidateScan = { profile: profileInfo, token, quota: quotaResult, normalizedQuota, score: normalizedQuota.minRemaining, eligible: true };
-    return commitRotation(pi, ctx, state, scan, from, "manual_profile_switch");
+    return commitRotation(pi, ctx, scan, from, "manual_profile_switch");
   });
 }
 
@@ -279,13 +400,11 @@ async function maybeRotateForQuota(pi: ExtensionAPI, ctx: ExtensionContext | Ext
     return;
   }
 
-  if (state.activeProfile) {
-    state.lastQuotaByProfile[state.activeProfile] = quota;
-    writeState(state);
-  }
-  setFooter(ctx, state, quota);
+  const currentState = storeQuotaIfCurrent(state.activeProfile, quota);
+  if (!currentState) return;
+  setFooter(ctx, currentState, quota);
 
-  if (!state.autoEnabled) return;
+  if (!currentState.autoEnabled) return;
 
   if (quota.minRemaining <= CONFIG.rotateBelowPercent) {
     try {
@@ -328,11 +447,13 @@ async function refreshFooterQuota(ctx: ExtensionContext, generation = quotaRefre
     const quota = await fetchCurrentQuota(ctx, true);
     if (generation !== quotaRefreshGeneration || !isActiveEventContext(ctx) || safeSignal(ctx)?.aborted) return;
 
-    if (quota && state.activeProfile) {
-      state.lastQuotaByProfile[state.activeProfile] = quota;
-      writeState(state);
+    if (!quota) {
+      setFooter(ctx, readState());
+      return;
     }
-    setFooter(ctx, state, quota);
+    const currentState = storeQuotaIfCurrent(state.activeProfile, quota);
+    if (!currentState) return;
+    setFooter(ctx, currentState, quota);
   } catch (error) {
     if (isStaleContextError(error) || safeSignal(ctx)?.aborted) return;
     setFooter(ctx, readState());
@@ -389,12 +510,9 @@ function formatScans(scans: CandidateScan[]): string {
 }
 
 async function commandStatus(ctx: ExtensionCommandContext): Promise<string> {
-  const state = readState();
+  let state = readState();
   const quota = isCodexContext(ctx) ? await fetchCurrentQuota(ctx, true) : undefined;
-  if (state.activeProfile && quota) {
-    state.lastQuotaByProfile[state.activeProfile] = quota;
-    writeState(state);
-  }
+  if (quota) state = storeQuotaIfCurrent(state.activeProfile, quota) ?? readState();
   const cooldowns = Object.entries(state.cooldowns)
     .filter(([, cooldown]) => cooldown.until > Date.now())
     .map(([profile, cooldown]) => `  ${profile}: ${cooldown.reason}, until ${new Date(cooldown.until).toLocaleString()}`);
@@ -470,11 +588,8 @@ export default function (pi: ExtensionAPI) {
       const quota = normalizeQuota(result);
       if (quota) {
         const state = readState();
-        if (state.activeProfile) {
-          state.lastQuotaByProfile[state.activeProfile] = quota;
-          writeState(state);
-          setFooter(ctx, state, quota);
-        }
+        const currentState = storeQuotaIfCurrent(state.activeProfile, quota);
+        if (currentState) setFooter(ctx, currentState, quota);
       }
       notify(ctx, ctx.ui.theme.fg("dim", formatQuotaCommandOutput(result)), result.success ? "info" : "warning");
     },
@@ -530,9 +645,8 @@ export default function (pi: ExtensionAPI) {
         const quota = normalizeQuota(refreshed);
         if (quota) {
           const state = readState();
-          if (state.activeProfile) state.lastQuotaByProfile[state.activeProfile] = quota;
-          writeState(state);
-          setFooter(ctx, state, quota);
+          const currentState = storeQuotaIfCurrent(state.activeProfile, quota);
+          if (currentState) setFooter(ctx, currentState, quota);
         }
         audit(pi, "codex-usage-reset", { creditId, outcome });
         const remaining = refreshed.success ? refreshed.availableResetCount : undefined;

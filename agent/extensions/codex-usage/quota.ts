@@ -9,11 +9,19 @@ function parseDateish(value: unknown): Date {
   return new Date(0);
 }
 
-function percentLeftToUsedPercent(limit: any): number {
-  if (limit?.percent_left != null) return Math.max(0, 100 - Number(limit.percent_left));
-  if (limit?.remaining_percent != null) return Math.max(0, 100 - Number(limit.remaining_percent));
-  if (limit?.used_percent != null) return Number(limit.used_percent);
-  return 0;
+function percentLeftToUsedPercent(limit: any): number | undefined {
+  const remaining = limit?.percent_left ?? limit?.remaining_percent;
+  if (remaining != null) {
+    const value = Number(remaining);
+    return Number.isFinite(value) && value >= 0 && value <= 100 ? 100 - value : undefined;
+  }
+  if (limit?.used_percent != null) {
+    const value = Number(limit.used_percent);
+    return Number.isFinite(value) && value >= 0 && value <= 100 ? value : undefined;
+  }
+  // An object without a known percentage field is not an unused window.
+  // Treating it as used_percent=0 used to produce a fabricated 100% footer.
+  return undefined;
 }
 
 function clampPercent(value: number): number {
@@ -103,27 +111,31 @@ export function parseCodexWindows(data: any): QuotaWindow[] {
   const windows: QuotaWindow[] = [];
 
   if (primary) {
-    const usedPercent = clampPercent(percentLeftToUsedPercent(primary));
-    const label = quotaWindowLabel(primary, "5h");
-    windows.push({
-      label,
-      usedPercent,
-      remainingPercent: clampPercent(100 - usedPercent),
-      resetsAt: parseDateish(primary.reset_at ?? primary.reset_time_ms),
-      windowSeconds: Number(primary.limit_window_seconds ?? (label === "30d" ? 30 * 24 * 60 * 60 : label === "7d" ? 7 * 24 * 60 * 60 : 5 * 60 * 60)),
-    });
+    const usedPercent = percentLeftToUsedPercent(primary);
+    if (usedPercent != null) {
+      const label = quotaWindowLabel(primary, "5h");
+      windows.push({
+        label,
+        usedPercent,
+        remainingPercent: clampPercent(100 - usedPercent),
+        resetsAt: parseDateish(primary.reset_at ?? primary.reset_time_ms),
+        windowSeconds: Number(primary.limit_window_seconds ?? (label === "30d" ? 30 * 24 * 60 * 60 : label === "7d" ? 7 * 24 * 60 * 60 : 5 * 60 * 60)),
+      });
+    }
   }
 
   if (secondary) {
-    const usedPercent = clampPercent(percentLeftToUsedPercent(secondary));
-    const label = quotaWindowLabel(secondary, "7d");
-    windows.push({
-      label,
-      usedPercent,
-      remainingPercent: clampPercent(100 - usedPercent),
-      resetsAt: parseDateish(secondary.reset_at ?? secondary.reset_time_ms),
-      windowSeconds: Number(secondary.limit_window_seconds ?? (label === "30d" ? 30 : 7) * 24 * 60 * 60),
-    });
+    const usedPercent = percentLeftToUsedPercent(secondary);
+    if (usedPercent != null) {
+      const label = quotaWindowLabel(secondary, "7d");
+      windows.push({
+        label,
+        usedPercent,
+        remainingPercent: clampPercent(100 - usedPercent),
+        resetsAt: parseDateish(secondary.reset_at ?? secondary.reset_time_ms),
+        windowSeconds: Number(secondary.limit_window_seconds ?? (label === "30d" ? 30 : 7) * 24 * 60 * 60),
+      });
+    }
   }
 
   return windows;

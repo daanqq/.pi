@@ -24,6 +24,9 @@ It:
 - avoids switching auth while a provider request is in flight;
 - reacts to HTTP `429` by cooling down the current profile and trying another one;
 - synchronizes usage/rotation state and footer quota display across multiple Pi processes;
+- rejects malformed quota windows instead of interpreting missing percentages as 100% remaining;
+- verifies that the active credential/profile did not change while a background quota request was running;
+- confirms suspicious quota increases before reset with a second request and refuses to apply older quota samples over newer ones;
 - treats async quota checks that outlive `/new`, `/resume`, `/fork`, or `/reload` as cancellation so stale extension contexts do not crash Pi;
 - writes audit entries into the Pi session.
 
