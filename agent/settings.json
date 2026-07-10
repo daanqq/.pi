@@ -1,8 +1,8 @@
 {
-  "lastChangelogVersion": "0.80.3",
-  "defaultThinkingLevel": "low",
+  "lastChangelogVersion": "0.80.6",
+  "defaultThinkingLevel": "off",
   "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-5.5",
+  "defaultModel": "gpt-5.6-sol",
   "packages": [
     {
       "source": "npm:pi-web-access",
@@ -21,8 +21,9 @@
     "enabled": false
   },
   "enabledModels": [
-    "openai-codex/gpt-5.5",
-    "deepseek/deepseek-v4-pro"
+    "deepseek/deepseek-v4-pro",
+    "openai-codex/gpt-5.6-sol",
+    "openai-codex/gpt-5.6-terra"
   ],
   "externalEditor": "code --wait",
   "transport": "sse",
@@ -49,7 +50,8 @@
     "-extensions/answer/index.ts",
     "-extensions/generation-stats.ts",
     "-extensions/open-last-agent-response.ts",
-    "-extensions/prompt-audit.ts"
+    "-extensions/prompt-audit.ts",
+    "-extensions/agents-local.ts"
   ],
   "httpIdleTimeoutMs": 120000,
   "defaultProjectTrust": "always",

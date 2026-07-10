@@ -1,3 +1,3 @@
 # User preferences
 
-Always answer in Russian by default unless I explicitly request another language.
+Отвечай на русском по умолчанию, если я явно не попросил другой язык.
