@@ -27,6 +27,7 @@ const THINKING_LEVEL_COLOR: Record<string, ThemeColor> = {
   medium: "thinkingMedium",
   high: "thinkingHigh",
   xhigh: "thinkingXhigh",
+  max: "thinkingXhigh",
 };
 
 const HEADER_LEFT_PADDING = "  ";
