@@ -8,9 +8,10 @@
  * MR description и commit title по диффу (или только commit title для существующего MR).
  *
  * Использование:
- *   /mr-echat [commit-title]
+ *   /mr-echat [task-branch]
  *
- *   commit-title — опционально: готовый заголовок коммита (без #EUTP-XXX)
+ *   task-branch — опционально: название ветки задачи. Если команда запущена
+ *   на базовой ветке, перед началом работы будет создана ветка с этим названием.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -28,6 +29,7 @@ const MR_DESC_TMP = "/tmp/mr_description.md";
 const GENERATION_PROVIDER = "openai-codex";
 const GENERATION_MODEL = "gpt-5.4-mini";
 const GENERATION_THINKING = "high";
+const BASE_BRANCHES = new Set(["main", "master", "develop", "dev", "stage", "staging"]);
 const GENERATED_DIFF_EXCLUDES = [
   "**/package-lock.json",
   "**/npm-shrinkwrap.json",
@@ -505,10 +507,10 @@ async function confirmTitle(
 
 export default function (pi: ExtensionAPI) {
   pi.registerCommand("mr-echat", {
-    description: "Commit + push + создать MR через glab",
+    description: "Commit + push + создать MR через glab; аргумент — ветка задачи",
     handler: async (args, ctx) => {
       try {
-        const userTitle = args.trim() || undefined;
+        const taskBranch = args.trim() || undefined;
 
         // 0. Определить рабочую директорию (git-репозиторий)
         const repoDir = await ensureGitRepo(pi, ctx);
@@ -517,23 +519,40 @@ export default function (pi: ExtensionAPI) {
         // Обёртка pi.exec с фиксированным cwd
         const exec: ExecFn = (cmd, args, opts) => pi.exec(cmd, args, { ...opts, cwd: repoDir });
 
-        // 1. Извлечь EUTP-ID из ветки
-        const branchResult = await exec("git", ["branch", "--show-current"]);
+        // 1. На базовой ветке создать переданную ветку задачи
+        let branchResult = await exec("git", ["branch", "--show-current"]);
         if (branchResult.code !== 0 || !branchResult.stdout.trim()) {
           ctx.ui.notify("Не удалось определить текущую ветку", "error");
           return;
         }
-        const branch = branchResult.stdout.trim();
+        let branch = branchResult.stdout.trim();
+        if (taskBranch && BASE_BRANCHES.has(branch)) {
+          const validBranch = await exec("git", ["check-ref-format", "--branch", taskBranch]);
+          if (validBranch.code !== 0) {
+            ctx.ui.notify(`Некорректное название ветки: ${taskBranch}`, "error");
+            return;
+          }
+
+          const switchResult = await exec("git", ["switch", "-c", taskBranch]);
+          if (switchResult.code !== 0) {
+            ctx.ui.notify(`Не удалось создать ветку ${taskBranch}: ${switchResult.stderr}`, "error");
+            return;
+          }
+          branch = taskBranch;
+          ctx.ui.notify(`Создана ветка ${branch}`, "info");
+        }
+
+        // 2. Извлечь EUTP-ID из ветки
         const taskId = extractTaskId(branch);
         if (!taskId) {
           ctx.ui.notify(`Не найден EUTP-ID в названии ветки: ${branch}`, "error");
           return;
         }
 
-        // 2. Проверить существующий MR до генерации описания
+        // 3. Проверить существующий MR до генерации описания
         const existingMr = await getExistingMr(exec, branch);
 
-        // 3. Получить diff
+        // 4. Получить diff
         const diff = await getDiff(exec);
         if (!diff.trim()) {
           if (!existingMr) {
@@ -564,11 +583,11 @@ export default function (pi: ExtensionAPI) {
           return;
         }
 
-        // 4. Подготовить MR-шаблон, но описание генерировать только после выбора title
+        // 5. Подготовить MR-шаблон, но описание генерировать только после выбора title
         let description: string | null = null;
         let template: string | null = null;
         let updateExistingMrDescription = false;
-        const previousTitle = !userTitle ? await getPreviousCommitTitle(exec, taskId) : null;
+        const previousTitle = await getPreviousCommitTitle(exec, taskId);
 
         if (!existingMr) {
           try {
@@ -579,36 +598,32 @@ export default function (pi: ExtensionAPI) {
           }
         }
 
-        // 5. Определить commit title
+        // 6. Определить commit title
         let commitTitle: string;
-        if (userTitle) {
-          commitTitle = `${userTitle} #${taskId}`;
-        } else {
-          const titleChoices = previousTitle
-            ? [`Использовать существующее сообщение: ${previousTitle}`, "Сгенерировать название коммита", "Ввести своё"]
-            : ["Сгенерировать название коммита", "Ввести своё"];
-          const titleAction = await ctx.ui.select("Заголовок коммита", titleChoices);
-          if (!titleAction) return;
+        const titleChoices = previousTitle
+          ? [`Использовать существующее сообщение: ${previousTitle}`, "Сгенерировать название коммита", "Ввести своё"]
+          : ["Сгенерировать название коммита", "Ввести своё"];
+        const titleAction = await ctx.ui.select("Заголовок коммита", titleChoices);
+        if (!titleAction) return;
 
-          if (titleAction.startsWith("Использовать существующее")) {
-            commitTitle = previousTitle!;
-          } else if (titleAction === "Ввести своё") {
-            const manual = await ctx.ui.input("Введи название коммита (без #EUTP-XXX):");
-            if (!manual) {
-              ctx.ui.notify("Заголовок коммита не задан — отмена", "warning");
-              return;
-            }
-            commitTitle = `${manual.trim()} #${taskId}`;
-          } else {
-            const firstTitle = await generateTitle(ctx, taskId, diff);
-            if (!firstTitle) return;
-            const confirmed = await confirmTitle(ctx, taskId, firstTitle, previousTitle, async () => generateTitle(ctx, taskId, diff));
-            if (!confirmed) {
-              ctx.ui.notify("Заголовок коммита не задан — отмена", "warning");
-              return;
-            }
-            commitTitle = confirmed;
+        if (titleAction.startsWith("Использовать существующее")) {
+          commitTitle = previousTitle!;
+        } else if (titleAction === "Ввести своё") {
+          const manual = await ctx.ui.input("Введи название коммита (без #EUTP-XXX):");
+          if (!manual) {
+            ctx.ui.notify("Заголовок коммита не задан — отмена", "warning");
+            return;
           }
+          commitTitle = `${manual.trim()} #${taskId}`;
+        } else {
+          const firstTitle = await generateTitle(ctx, taskId, diff);
+          if (!firstTitle) return;
+          const confirmed = await confirmTitle(ctx, taskId, firstTitle, previousTitle, async () => generateTitle(ctx, taskId, diff));
+          if (!confirmed) {
+            ctx.ui.notify("Заголовок коммита не задан — отмена", "warning");
+            return;
+          }
+          commitTitle = confirmed;
         }
 
         if (existingMr) {
@@ -619,7 +634,7 @@ export default function (pi: ExtensionAPI) {
           fs.writeFileSync(MR_DESC_TMP, description, "utf-8");
         }
 
-        // 6. Commit + push
+        // 7. Commit + push
         const cachedCheck = await exec("git", ["diff", "--cached", "--name-only"]);
         const hasCached = cachedCheck.stdout.trim().length > 0;
         const unstagedCheck = await exec("git", ["diff", "--name-only"]);
@@ -657,7 +672,7 @@ export default function (pi: ExtensionAPI) {
           ctx.ui.notify(description ? "Готовлю создание MR..." : "Генерирую описание MR...", "info");
         }
 
-        // 7. Если MR уже был — при необходимости обновить описание и выйти
+        // 8. Если MR уже был — при необходимости обновить описание и выйти
         if (existingMr) {
           if (updateExistingMrDescription) {
             const currentDescription = await getMrDescription(exec, existingMr.ref);
@@ -678,7 +693,7 @@ export default function (pi: ExtensionAPI) {
           return;
         }
 
-        // 8. Создать MR
+        // 9. Создать MR
         const username = await getGlabUser(exec);
         const descContent = description ?? fs.readFileSync(MR_DESC_TMP, "utf-8");
         const targetBranch = await getParentTaskBranch(exec, branch);
@@ -704,7 +719,7 @@ export default function (pi: ExtensionAPI) {
           return;
         }
 
-        // 9. Вывести результат
+        // 10. Вывести результат
         const webUrlMatch = createResult.stdout.match(/https:\/\/gitlab\.[^\s]+/);
         if (webUrlMatch) {
           ctx.ui.notify(`MR создан: ${webUrlMatch[0]}`, "info");
