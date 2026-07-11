@@ -207,14 +207,13 @@ const SPINNER_VERBS = [
 
 const SPINNER_CHARACTERS = ["·", "✢", "✶", "✻", "✽"] as const;
 const SPINNER_FRAMES = [...SPINNER_CHARACTERS, ...[...SPINNER_CHARACTERS].reverse()];
-const SPINNER_RENDER_INTERVAL_MS = 50;
+const SPINNER_RENDER_INTERVAL_MS = 120;
 const SPINNER_FRAME_MS = 120;
 const SHIMMER_FRAME_MS = 50;
 const SHIMMER_TRAILING_GAP = 4;
 const TITLE_DONE_HOLD_MS = 8000;
 const MAX_SESSION_LENGTH = 36;
 const MAX_CWD_LENGTH = 24;
-const WIDGET_ID = "agent-pulse";
 
 type ColorFn = (text: string) => string;
 
@@ -273,6 +272,7 @@ function ringBell() {
 
 declare global {
 	var __piAgentPulseEditorLine: ((width: number, borderColor: ColorFn) => string | undefined) | undefined;
+	var __piAgentPulseRequestRender: (() => void) | undefined;
 }
 
 export default function (pi: ExtensionAPI) {
@@ -288,7 +288,20 @@ export default function (pi: ExtensionAPI) {
 	let lastToolName: string | undefined;
 	let totalOutputTokens = 0;
 	let frozenPulseColor: ColorFn | null = null;
-	const activeTools = new Set<string>();
+	let contextLabelCache = "";
+	let pulseMode: "hidden" | "active" | "final" = "hidden";
+	let finalPulseText = "";
+	const activeTools = new Map<string, string>();
+	const pausedToolIds = new Set<string>();
+
+	function refreshContextLabel(ctx?: ExtensionContext) {
+		contextLabelCache = contextLabel(pi, ctx);
+	}
+
+	function currentContextLabel(ctx?: ExtensionContext): string {
+		if (!contextLabelCache) refreshContextLabel(ctx);
+		return contextLabelCache;
+	}
 
 	function getElapsedMs(): number {
 		if (pauseStartTime !== null) return pauseStartTime - startTime - totalPausedMs;
@@ -309,55 +322,65 @@ export default function (pi: ExtensionAPI) {
 		}
 	}
 
-	function setEditorPulse(ctx: ExtensionContext, renderLineWithColors: (base: ColorFn, bright: ColorFn) => string) {
+	function installEditorPulseRenderer() {
 		globalThis.__piAgentPulseEditorLine = (width, borderColor) => {
+			if (pulseMode === "hidden") return undefined;
 			const base = frozenPulseColor ?? borderColor;
 			frozenPulseColor = base;
+			if (pulseMode === "final") {
+				return truncateToWidth(`  ${base("✻")} ${base(finalPulseText)}`, width, "");
+			}
+
+			const elapsedMs = getElapsedMs();
+			lastFrame = spinnerFrame(elapsedMs);
 			const bright = (text: string) => `\x1b[1m${base(text)}\x1b[22m`;
-			return truncateToWidth(`  ${renderLineWithColors(base, bright)}`, width, "");
+			const line = `${verb}: ${activity}… ${formatElapsed(elapsedMs)}`;
+			const rendered = `${base(lastFrame)} ${renderShimmeredMessage(line, elapsedMs, base, bright)}`;
+			return truncateToWidth(`  ${rendered}`, width, "");
 		};
-		// ponytail: empty widget is just a render tick; the pulse itself lives inside ui-editor.
-		ctx.ui.setWidget(WIDGET_ID, undefined);
 	}
 
-	function renderWidget(ctx: ExtensionContext) {
+	function requestPulseRender() {
+		globalThis.__piAgentPulseRequestRender?.();
+	}
+
+	function renderWidget() {
 		const elapsedMs = getElapsedMs();
 		lastFrame = spinnerFrame(elapsedMs);
-		setEditorPulse(ctx, (base, bright) => {
-			const line = `${verb}: ${activity}… ${formatElapsed(elapsedMs)}`;
-			return `${base(lastFrame)} ${renderShimmeredMessage(line, elapsedMs, base, bright)}`;
-		});
+		requestPulseRender();
 	}
 
-	function renderFinalWidget(ctx: ExtensionContext, finalElapsedMs: number) {
+	function renderFinalWidget(finalElapsedMs: number) {
 		const seconds = finalElapsedMs / 1000;
 		const tps = totalOutputTokens > 0 && seconds > 0 ? Math.round(totalOutputTokens / seconds) : 0;
-		setEditorPulse(ctx, (base) => `${base("✻")} ${base(formatFinalDuration(finalElapsedMs, tps))}`);
+		finalPulseText = formatFinalDuration(finalElapsedMs, tps);
+		pulseMode = "final";
+		requestPulseRender();
 	}
 
 	function setIdleTitle(ctx: ExtensionContext) {
-		ctx.ui.setTitle(contextLabel(pi, ctx));
+		ctx.ui.setTitle(currentContextLabel(ctx));
 	}
 
 	function setDoneTitle(ctx: ExtensionContext) {
-		ctx.ui.setTitle(`${lastFrame} done - ${contextLabel(pi, ctx)}`);
+		ctx.ui.setTitle(`${lastFrame} done - ${currentContextLabel(ctx)}`);
 	}
 
 	function renderTitle(ctx: ExtensionContext) {
 		if (activeTools.size > 0 && lastToolName) {
 			const extraTools = activeTools.size - 1;
 			const suffix = extraTools > 0 ? ` +${extraTools}` : "";
-			ctx.ui.setTitle(`⚙ ${lastToolName}${suffix} - ${contextLabel(pi, ctx)}`);
+			ctx.ui.setTitle(`⚙ ${lastToolName}${suffix} - ${currentContextLabel(ctx)}`);
 			return;
 		}
 
 		const elapsedMs = getElapsedMs();
 		lastFrame = spinnerFrame(elapsedMs);
-		ctx.ui.setTitle(`${lastFrame} ${verb}: ${activity}… - ${contextLabel(pi, ctx)}`);
+		ctx.ui.setTitle(`${lastFrame} ${verb}: ${activity}… - ${currentContextLabel(ctx)}`);
 	}
 
 	function renderActive(ctx: ExtensionContext) {
-		renderWidget(ctx);
+		renderWidget();
 		renderTitle(ctx);
 	}
 
@@ -371,8 +394,11 @@ export default function (pi: ExtensionAPI) {
 		pauseStartTime = null;
 		totalPausedMs = 0;
 		activeTools.clear();
+		pausedToolIds.clear();
 		lastToolName = undefined;
 		frozenPulseColor = null;
+		pulseMode = "hidden";
+		finalPulseText = "";
 	}
 
 	function resetToIdle(ctx: ExtensionContext) {
@@ -380,8 +406,9 @@ export default function (pi: ExtensionAPI) {
 		clearTitleDoneTimer();
 		resetRuntimeState();
 		globalThis.__piAgentPulseEditorLine = undefined;
-		ctx.ui.setWidget(WIDGET_ID, undefined);
+		requestPulseRender();
 		ctx.ui.setWorkingVisible(true);
+		refreshContextLabel(ctx);
 		setIdleTitle(ctx);
 	}
 
@@ -397,7 +424,9 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	function start(ctx: ExtensionContext) {
-		resetToIdle(ctx);
+		clearRenderTimer();
+		clearTitleDoneTimer();
+		resetRuntimeState();
 		totalOutputTokens = 0;
 		verb = sampleVerb();
 		activity = "waiting for provider";
@@ -407,9 +436,12 @@ export default function (pi: ExtensionAPI) {
 		active = true;
 		lastFrame = spinnerFrame(0);
 		frozenPulseColor = null;
+		pulseMode = "active";
+		installEditorPulseRenderer();
 		ctx.ui.setWorkingVisible(false);
 		renderActive(ctx);
-		renderTimer = setInterval(() => renderActive(ctx), SPINNER_RENDER_INTERVAL_MS);
+		// Only the editor pulse is animated. Terminal titles change on state transitions.
+		renderTimer = setInterval(() => renderWidget(), SPINNER_RENDER_INTERVAL_MS);
 	}
 
 	function finish(ctx: ExtensionContext) {
@@ -424,7 +456,7 @@ export default function (pi: ExtensionAPI) {
 		totalPausedMs = 0;
 		activeTools.clear();
 		lastToolName = undefined;
-		renderFinalWidget(ctx, finalElapsedMs);
+		renderFinalWidget(finalElapsedMs);
 		ctx.ui.setWorkingVisible(true);
 		setDoneTitle(ctx);
 		ringBell();
@@ -436,48 +468,65 @@ export default function (pi: ExtensionAPI) {
 		}, TITLE_DONE_HOLD_MS);
 	}
 
-	pi.on("session_start", async (_event, ctx) => {
+	pi.on("session_start", (_event, ctx) => {
 		resetToIdle(ctx);
 	});
 
-	pi.on("agent_start", async (_event, ctx) => {
+	pi.on("session_info_changed", (_event, ctx) => {
+		refreshContextLabel(ctx);
+		if (active) renderTitle(ctx);
+		else setIdleTitle(ctx);
+	});
+
+	pi.on("agent_start", (_event, ctx) => {
 		start(ctx);
 	});
 
-	pi.on("tool_execution_start", async (event, ctx) => {
-		activeTools.add(event.toolCallId);
+	pi.on("tool_execution_start", (event, ctx) => {
+		activeTools.set(event.toolCallId, event.toolName);
 		lastToolName = event.toolName;
 		activity = `running ${event.toolName}`;
-		if (event.toolName === "answer_questions") pauseElapsed();
+		if (event.toolName === "answer_questions") {
+			pausedToolIds.add(event.toolCallId);
+			pauseElapsed();
+		}
 		renderActive(ctx);
 	});
 
-	pi.on("tool_execution_end", async (event, ctx) => {
+	pi.on("tool_execution_end", (event, ctx) => {
 		activeTools.delete(event.toolCallId);
 		if (activeTools.size === 0) {
 			lastToolName = undefined;
 			activity = "waiting for provider after tool";
+		} else {
+			lastToolName = Array.from(activeTools.values()).at(-1);
+			activity = `running ${lastToolName}`;
 		}
-		if (event.toolName === "answer_questions") resumeElapsed();
+		if (event.toolName === "answer_questions") {
+			pausedToolIds.delete(event.toolCallId);
+			if (pausedToolIds.size === 0) resumeElapsed();
+		}
 		renderActive(ctx);
 	});
 
-	pi.on("message_update", async (event, ctx) => {
+	pi.on("message_update", (event, ctx) => {
 		if (event.message.role !== "assistant") return;
+		if (activity === "streaming response") return;
 		activity = "streaming response";
-		renderActive(ctx);
+		// The interval owns pulse rendering; update the title only on this transition.
+		renderTitle(ctx);
 	});
 
-	pi.on("message_end", async (event) => {
+	pi.on("message_end", (event) => {
 		if (event.message.role !== "assistant") return;
 		totalOutputTokens += Math.max(0, event.message.usage.output);
 	});
 
-	pi.on("agent_end", async (_event, ctx) => {
+	pi.on("agent_end", (_event, ctx) => {
 		finish(ctx);
 	});
 
-	pi.on("session_shutdown", async (_event, ctx) => {
+	pi.on("session_shutdown", (_event, ctx) => {
 		resetToIdle(ctx);
 	});
 }

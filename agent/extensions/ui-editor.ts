@@ -7,6 +7,7 @@ import type { EditorTheme, TUI } from "@earendil-works/pi-tui";
 
 declare global {
 	var __piAgentPulseEditorLine: ((width: number, borderColor: (text: string) => string) => string | undefined) | undefined;
+	var __piAgentPulseRequestRender: (() => void) | undefined;
 	var __piBeforeEditorSubmit: ((text: string) => boolean | Promise<boolean>) | undefined;
 }
 
@@ -28,6 +29,7 @@ class PiConfigEditor extends CustomEditor {
 		keybindings: KeybindingsManager,
 	) {
 		super(tui, editorTheme, keybindings);
+		globalThis.__piAgentPulseRequestRender = () => tui.requestRender();
 		delete (this as { onSubmit?: (text: string) => void }).onSubmit;
 		this.pulseBorderColor = editorTheme.borderColor;
 	}
@@ -107,6 +109,7 @@ export default function editorUiExtension(pi: ExtensionAPI) {
 	});
 
 	pi.on("session_shutdown", (_event, ctx) => {
+		globalThis.__piAgentPulseRequestRender = undefined;
 		ctx.ui.setEditorComponent(undefined);
 	});
 }

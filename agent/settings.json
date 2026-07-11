@@ -50,7 +50,6 @@
     "-extensions/answer/index.ts",
     "-extensions/generation-stats.ts",
     "-extensions/open-last-agent-response.ts",
-    "-extensions/prompt-audit.ts",
     "-extensions/agents-local.ts",
     "+extensions/ui-header.ts"
   ],
