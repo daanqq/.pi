@@ -279,6 +279,23 @@ async function remoteHasCommitsMissingLocally(exec: ExecFn, branch: string): Pro
 /** Тип для exec-обёртки с фиксированным cwd. */
 type ExecFn = (cmd: string, args: string[], opts?: Record<string, unknown>) => Promise<{ stdout: string; stderr?: string; code: number }>;
 
+/** Последний текстовый ответ агента из текущей ветки сессии. */
+function getLastAgentResponse(ctx: any): string | null {
+  const entries = ctx.sessionManager?.getBranch?.() ?? [];
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const entry = entries[i];
+    if (entry?.type !== "message" || entry.message?.role !== "assistant") continue;
+    const content = entry.message.content;
+    const text = (Array.isArray(content) ? content : [content])
+      .map((part: any) => typeof part === "string" ? part : part?.type === "text" ? part.text : "")
+      .filter(Boolean)
+      .join("\n")
+      .trim();
+    if (text) return text;
+  }
+  return null;
+}
+
 /** Проверить, что мы в git-репозитории. Если нет — найти дочерние и дать выбрать. */
 async function ensureGitRepo(
   pi: ExtensionAPI,
@@ -320,7 +337,7 @@ async function ensureGitRepo(
 }
 
 /** Вызвать LLM для генерации commit title. */
-async function generateTitle(ctx: any, taskId: string, diff: string): Promise<string | null> {
+async function generateTitle(ctx: any, taskId: string, diff: string, lastAgentResponse: string | null): Promise<string | null> {
   const model = ctx.modelRegistry.find(GENERATION_PROVIDER, GENERATION_MODEL);
   if (!model) {
     ctx.ui.notify(`Модель не найдена: ${GENERATION_PROVIDER}/${GENERATION_MODEL}`, "error");
@@ -341,7 +358,7 @@ async function generateTitle(ctx: any, taskId: string, diff: string): Promise<st
 
   const userMessage: Message = {
     role: "user",
-    content: [{ type: "text", text: [`Task: ${taskId}`, `Git diff:`, diffBlock].join("\n\n") }],
+    content: [{ type: "text", text: [`Task: ${taskId}`, lastAgentResponse && `Last agent response:\n${lastAgentResponse}`, `Git diff:`, diffBlock].filter(Boolean).join("\n\n") }],
     timestamp: Date.now(),
   };
 
@@ -373,6 +390,7 @@ async function generateDescription(
   taskId: string,
   diff: string,
   template: string,
+  lastAgentResponse: string | null,
 ): Promise<string | null> {
   const model = ctx.modelRegistry.find(GENERATION_PROVIDER, GENERATION_MODEL);
   if (!model) {
@@ -392,7 +410,7 @@ async function generateDescription(
 
   const userMessage: Message = {
     role: "user",
-    content: [{ type: "text", text: [`Task: ${taskId}`, `Template:`, template, `Git diff:`, diff].join("\n\n") }],
+    content: [{ type: "text", text: [`Task: ${taskId}`, lastAgentResponse && `Last agent response:\n${lastAgentResponse}`, `Template:`, template, `Git diff:`, diff].filter(Boolean).join("\n\n") }],
     timestamp: Date.now(),
   };
 
@@ -420,6 +438,7 @@ async function generateUpdatedDescription(
   taskId: string,
   currentDescription: string,
   diff: string,
+  lastAgentResponse: string | null,
 ): Promise<string | null> {
   const model = ctx.modelRegistry.find(GENERATION_PROVIDER, GENERATION_MODEL);
   if (!model) {
@@ -435,11 +454,12 @@ async function generateUpdatedDescription(
 
   const prompt = [
     `Task: ${taskId}`,
+    lastAgentResponse && `Last agent response:\n${lastAgentResponse}`,
     "Current MR description:",
     currentDescription,
     "New git diff:",
     diff,
-  ].join("\n\n");
+  ].filter(Boolean).join("\n\n");
   const userMessage: Message = {
     role: "user",
     content: [{ type: "text", text: prompt }],
@@ -531,6 +551,7 @@ export default function (pi: ExtensionAPI) {
     handler: async (args, ctx) => {
       try {
         const taskBranch = args.trim() || undefined;
+        const lastAgentResponse = getLastAgentResponse(ctx);
 
         // 0. Определить рабочую директорию (git-репозиторий)
         const repoDir = await ensureGitRepo(pi, ctx);
@@ -592,7 +613,7 @@ export default function (pi: ExtensionAPI) {
             return;
           }
 
-          const updatedDescription = await generateUpdatedDescription(ctx, taskId, currentDescription, branchDiff);
+          const updatedDescription = await generateUpdatedDescription(ctx, taskId, currentDescription, branchDiff, lastAgentResponse);
           if (!updatedDescription) return;
           const updateResult = await exec("glab", ["mr", "update", existingMr.ref, "--description", updatedDescription]);
           if (updateResult.code !== 0) {
@@ -636,9 +657,9 @@ export default function (pi: ExtensionAPI) {
           }
           commitTitle = `${manual.trim()} #${taskId}`;
         } else {
-          const firstTitle = await generateTitle(ctx, taskId, diff);
+          const firstTitle = await generateTitle(ctx, taskId, diff, lastAgentResponse);
           if (!firstTitle) return;
-          const confirmed = await confirmTitle(ctx, taskId, firstTitle, previousTitle, async () => generateTitle(ctx, taskId, diff));
+          const confirmed = await confirmTitle(ctx, taskId, firstTitle, previousTitle, async () => generateTitle(ctx, taskId, diff, lastAgentResponse));
           if (!confirmed) {
             ctx.ui.notify("Заголовок коммита не задан — отмена", "warning");
             return;
@@ -649,7 +670,7 @@ export default function (pi: ExtensionAPI) {
         if (existingMr) {
           updateExistingMrDescription = await ctx.ui.confirm("MR уже существует", "Дополнить описание MR новыми изменениями?");
         } else {
-          description = await generateDescription(ctx, taskId, diff, template!);
+          description = await generateDescription(ctx, taskId, diff, template!, lastAgentResponse);
           if (!description) return;
           fs.writeFileSync(MR_DESC_TMP, description, "utf-8");
         }
@@ -712,7 +733,7 @@ export default function (pi: ExtensionAPI) {
               ctx.ui.notify("Не удалось прочитать текущее описание MR", "error");
               return;
             }
-            const updatedDescription = await generateUpdatedDescription(ctx, taskId, currentDescription, diff);
+            const updatedDescription = await generateUpdatedDescription(ctx, taskId, currentDescription, diff, lastAgentResponse);
             if (!updatedDescription) return;
             const updateResult = await exec("glab", ["mr", "update", existingMr.ref, "--description", updatedDescription]);
             if (updateResult.code !== 0) {
