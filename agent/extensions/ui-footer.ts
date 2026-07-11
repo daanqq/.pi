@@ -23,6 +23,55 @@ type FooterTheme = {
   fg(color: ThemeColor, text: string): string;
 };
 
+type UsageStats = {
+  totalInput: number;
+  totalOutput: number;
+  totalCacheRead: number;
+  totalCacheWrite: number;
+  totalCost: number;
+  latestCacheHitRate: number | undefined;
+};
+
+function emptyUsageStats(): UsageStats {
+  return {
+    totalInput: 0,
+    totalOutput: 0,
+    totalCacheRead: 0,
+    totalCacheWrite: 0,
+    totalCost: 0,
+    latestCacheHitRate: undefined,
+  };
+}
+
+function addAssistantUsage(stats: UsageStats, message: { usage: {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  cost: { total: number };
+} }) {
+  const usage = message.usage;
+  stats.totalInput += usage.input;
+  stats.totalOutput += usage.output;
+  stats.totalCacheRead += usage.cacheRead;
+  stats.totalCacheWrite += usage.cacheWrite;
+  stats.totalCost += usage.cost.total;
+  const latestPromptTokens = usage.input + usage.cacheRead + usage.cacheWrite;
+  stats.latestCacheHitRate = latestPromptTokens > 0
+    ? (usage.cacheRead / latestPromptTokens) * 100
+    : undefined;
+}
+
+function collectUsageStats(ctx: ExtensionContext): UsageStats {
+  const stats = emptyUsageStats();
+  for (const entry of ctx.sessionManager.getEntries()) {
+    if (entry.type === "message" && entry.message.role === "assistant") {
+      addAssistantUsage(stats, entry.message);
+    }
+  }
+  return stats;
+}
+
 const THINKING_LEVEL_COLOR: Record<string, ThemeColor> = {
   off: "thinkingOff",
   minimal: "thinkingMinimal",
@@ -92,13 +141,20 @@ function twoColumnLine(left: string, right: string, width: number) {
   return leftText + " ".repeat(Math.max(1, width - leftWidth - rightWidth)) + rightText;
 }
 
-function installFooter(pi: ExtensionAPI, ctx: ExtensionContext) {
+function installFooter(
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  getUsageStats: () => UsageStats,
+  setRequestRender: (requestRender: (() => void) | undefined) => void,
+) {
   ctx.ui.setFooter((tui, theme, footerData) => {
     const unsub = footerData.onBranchChange(() => tui.requestRender());
+    setRequestRender(() => tui.requestRender());
 
     return {
       dispose() {
         unsub();
+        setRequestRender(undefined);
       },
       invalidate() {},
       render(width: number): string[] {
@@ -109,24 +165,14 @@ function installFooter(pi: ExtensionAPI, ctx: ExtensionContext) {
           return " ".repeat(horizontalPadding) + safeLine + " ".repeat(Math.max(0, contentWidth - visibleWidth(safeLine))) + " ".repeat(horizontalPadding);
         };
 
-        let totalInput = 0;
-        let totalOutput = 0;
-        let totalCacheRead = 0;
-        let totalCacheWrite = 0;
-        let totalCost = 0;
-        let latestCacheHitRate: number | undefined;
-
-        for (const entry of ctx.sessionManager.getEntries()) {
-          if (entry.type === "message" && entry.message.role === "assistant") {
-            totalInput += entry.message.usage.input;
-            totalOutput += entry.message.usage.output;
-            totalCacheRead += entry.message.usage.cacheRead;
-            totalCacheWrite += entry.message.usage.cacheWrite;
-            totalCost += entry.message.usage.cost.total;
-            const latestPromptTokens = entry.message.usage.input + entry.message.usage.cacheRead + entry.message.usage.cacheWrite;
-            latestCacheHitRate = latestPromptTokens > 0 ? (entry.message.usage.cacheRead / latestPromptTokens) * 100 : undefined;
-          }
-        }
+        const {
+          totalInput,
+          totalOutput,
+          totalCacheRead,
+          totalCacheWrite,
+          totalCost,
+          latestCacheHitRate,
+        } = getUsageStats();
 
         const thinkingLevel = pi.getThinkingLevel();
         const sessionName = pi.getSessionName();
@@ -176,19 +222,35 @@ function installFooter(pi: ExtensionAPI, ctx: ExtensionContext) {
 }
 
 export default function rightStatusFooterExtension(pi: ExtensionAPI) {
+  let usageStats = emptyUsageStats();
+  let requestRender: (() => void) | undefined;
+
   pi.on("session_start", (_event, ctx) => {
-    installFooter(pi, ctx);
+    // Scan history once. New assistant messages update this aggregate incrementally.
+    usageStats = collectUsageStats(ctx);
+    installFooter(pi, ctx, () => usageStats, (next) => { requestRender = next; });
   });
 
-  pi.on("model_select", (_event, ctx) => {
-    installFooter(pi, ctx);
+  pi.on("message_end", (event) => {
+    if (event.message.role !== "assistant") return;
+    addAssistantUsage(usageStats, event.message);
+    requestRender?.();
   });
 
-  pi.on("thinking_level_select", (_event, ctx) => {
-    installFooter(pi, ctx);
+  pi.on("model_select", () => {
+    requestRender?.();
+  });
+
+  pi.on("thinking_level_select", () => {
+    requestRender?.();
+  });
+
+  pi.on("session_info_changed", () => {
+    requestRender?.();
   });
 
   pi.on("session_shutdown", (_event, ctx) => {
+    requestRender = undefined;
     ctx.ui.setFooter(undefined);
   });
 }

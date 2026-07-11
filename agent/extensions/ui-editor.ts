@@ -17,9 +17,17 @@ function stripAnsi(text: string) {
 	return text.replace(/\x1b\[[0-9;]*m/g, "");
 }
 
+function isSeparatorLine(line: string): boolean {
+	// Most editor lines do not contain a box-drawing character. Avoid ANSI
+	// stripping and the regular expression for that overwhelmingly common path.
+	if (!line.includes("─")) return false;
+	const plain = stripAnsi(line).trim();
+	return /^─{3,}(?: [↑↓] \d+ more ─*)?$/.test(plain);
+}
 
 class PiConfigEditor extends CustomEditor {
 	private autocompleteRequestVersion = 0;
+	private isBashMode = false;
 	private pulseBorderColor: (text: string) => string;
 	private wrappedSubmit?: (text: string) => void;
 
@@ -32,6 +40,21 @@ class PiConfigEditor extends CustomEditor {
 		globalThis.__piAgentPulseRequestRender = () => tui.requestRender();
 		delete (this as { onSubmit?: (text: string) => void }).onSubmit;
 		this.pulseBorderColor = editorTheme.borderColor;
+	}
+
+	private refreshEditorMode(): void {
+		this.isBashMode = false;
+		for (const line of this.getLines()) {
+			const content = line.trimStart();
+			if (!content) continue;
+			this.isBashMode = content.startsWith("!");
+			break;
+		}
+	}
+
+	override setText(text: string): void {
+		super.setText(text);
+		this.refreshEditorMode();
 	}
 
 	override get onSubmit(): ((text: string) => void) | undefined {
@@ -62,6 +85,7 @@ class PiConfigEditor extends CustomEditor {
 		const wasShowingAutocomplete = this.isShowingAutocomplete();
 		this.autocompleteRequestVersion++;
 		super.handleInput(data);
+		this.refreshEditorMode();
 
 		// If autocomplete handled this key (e.g. Enter selected `$tdd`), do not
 		// immediately reopen it for completed `$tdd`. Otherwise next Space fights
@@ -88,12 +112,8 @@ class PiConfigEditor extends CustomEditor {
 	}
 
 	override render(width: number): string[] {
-		const lines = super.render(width).filter((line) => {
-			const plain = stripAnsi(line).trim();
-			return !/^─{3,}(?: [↑↓] \d+ more ─*)?$/.test(plain);
-		});
-		const editorText = this.getLines().join("\n").trimStart();
-		if (!editorText.startsWith("!")) this.pulseBorderColor = this.borderColor;
+		const lines = super.render(width).filter((line) => !isSeparatorLine(line));
+		if (!this.isBashMode) this.pulseBorderColor = this.borderColor;
 		const pulseLine = globalThis.__piAgentPulseEditorLine?.(width, this.pulseBorderColor);
 		return pulseLine ? [pulseLine, ...lines] : lines;
 	}

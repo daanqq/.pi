@@ -71,6 +71,8 @@ type ApplyPatchCallRenderComponent = Box & {
 	previewArgsKey?: string | undefined;
 	settledStatus?: "success" | "partial_failure" | "failed" | undefined;
 	failedTargets?: string[] | undefined;
+	renderKey?: string | undefined;
+	renderTheme?: object | undefined;
 };
 
 interface ModelLike {
@@ -204,6 +206,7 @@ export default function (pi: ExtensionAPI) {
 				component.previewArgsKey = argsKey;
 				component.settledStatus = undefined;
 				component.failedTargets = undefined;
+				component.renderKey = undefined;
 			}
 			if (context.argsComplete && patchText.trim().length > 0 && !component.preview) {
 				component.preview = previewPatch(patchText, context.cwd);
@@ -251,6 +254,8 @@ function createApplyPatchCallRenderComponent(): ApplyPatchCallRenderComponent {
 		previewArgsKey: undefined as string | undefined,
 		settledStatus: undefined as "success" | "partial_failure" | "failed" | undefined,
 		failedTargets: undefined as string[] | undefined,
+		renderKey: undefined as string | undefined,
+		renderTheme: undefined as object | undefined,
 	});
 }
 
@@ -280,12 +285,28 @@ function buildApplyPatchCallComponent(
 	theme: { fg(role: string, text: string): string; bold(text: string): string; bg(role: string, text: string): string },
 	context?: { cwd?: string | undefined; argsComplete?: boolean | undefined; expanded?: boolean | undefined; isPartial?: boolean | undefined },
 ): ApplyPatchCallRenderComponent {
+	const patchText = typeof args.input === "string" ? args.input : "";
+	const renderKey = [
+		component.previewArgsKey ?? patchText,
+		component.settledStatus ?? "pending",
+		component.failedTargets?.join("\0") ?? "",
+		context?.cwd ?? process.cwd(),
+		context?.argsComplete === false ? "incomplete" : "complete",
+		context?.expanded === true ? "expanded" : "collapsed",
+		context?.isPartial === true ? "partial" : "settled",
+	].join("\u0001");
+	if (component.renderKey === renderKey && component.renderTheme === theme) return component;
+	component.renderKey = renderKey;
+	component.renderTheme = theme;
+
 	component.setBgFn(getApplyPatchHeaderBg(component, theme));
 	component.clear();
-	component.addChild(new Text(formatApplyPatchHeader(args, component.preview, theme, context?.cwd ?? process.cwd(), context?.isPartial === true && !component.settledStatus), 0, 0));
+	const cwd = context?.cwd ?? process.cwd();
+	const inProgressActions = context?.isPartial === true && !component.preview ? parsePatchActionHeaders(patchText) : undefined;
+	component.addChild(new Text(formatApplyPatchHeader(args, component.preview, theme, cwd, context?.isPartial === true && !component.settledStatus, inProgressActions), 0, 0));
 
 	if (!component.preview) {
-		const activeBody = context?.isPartial === true ? formatInProgressApplyPatchBody(typeof args.input === "string" ? args.input : "", context?.cwd ?? process.cwd()) : "";
+		const activeBody = context?.isPartial === true ? formatInProgressApplyPatchBody(inProgressActions ?? [], cwd) : "";
 		if (activeBody.trim().length > 0) {
 			component.addChild(new Text(theme.fg("muted", activeBody), 0, 0));
 		}
@@ -307,11 +328,12 @@ function formatApplyPatchHeader(
 	theme: { fg(role: string, text: string): string; bold(text: string): string },
 	cwd: string,
 	showInProgress: boolean,
+	inProgressActions?: Array<{ path: string; movePath?: string | undefined }>,
 ): string {
 	let title = theme.fg("toolTitle", theme.bold("apply_patch"));
 	const patchText = typeof args.input === "string" ? args.input : "";
 	if (showInProgress) {
-		const summary = formatInProgressApplyPatchSummary(patchText, cwd);
+		const summary = formatInProgressApplyPatchSummary(inProgressActions ?? parsePatchActionHeaders(patchText), cwd);
 		if (summary) return `${title} ${theme.fg("muted", summary)}`;
 		return title;
 	}
@@ -331,15 +353,13 @@ function formatApplyPatchHeaderSummary(summary: string, theme: { fg(role: string
 		.join("");
 }
 
-function formatInProgressApplyPatchSummary(patchText: string, cwd: string): string {
-	const actions = parsePatchActionHeaders(patchText);
+function formatInProgressApplyPatchSummary(actions: Array<{ path: string; movePath?: string | undefined }>, cwd: string): string {
 	if (actions.length === 0) return "";
 	if (actions.length === 1) return formatPatchTarget(actions[0]!.path, actions[0]!.movePath, cwd);
 	return `${actions.length} files`;
 }
 
-function formatInProgressApplyPatchBody(patchText: string, cwd: string): string {
-	const actions = parsePatchActionHeaders(patchText);
+function formatInProgressApplyPatchBody(actions: Array<{ path: string; movePath?: string | undefined }>, cwd: string): string {
 	if (actions.length <= 1) return "";
 	return actions.map((action) => `  └ ${formatPatchTarget(action.path, action.movePath, cwd)}`).join("\n");
 }
@@ -369,9 +389,10 @@ function parsePatchActionHeaders(text: string): Array<{ path: string; movePath?:
 
 function previewPatch(patchText: string, cwd: string): PatchPreview {
 	try {
-		parsePatchActions(patchText);
-		const summary = formatApplyPatchSummary(patchText, cwd);
-		const diff = formatApplyPatchDiff(patchText, cwd);
+		const files = buildFilePreviews(patchText, cwd);
+		if (files.length === 0) throw new Error("No files were modified.");
+		const summary = formatApplyPatchSummaryFromFiles(files, cwd);
+		const diff = formatApplyPatchDiffFromFiles(files, cwd);
 		return { summary, diff };
 	} catch (error) {
 		return { error: error instanceof Error ? error.message : String(error) };
@@ -385,8 +406,14 @@ function renderPatchPreview(
 	failedTargets?: string[] | undefined,
 	expanded = false,
 ): string {
-	let body = colorPatchCountPairs(renderDiff(preview.diff), theme);
-	if (!expanded) body = collapseLongOutput(body, COLLAPSED_PREVIEW_LINE_LIMIT, theme);
+	const diffLines = preview.diff.split("\n");
+	const visibleDiff = expanded || diffLines.length <= COLLAPSED_PREVIEW_LINE_LIMIT
+		? preview.diff
+		: diffLines.slice(0, COLLAPSED_PREVIEW_LINE_LIMIT).join("\n");
+	let body = colorPatchCountPairs(renderDiff(visibleDiff), theme);
+	if (!expanded && diffLines.length > COLLAPSED_PREVIEW_LINE_LIMIT) {
+		body += `\n${theme.fg("muted", `... (${diffLines.length - COLLAPSED_PREVIEW_LINE_LIMIT} more lines; ${keyHint("app.tools.expand", "to expand")})`)}`;
+	}
 	if (status === "partial_failure" || status === "failed") {
 		const role = status === "failed" ? "error" : "warning";
 		body = body
@@ -399,16 +426,6 @@ function renderPatchPreview(
 
 function colorPatchCountPairs(text: string, theme: { fg(role: string, text: string): string }): string {
 	return text.replace(/\+(\d+)\s+-(\d+)/g, `${theme.fg("toolDiffAdded", "+$1")} ${theme.fg("toolDiffRemoved", "-$2")}`);
-}
-
-function collapseLongOutput(body: string, lineLimit: number, theme: { fg(role: string, text: string): string }): string {
-	const lines = body.split("\n");
-	if (lines.length <= lineLimit) return body;
-	const hiddenCount = lines.length - lineLimit;
-	return [
-		...lines.slice(0, lineLimit),
-		theme.fg("muted", `... (${hiddenCount} more lines; ${keyHint("app.tools.expand", "to expand")})`),
-	].join("\n");
 }
 
 function getBundledApplyPatchBinaryPath(): string | undefined {
@@ -674,6 +691,12 @@ function renderFailureCall(base: string, theme: { fg(role: string, text: string)
 
 function formatApplyPatchSummary(patchText: string, cwd: string): string {
 	const files = buildFilePreviews(patchText, cwd);
+	return formatApplyPatchSummaryFromFiles(files, cwd);
+}
+
+type FilePreview = { verb: "Added" | "Deleted" | "update" | "Moved"; path: string; movePath?: string; added: number; removed: number; lines: string[] };
+
+function formatApplyPatchSummaryFromFiles(files: FilePreview[], cwd: string): string {
 	if (files.length === 0) return "";
 	const totals = files.reduce((acc, file) => ({ added: acc.added + file.added, removed: acc.removed + file.removed }), { added: 0, removed: 0 });
 	if (files.length === 1) {
@@ -699,6 +722,10 @@ function formatApplyPatchPreview(patchText: string, cwd: string): string {
 
 function formatApplyPatchDiff(patchText: string, cwd: string): string {
 	const files = buildFilePreviews(patchText, cwd);
+	return formatApplyPatchDiffFromFiles(files, cwd);
+}
+
+function formatApplyPatchDiffFromFiles(files: FilePreview[], cwd: string): string {
 	if (files.length === 0) return "";
 	const lines: string[] = [];
 	for (const [index, file] of files.entries()) {
@@ -710,7 +737,7 @@ function formatApplyPatchDiff(patchText: string, cwd: string): string {
 	return lines.join("\n");
 }
 
-function buildFilePreviews(patchText: string, cwd: string): Array<{ verb: "Added" | "Deleted" | "update" | "Moved"; path: string; movePath?: string; added: number; removed: number; lines: string[] }> {
+function buildFilePreviews(patchText: string, cwd: string): FilePreview[] {
 	try {
 		return parsePatchActions(patchText).map((action) => {
 			if (action.type === "add") {
