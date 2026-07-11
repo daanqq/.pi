@@ -51,7 +51,9 @@
     "-extensions/generation-stats.ts",
     "-extensions/open-last-agent-response.ts",
     "-extensions/agents-local.ts",
-    "+extensions/ui-header.ts"
+    "-extensions/handoff.ts",
+    "-extensions/default-reasoning.ts",
+    "-extensions/codex-review.ts"
   ],
   "httpIdleTimeoutMs": 120000,
   "defaultProjectTrust": "always",
