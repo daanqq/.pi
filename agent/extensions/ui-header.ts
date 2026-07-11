@@ -2,6 +2,7 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
+import { VERSION } from "@mariozechner/pi-coding-agent";
 
 const RESET = "\x1b[0m";
 
@@ -138,9 +139,12 @@ function gradientText(palette: Rgb[], text: string, phase: number) {
 
 function renderHeader(theme: HeaderTheme, _width: number, phase: number, thinkingLevel: string) {
   const palette = getThinkingPalette(theme, thinkingLevel);
-  const lines = TITLE_LINES.map((line, row) =>
-    HEADER_LEFT_PADDING + gradientText(palette, line, phase + row * 0.045),
-  );
+  const lines = TITLE_LINES.map((line, row) => {
+    const version = row === TITLE_LINES.length - 2
+      ? theme.fg(thinkingLevelColor(thinkingLevel), ` v${VERSION}`)
+      : "";
+    return HEADER_LEFT_PADDING + gradientText(palette, line, phase + row * 0.045) + version;
+  });
   return [
     "",
     ...lines,

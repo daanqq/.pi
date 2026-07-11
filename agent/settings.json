@@ -1,6 +1,6 @@
 {
   "lastChangelogVersion": "0.80.6",
-  "defaultThinkingLevel": "low",
+  "defaultThinkingLevel": "off",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.6-sol",
   "packages": [
@@ -10,7 +10,6 @@
         "-skills/librarian/SKILL.md"
       ]
     },
-    "npm:@ff-labs/pi-fff",
     "git:github.com/daanqq/pi-diff-review",
     "npm:pi-system-prompt"
   ],
@@ -52,7 +51,8 @@
     "-extensions/generation-stats.ts",
     "-extensions/open-last-agent-response.ts",
     "-extensions/prompt-audit.ts",
-    "-extensions/agents-local.ts"
+    "-extensions/agents-local.ts",
+    "+extensions/ui-header.ts"
   ],
   "httpIdleTimeoutMs": 120000,
   "defaultProjectTrust": "always",
