@@ -18,16 +18,19 @@
           }
         },
         "gpt-5.6-sol": {
+          "contextWindow": 256000,
           "thinkingLevelMap": {
             "minimal": null
           }
         },
         "gpt-5.6-terra": {
+          "contextWindow": 256000,
           "thinkingLevelMap": {
             "minimal": null
           }
         },
         "gpt-5.6-luna": {
+          "contextWindow": 256000,
           "thinkingLevelMap": {
             "minimal": null
           }
