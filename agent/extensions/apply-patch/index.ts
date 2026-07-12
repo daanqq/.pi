@@ -6,6 +6,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { keyHint, renderDiff, withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { Box, Container, Spacer, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import { formatNumberedDiffLines, numberUpdateDiffLines } from "./diff-lines.ts";
 
 const APPLY_PATCH_PARAMETERS = Type.Object({
 	input: Type.String({
@@ -745,19 +746,17 @@ function buildFilePreviews(patchText: string, cwd: string): FilePreview[] {
 		return parsePatchActions(patchText).map((action) => {
 			if (action.type === "add") {
 				const lines = splitFileLines(action.newFile ?? "");
-				return { verb: "Added", path: action.path, added: lines.length, removed: 0, lines: lines.map((line, index) => diffLine("+", index + 1, line)) };
+				return { verb: "Added", path: action.path, added: lines.length, removed: 0, lines: formatNumberedDiffLines(lines.map((text, index) => ({ marker: "+", lineNumber: index + 1, text }))) };
 			}
 			if (action.type === "delete") {
 				const lines = readFileLines(cwd, action.path);
-				return { verb: "Deleted", path: action.path, added: 0, removed: lines.length, lines: lines.map((line, index) => diffLine("-", index + 1, line)) };
+				return { verb: "Deleted", path: action.path, added: 0, removed: lines.length, lines: formatNumberedDiffLines(lines.map((text, index) => ({ marker: "-", lineNumber: index + 1, text }))) };
 			}
 			const body = action.lines ?? [];
-			const diffLines = body
-				.filter((line) => line.startsWith("+") || line.startsWith("-") || line.startsWith(" "))
-				.map(normalizePatchDiffLine);
-			const added = diffLines.filter((line) => line.startsWith("+")).length;
-			const removed = diffLines.filter((line) => line.startsWith("-")).length;
-			return { verb: action.movePath && added === 0 && removed === 0 ? "Moved" : "update", path: action.path, movePath: action.movePath, added, removed, lines: diffLines };
+			const numbered = numberUpdateDiffLines(readFileLines(cwd, action.path), body);
+			const added = numbered.filter((line) => line.marker === "+").length;
+			const removed = numbered.filter((line) => line.marker === "-").length;
+			return { verb: action.movePath && added === 0 && removed === 0 ? "Moved" : "update", path: action.path, movePath: action.movePath, added, removed, lines: formatNumberedDiffLines(numbered) };
 		});
 	} catch {
 		return [];
@@ -770,17 +769,6 @@ function readFileLines(cwd: string, path: string): string[] {
 	} catch {
 		return [];
 	}
-}
-
-function diffLine(marker: "+" | "-" | " ", lineNumber: number | undefined, text: string): string {
-	return `${marker}${lineNumber === undefined ? "" : lineNumber} ${text}`;
-}
-
-function normalizePatchDiffLine(line: string): string {
-	const marker = line[0];
-	const text = line.slice(1);
-	if (marker === "+" || marker === "-" || marker === " ") return diffLine(marker, undefined, text);
-	return line;
 }
 
 function splitFileLines(text: string): string[] {
