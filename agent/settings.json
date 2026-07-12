@@ -1,6 +1,6 @@
 {
   "lastChangelogVersion": "0.80.6",
-  "defaultThinkingLevel": "medium",
+  "defaultThinkingLevel": "off",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.6-sol",
   "packages": [
@@ -21,7 +21,8 @@
   },
   "enabledModels": [
     "deepseek/deepseek-v4-pro",
-    "openai-codex/gpt-5.6-sol"
+    "openai-codex/gpt-5.6-sol",
+    "openai-codex/gpt-5.6-terra"
   ],
   "externalEditor": "code --wait",
   "transport": "sse",
@@ -48,7 +49,8 @@
     "-extensions/answer/index.ts",
     "-extensions/generation-stats.ts",
     "-extensions/open-last-agent-response.ts",
-    "-extensions/agents-local.ts"
+    "-extensions/agents-local.ts",
+    "-extensions/handoff.ts"
   ],
   "httpIdleTimeoutMs": 120000,
   "defaultProjectTrust": "always",
