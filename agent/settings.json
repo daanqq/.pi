@@ -1,6 +1,6 @@
 {
   "lastChangelogVersion": "0.80.6",
-  "defaultThinkingLevel": "off",
+  "defaultThinkingLevel": "low",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.6-sol",
   "packages": [
@@ -50,7 +50,8 @@
     "-extensions/generation-stats.ts",
     "-extensions/open-last-agent-response.ts",
     "-extensions/agents-local.ts",
-    "-extensions/handoff.ts"
+    "-extensions/handoff.ts",
+    "-extensions/session-hygiene.ts"
   ],
   "httpIdleTimeoutMs": 120000,
   "defaultProjectTrust": "always",
