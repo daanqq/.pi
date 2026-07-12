@@ -1,10 +1,17 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
-const THRESHOLD_TOKENS = 128_000;
+const FALLBACK_THRESHOLD_TOKENS = 128_000;
+
+function getThreshold(contextWindow?: number): number {
+  return contextWindow ? contextWindow / 2 : FALLBACK_THRESHOLD_TOKENS;
+}
 
 function formatTokens(tokens: number): string {
   if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
-  if (tokens >= 1_000) return `${Math.round(tokens / 1_000)}k`;
+  if (tokens >= 1_000) {
+    const thousands = tokens / 1_000;
+    return `${Number.isInteger(thousands) ? thousands : thousands.toFixed(1)}k`;
+  }
   return String(Math.round(tokens));
 }
 
@@ -17,7 +24,8 @@ export default function (pi: ExtensionAPI) {
     const usage = ctx.getContextUsage();
     if (!usage) return;
 
-    const isAboveThreshold = usage.tokens > THRESHOLD_TOKENS;
+    const threshold = getThreshold(usage.contextWindow ?? ctx.model?.contextWindow);
+    const isAboveThreshold = usage.tokens > threshold;
     if (!isAboveThreshold) {
       wasAboveThreshold = false;
       return;
@@ -27,7 +35,7 @@ export default function (pi: ExtensionAPI) {
     wasAboveThreshold = true;
 
     ctx.ui.notify(
-      `Context usage crossed ${formatTokens(THRESHOLD_TOKENS)}. Consider /compact or /new.`,
+      `Context usage crossed ${formatTokens(threshold)}. Consider /compact or /new.`,
       "warning",
     );
   });
