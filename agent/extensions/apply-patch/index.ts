@@ -522,7 +522,10 @@ async function withPatchMutationQueues<T>(cwd: string, patchText: string, fn: ()
 }
 
 function parsePatchActions(text: string): ParsedPatchAction[] {
-	const lines = text.trim().split("\n");
+	// The bundled binary accepts both LF and CRLF patches. Normalize here too so
+	// the TUI preview does not report a false "No files were modified" after a
+	// CRLF patch was successfully applied.
+	const lines = text.trim().replace(/\r\n?/g, "\n").split("\n");
 	if (lines.length < 2 || !lines[0]!.startsWith("*** Begin Patch") || lines.at(-1) !== "*** End Patch") {
 		throw new Error("Invalid patch text");
 	}
