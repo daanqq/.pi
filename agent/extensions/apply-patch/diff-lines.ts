@@ -12,6 +12,13 @@ export function formatNumberedDiffLines(lines: NumberedDiffLine[]): string[] {
 	});
 }
 
+export function buildUpdatePreview(numbered: NumberedDiffLine[], hasMovePath: boolean): { added: number; removed: number; lines: string[]; pureMove: boolean } {
+	const added = numbered.filter((line) => line.marker === "+").length;
+	const removed = numbered.filter((line) => line.marker === "-").length;
+	const pureMove = hasMovePath && added === 0 && removed === 0;
+	return { added, removed, lines: pureMove ? [] : formatNumberedDiffLines(numbered), pureMove };
+}
+
 export function numberUpdateDiffLines(original: string[], body: string[]): NumberedDiffLine[] {
 	const result: NumberedDiffLine[] = [];
 	let searchFrom = 0;

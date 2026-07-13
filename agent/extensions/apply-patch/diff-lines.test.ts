@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { formatNumberedDiffLines, numberUpdateDiffLines } from "./diff-lines.ts";
+import { buildUpdatePreview, formatNumberedDiffLines, numberUpdateDiffLines } from "./diff-lines.ts";
+
+test("hides context-only preview lines for a pure move", () => {
+	assert.deepEqual(buildUpdatePreview([
+		{ marker: " ", lineNumber: 2, text: "name: example" },
+	], true), { added: 0, removed: 0, lines: [], pureMove: true });
+});
 
 test("keeps the diff body aligned across line-number digit boundaries", () => {
 	const rendered = formatNumberedDiffLines([

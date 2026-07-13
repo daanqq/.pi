@@ -6,7 +6,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { keyHint, renderDiff, withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { Box, Container, Spacer, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { formatNumberedDiffLines, numberUpdateDiffLines } from "./diff-lines.ts";
+import { buildUpdatePreview, formatNumberedDiffLines, numberUpdateDiffLines } from "./diff-lines.ts";
 
 const APPLY_PATCH_PARAMETERS = Type.Object({
 	input: Type.String({
@@ -363,15 +363,6 @@ function formatInProgressApplyPatchSummary(actions: Array<{ path: string; movePa
 function formatInProgressApplyPatchBody(actions: Array<{ path: string; movePath?: string | undefined }>, cwd: string): string {
 	if (actions.length <= 1) return "";
 	return actions.map((action) => `  └ ${formatPatchTarget(action.path, action.movePath, cwd)}`).join("\n");
-}
-
-function isPureMoveOnlyPatch(patchText: string): boolean {
-	const actions = safeParseActions(patchText);
-	return actions.length > 0 && actions.every((action) => {
-		if (action.type !== "update" || !action.movePath) return false;
-		const diffLines = (action.lines ?? []).filter((line) => line.startsWith("+") || line.startsWith("-"));
-		return diffLines.length === 0;
-	});
 }
 
 function parsePatchActionHeaders(text: string): Array<{ path: string; movePath?: string | undefined }> {
@@ -732,11 +723,11 @@ function formatApplyPatchDiff(patchText: string, cwd: string): string {
 function formatApplyPatchDiffFromFiles(files: FilePreview[], cwd: string): string {
 	if (files.length === 0) return "";
 	const lines: string[] = [];
-	for (const [index, file] of files.entries()) {
+	const filesWithChanges = files.filter((file) => file.lines.length > 0);
+	for (const [index, file] of filesWithChanges.entries()) {
 		if (index > 0) lines.push("");
 		if (files.length > 1) lines.push(withCounts(formatPatchTarget(file.path, file.movePath, cwd), file.added, file.removed));
 		lines.push(...file.lines);
-		if (file.lines.length === 0 && file.movePath) lines.push(`  moved to ${file.movePath}`);
 	}
 	return lines.join("\n");
 }
@@ -754,9 +745,8 @@ function buildFilePreviews(patchText: string, cwd: string): FilePreview[] {
 			}
 			const body = action.lines ?? [];
 			const numbered = numberUpdateDiffLines(readFileLines(cwd, action.path), body);
-			const added = numbered.filter((line) => line.marker === "+").length;
-			const removed = numbered.filter((line) => line.marker === "-").length;
-			return { verb: action.movePath && added === 0 && removed === 0 ? "Moved" : "update", path: action.path, movePath: action.movePath, added, removed, lines: formatNumberedDiffLines(numbered) };
+			const updatePreview = buildUpdatePreview(numbered, Boolean(action.movePath));
+			return { verb: updatePreview.pureMove ? "Moved" : "update", path: action.path, movePath: action.movePath, ...updatePreview };
 		});
 	} catch {
 		return [];
