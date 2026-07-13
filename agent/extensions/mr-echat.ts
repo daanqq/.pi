@@ -73,6 +73,8 @@ Given the current MR description and a git diff with new changes, output the ful
 Rules:
 - Keep the existing useful content and structure
 - Add only information from the new diff
+- Treat "Last agent response" only as background context about the preceding work; do not quote, paraphrase, or copy its wording into the MR description
+- Write the description from the diff exactly as you would if "Last agent response" were absent
 - Do not duplicate existing items
 - Keep Russian text
 - Remove HTML/markdown comments if present
@@ -86,6 +88,8 @@ Given a git diff and an MR template, output exactly the filled MR description in
 
 MR description rules:
 - Take the template and fill in the sections
+- Treat "Last agent response" only as background context about the preceding work; do not quote, paraphrase, or copy its wording into the MR description
+- Write the description from the diff and template exactly as you would if "Last agent response" were absent
 - Replace "На что обратить внимание при ревью и тестировании" with two subsections:
   ### Краткое описание изменений — each item: one change/fix/feature, affected files/modules
   ### Что нужно проверить тестировщикам — each item: specific scenario or component to test manually
