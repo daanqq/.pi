@@ -175,10 +175,8 @@ function installFooter(
         } = getUsageStats();
 
         const thinkingLevel = pi.getThinkingLevel();
-        const sessionName = pi.getSessionName();
         const projectLabel = formatProjectLabel(ctx.cwd, footerData.getGitBranch());
-        const infoLeftText = sessionName ? projectLabel : `${projectLabel} unnamed`;
-        const infoLeft = footerText(theme, thinkingLevel, infoLeftText);
+        const infoLeft = footerText(theme, thinkingLevel, projectLabel);
         const infoRight = footerText(theme, thinkingLevel, formatModelLabel(ctx.model?.id, ctx.model?.reasoning, thinkingLevel));
 
         const statsParts: string[] = [];
@@ -242,10 +240,6 @@ export default function rightStatusFooterExtension(pi: ExtensionAPI) {
   });
 
   pi.on("thinking_level_select", () => {
-    requestRender?.();
-  });
-
-  pi.on("session_info_changed", () => {
     requestRender?.();
   });
 

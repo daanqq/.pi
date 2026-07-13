@@ -1,6 +1,7 @@
 ---
 name: mr-review
 description: Review committed or uncommitted changes from GitLab merge requests and local Git branches, including multi-repository EChat changes, task requirements, contracts, compatibility, and maintainability. Use when the user asks to review MR links or their local work before pushing it.
+disable-model-invocation: true
 ---
 
 # Change Review
