@@ -3,7 +3,7 @@ import path from "node:path";
 import os from "node:os";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { getSettingsListTheme } from "@earendil-works/pi-coding-agent";
-import { Container, type SettingItem, SettingsList, Text } from "@earendil-works/pi-tui";
+import { Container, Key, matchesKey, type SettingItem, SettingsList, Text } from "@earendil-works/pi-tui";
 
 const REVIEW_SESSION_ROOT = "/home/user/echat/reviews";
 const WORKSPACE_ROOT = "/home/user/echat";
@@ -198,7 +198,7 @@ async function promptLocalRepoSelection(ctx: ExtensionCommandContext, repoPaths:
           done([...selected]);
           return;
         }
-        settingsList.handleInput(data);
+        settingsList.handleInput(matchesKey(data, Key.space) ? " " : data);
         tui.requestRender();
       },
     };
