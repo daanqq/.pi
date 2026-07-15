@@ -6,6 +6,8 @@ import { getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import { Container, Key, matchesKey, type SettingItem, SettingsList, Text } from "@earendil-works/pi-tui";
 
 const REVIEW_SESSION_ROOT = "/home/user/echat/reviews";
+const REVIEW_JOBS_ROOT = path.join(REVIEW_SESSION_ROOT, "jobs");
+const REVIEW_LOCKS_ROOT = path.join(REVIEW_SESSION_ROOT, ".locks");
 const WORKSPACE_ROOT = "/home/user/echat";
 const GITLAB_HOST = "https://git.esoft.tech";
 const EUTP_ID_RE = /(EUTP-\d+)/i;
@@ -36,9 +38,13 @@ type PreparedReview = {
   mr?: GitLabMr | null;
   mrRef?: MrRef;
 };
+type ReviewWorktree = { repo: string; sourceRepoDir: string; worktreeDir: string };
+type ReviewWorkspace = { root: string; worktrees: ReviewWorktree[] };
 type ExecFn = (cmd: string, args: string[], opts?: Record<string, unknown>) => Promise<{ stdout: string; stderr?: string; code: number }>;
 
 export default function (pi: ExtensionAPI) {
+  let activeWorkspace: ReviewWorkspace | null = null;
+
   const handler = async (args: string, ctx: ExtensionCommandContext) => {
     if (!ctx.isIdle()) {
       ctx.ui.notify("Дождись завершения текущего хода агента перед /review.", "warning");
@@ -48,15 +54,23 @@ export default function (pi: ExtensionAPI) {
     const params = args.trim() ? parseArgs(args, ctx.cwd) : await promptReviewParams(ctx);
     if (!params) return;
 
+    if (activeWorkspace) {
+      await cleanupReviewWorkspace(pi, activeWorkspace);
+      activeWorkspace = null;
+    }
+
     const session = await resolvePoraSession(ctx, params.explicitSession);
     const relatedTasks = await fetchRelatedTasks(params.relatedTaskIds, session);
     const prepared: PreparedReview[] = [];
     const errors: string[] = [];
+    const workspace = params.kind === "mr" ? createReviewWorkspace() : null;
 
     if (params.kind === "mr") {
       for (const ref of params.refs) {
         try {
-          prepared.push(await prepareMrReview(pi, ctx, ref, session));
+          const result = await prepareMrReview(pi, ctx, ref, session, workspace!.root);
+          prepared.push(result.review);
+          workspace!.worktrees.push(result.worktree);
         } catch (error: unknown) {
           errors.push(`${ref.repo} MR !${ref.iid}: ${errorMessage(error)}`);
         }
@@ -72,11 +86,21 @@ export default function (pi: ExtensionAPI) {
     }
 
     for (const error of errors) ctx.ui.notify(error, "error");
-    if (prepared.length === 0) return;
+    if (prepared.length === 0) {
+      if (workspace) await cleanupReviewWorkspace(pi, workspace);
+      return;
+    }
 
     renameSession(ctx, sessionNameForPreparedReviews(prepared));
     const reviewContext = buildReviewContext(prepared, params.extraInfo, relatedTasks);
-    pi.sendUserMessage(`/skill:mr-review\n\n${reviewContext}`);
+    activeWorkspace = workspace;
+    try {
+      pi.sendUserMessage(`/skill:mr-review\n\n${reviewContext}`);
+    } catch (error) {
+      if (activeWorkspace) await cleanupReviewWorkspace(pi, activeWorkspace);
+      activeWorkspace = null;
+      throw error;
+    }
   };
 
   pi.registerCommand("review", {
@@ -86,6 +110,13 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("mr-review", {
     description: "Compatibility alias for /review; reviews GitLab MR links by default",
     handler,
+  });
+
+  pi.on("session_shutdown", async () => {
+    if (!activeWorkspace) return;
+    const workspace = activeWorkspace;
+    activeWorkspace = null;
+    await cleanupReviewWorkspace(pi, workspace);
   });
 }
 
@@ -280,25 +311,50 @@ function parseMrRefs(text: string): MrRef[] {
   return [...text.matchAll(MR_URL_SCAN_RE)].map((match) => ({ repo: match[1]!, iid: match[2]!, url: match[0] }));
 }
 
-async function prepareMrReview(pi: ExtensionAPI, ctx: ExtensionCommandContext, ref: MrRef, poraSession: string | null): Promise<PreparedReview> {
-  const repoDir = path.join(REVIEW_SESSION_ROOT, ref.repo);
-  assertGitRepo(repoDir);
-  const exec: ExecFn = (cmd, args, opts) => pi.exec(cmd, args, { ...opts, cwd: repoDir });
+async function prepareMrReview(
+  pi: ExtensionAPI,
+  ctx: ExtensionCommandContext,
+  ref: MrRef,
+  poraSession: string | null,
+  workspaceRoot: string,
+): Promise<{ review: PreparedReview; worktree: ReviewWorktree }> {
+  assertSafeRepoName(ref.repo);
+  const sourceRepoDir = path.join(REVIEW_SESSION_ROOT, ref.repo);
+  assertGitRepo(sourceRepoDir);
+  const sourceExec: ExecFn = (cmd, args, opts) => pi.exec(cmd, args, { ...opts, cwd: sourceRepoDir });
   const mr = await fetchGitLabMr(pi, ref);
   const headRef = `refs/mr-review/${ref.repo}/${ref.iid}`;
-  const baseRef = await preferredBaseBranch(pi, repoDir, mr?.target_branch);
-  await fetchMr(exec, ref.iid, headRef);
-  const sourceBranch = mr?.source_branch ?? headRef;
-  const mergeBase = await resolveMergeBase(exec, headRef, baseRef);
-  const taskId = extractTaskId(sourceBranch)
-    ?? extractTaskId(`${mr?.title ?? ""}\n${mr?.description ?? ""}`)
-    ?? await extractTaskIdFromCommits(exec, headRef, baseRef);
-  const task = taskId && poraSession ? await fetchTask(taskId, poraSession) : null;
-  ctx.ui.notify(`Подготовил ${ref.repo}!${ref.iid}: ${sourceBranch}${taskId ? `, задача ${taskId}` : ""}`, "info");
-  return {
-    kind: "mr", repo: ref.repo, repoDir, taskId, task, baseRef, headRef, mergeBase, sourceBranch,
-    scope: "branch", status: "", untrackedFiles: [], mr, mrRef: ref,
-  };
+  const baseRef = await preferredBaseBranch(pi, sourceRepoDir, mr?.target_branch);
+  const worktreeDir = path.join(workspaceRoot, `${ref.repo}--mr-${ref.iid}`);
+  const worktree = { repo: ref.repo, sourceRepoDir, worktreeDir };
+  let worktreeAdded = false;
+
+  try {
+    await withRepoLock(ref.repo, async () => {
+      await fetchMr(sourceExec, ref.iid, headRef);
+      await addWorktree(sourceExec, worktreeDir, headRef);
+      worktreeAdded = true;
+    });
+
+    const exec: ExecFn = (cmd, args, opts) => pi.exec(cmd, args, { ...opts, cwd: worktreeDir });
+    const sourceBranch = mr?.source_branch ?? headRef;
+    const mergeBase = await resolveMergeBase(exec, "HEAD", baseRef);
+    const taskId = extractTaskId(sourceBranch)
+      ?? extractTaskId(`${mr?.title ?? ""}\n${mr?.description ?? ""}`)
+      ?? await extractTaskIdFromCommits(exec, "HEAD", baseRef);
+    const task = taskId && poraSession ? await fetchTask(taskId, poraSession) : null;
+    ctx.ui.notify(`Подготовил ${ref.repo}!${ref.iid}: ${sourceBranch}${taskId ? `, задача ${taskId}` : ""}`, "info");
+    return {
+      review: {
+        kind: "mr", repo: ref.repo, repoDir: worktreeDir, taskId, task, baseRef, headRef: "HEAD", mergeBase, sourceBranch,
+        scope: "branch", status: "", untrackedFiles: [], mr, mrRef: ref,
+      },
+      worktree,
+    };
+  } catch (error) {
+    if (worktreeAdded || fs.existsSync(worktreeDir)) await removeWorktree(pi, worktree);
+    throw error;
+  }
 }
 
 async function prepareLocalReview(
@@ -332,6 +388,12 @@ async function prepareLocalReview(
 
 function assertGitRepo(repoDir: string) {
   if (!fs.existsSync(path.join(repoDir, ".git"))) throw new Error(`Не найден Git-репозиторий: ${repoDir}`);
+}
+
+function assertSafeRepoName(repo: string) {
+  if (!/^[a-zA-Z0-9._-]+$/.test(repo) || repo === "." || repo === "..") {
+    throw new Error(`Недопустимое имя репозитория: ${repo}`);
+  }
 }
 
 async function checkedExec(exec: ExecFn, cmd: string, args: string[]) {
@@ -377,6 +439,87 @@ function parseJsonObject<T extends object>(text: string): T | null {
 async function fetchMr(exec: ExecFn, iid: string, ref: string) {
   const result = await exec("git", ["fetch", "origin", `+merge-requests/${iid}/head:${ref}`], { timeout: 60_000 });
   if (result.code !== 0) throw new Error(`git fetch MR failed: ${result.stderr || result.stdout}`);
+}
+
+async function addWorktree(exec: ExecFn, worktreeDir: string, ref: string) {
+  const result = await exec("git", ["worktree", "add", "--detach", worktreeDir, ref], { timeout: 30_000 });
+  if (result.code !== 0) throw new Error(`git worktree add failed: ${result.stderr || result.stdout}`);
+}
+
+function createReviewWorkspace(): ReviewWorkspace {
+  fs.mkdirSync(REVIEW_JOBS_ROOT, { recursive: true });
+  return { root: fs.mkdtempSync(path.join(REVIEW_JOBS_ROOT, "review-")), worktrees: [] };
+}
+
+async function cleanupReviewWorkspace(pi: ExtensionAPI, workspace: ReviewWorkspace) {
+  let cleanupError: unknown;
+  for (const worktree of [...workspace.worktrees].reverse()) {
+    try {
+      await removeWorktree(pi, worktree);
+    } catch (error) {
+      cleanupError ??= error;
+    }
+  }
+  fs.rmSync(workspace.root, { recursive: true, force: true });
+  if (cleanupError) throw cleanupError;
+}
+
+async function removeWorktree(pi: ExtensionAPI, worktree: ReviewWorktree) {
+  try {
+    await withRepoLock(worktree.repo, async () => {
+      const result = await pi.exec("git", ["worktree", "remove", "--force", worktree.worktreeDir], {
+        cwd: worktree.sourceRepoDir,
+        timeout: 30_000,
+      });
+      if (result.code !== 0) fs.rmSync(worktree.worktreeDir, { recursive: true, force: true });
+      await pi.exec("git", ["worktree", "prune"], { cwd: worktree.sourceRepoDir, timeout: 10_000 });
+    });
+  } finally {
+    fs.rmSync(worktree.worktreeDir, { recursive: true, force: true });
+  }
+}
+
+async function withRepoLock<T>(repo: string, operation: () => Promise<T>): Promise<T> {
+  fs.mkdirSync(REVIEW_LOCKS_ROOT, { recursive: true });
+  const lockDir = path.join(REVIEW_LOCKS_ROOT, `${repo}.lock`);
+  const owner = `${process.pid}:${Date.now()}:${Math.random()}`;
+  const deadline = Date.now() + 120_000;
+
+  while (true) {
+    try {
+      fs.mkdirSync(lockDir);
+      try {
+        fs.writeFileSync(path.join(lockDir, "owner"), owner, "utf8");
+      } catch (error) {
+        fs.rmSync(lockDir, { recursive: true, force: true });
+        throw error;
+      }
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      try {
+        if (Date.now() - fs.statSync(lockDir).mtimeMs > 60_000) fs.rmSync(lockDir, { recursive: true, force: true });
+      } catch {}
+      if (Date.now() >= deadline) throw new Error(`Не удалось получить Git lock для ${repo}`);
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+  }
+
+  const heartbeat = setInterval(() => {
+    try {
+      const now = new Date();
+      fs.utimesSync(lockDir, now, now);
+    } catch {}
+  }, 10_000);
+
+  try {
+    return await operation();
+  } finally {
+    clearInterval(heartbeat);
+    try {
+      if (fs.readFileSync(path.join(lockDir, "owner"), "utf8") === owner) fs.rmSync(lockDir, { recursive: true, force: true });
+    } catch {}
+  }
 }
 
 async function extractTaskIdFromCommits(exec: ExecFn, headRef: string, baseRef: string): Promise<string | null> {
