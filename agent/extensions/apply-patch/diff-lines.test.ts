@@ -62,6 +62,25 @@ test("carries line-number shifts into subsequent hunks", () => {
 	assert.deepEqual(numbered.map(({ marker, lineNumber }) => [marker, lineNumber]), [
 		[" ", 1],
 		["+", 2],
+		[" ", undefined],
 		[" ", 5],
 	]);
+	assert.equal(numbered[2]?.text, "⋮ 2 unchanged lines");
+});
+
+test("separates distant update hunks without separating adjacent ones", () => {
+	const original = ["one", "two", "three", "four", "five", "six"];
+	const numbered = numberUpdateDiffLines(original, [
+		"@@",
+		" one",
+		"-two",
+		"+second",
+		"@@",
+		" three",
+		"@@",
+		" six",
+	]);
+	const rendered = formatNumberedDiffLines(numbered);
+	assert.equal(rendered.filter((line) => line.includes("⋮")).length, 1);
+	assert.ok(rendered.some((line) => line.includes("⋮ 2 unchanged lines")));
 });
