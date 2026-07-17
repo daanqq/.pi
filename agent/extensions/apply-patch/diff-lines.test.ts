@@ -65,7 +65,7 @@ test("carries line-number shifts into subsequent hunks", () => {
 		[" ", undefined],
 		[" ", 5],
 	]);
-	assert.equal(numbered[2]?.text, "⋮ 2 unchanged lines");
+	assert.equal(numbered[2]?.text, "⋮");
 });
 
 test("separates distant update hunks without separating adjacent ones", () => {
@@ -82,5 +82,5 @@ test("separates distant update hunks without separating adjacent ones", () => {
 	]);
 	const rendered = formatNumberedDiffLines(numbered);
 	assert.equal(rendered.filter((line) => line.includes("⋮")).length, 1);
-	assert.ok(rendered.some((line) => line.includes("⋮ 2 unchanged lines")));
+	assert.ok(rendered.some((line) => line.trim() === "⋮"));
 });

@@ -30,9 +30,8 @@ export function numberUpdateDiffLines(original: string[], body: string[]): Numbe
 			.map((line) => line.slice(1));
 		const anchorFrom = findAnchor(original, hunk.header, searchFrom);
 		const oldStart = findSequence(original, oldPattern, anchorFrom) ?? findSequence(original, oldPattern, searchFrom) ?? searchFrom;
-		const unchangedLines = oldStart - searchFrom;
-		if (result.length > 0 && unchangedLines > 0) {
-			result.push({ marker: " ", text: `⋮ ${unchangedLines} unchanged line${unchangedLines === 1 ? "" : "s"}` });
+		if (result.length > 0 && oldStart > searchFrom) {
+			result.push({ marker: " ", text: "⋮" });
 		}
 		let oldLine = oldStart + 1;
 		let newLine = oldStart + 1 + lineDelta;
