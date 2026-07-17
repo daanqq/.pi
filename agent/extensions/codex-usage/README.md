@@ -138,9 +138,9 @@ Other Pi processes watch the state file, reload auth when `activeProfile` change
 
 ## Commands
 
-### `/codex:quotas`
+### `/codex:quotas`, `/status`, `/s`
 
-Shows current Codex subscription quota and the number of available usage-limit resets for the active `openai-codex` credential.
+Shows current Codex subscription quota and the number of available usage-limit resets for the active `openai-codex` credential. `/status` and `/s` are aliases registered by this extension so they share its initialized credential state.
 
 ### `/reset-usage`
 

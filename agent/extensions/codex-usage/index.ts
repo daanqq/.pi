@@ -583,18 +583,30 @@ function startCrossProcessSync(ctx: ExtensionContext): void {
 }
 
 export default function (pi: ExtensionAPI) {
+  const showCodexQuotas = async (_args: string, ctx: ExtensionCommandContext) => {
+    const result = await fetchCurrentQuotaResult(ctx);
+    const quota = normalizeQuota(result);
+    if (quota) {
+      const state = readState();
+      const currentState = storeQuotaIfCurrent(state.activeProfile, quota);
+      if (currentState) setFooter(ctx, currentState, quota);
+    }
+    notify(ctx, ctx.ui.theme.fg("dim", formatQuotaCommandOutput(result)), result.success ? "info" : "warning");
+  };
+
   pi.registerCommand("codex:quotas", {
     description: "Show Codex subscription quota",
-    handler: async (_args, ctx) => {
-      const result = await fetchCurrentQuotaResult(ctx);
-      const quota = normalizeQuota(result);
-      if (quota) {
-        const state = readState();
-        const currentState = storeQuotaIfCurrent(state.activeProfile, quota);
-        if (currentState) setFooter(ctx, currentState, quota);
-      }
-      notify(ctx, ctx.ui.theme.fg("dim", formatQuotaCommandOutput(result)), result.success ? "info" : "warning");
-    },
+    handler: showCodexQuotas,
+  });
+
+  pi.registerCommand("status", {
+    description: "Alias for /codex:quotas",
+    handler: showCodexQuotas,
+  });
+
+  pi.registerCommand("s", {
+    description: "Alias for /status",
+    handler: showCodexQuotas,
   });
 
   pi.registerCommand("reset-usage", {
