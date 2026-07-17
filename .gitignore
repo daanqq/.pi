@@ -8,6 +8,7 @@ agent/auth.json
 
 # Runtime state
 agent/trust.json
+agent/models-store.json
 agent/codex-usage/
 agent/sessions/
 cache/
