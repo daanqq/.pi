@@ -128,8 +128,7 @@ export default function editorUiExtension(pi: ExtensionAPI) {
 		);
 	});
 
-	pi.on("session_shutdown", (_event, ctx) => {
+	pi.on("session_shutdown", () => {
 		globalThis.__piAgentPulseRequestRender = undefined;
-		ctx.ui.setEditorComponent(undefined);
 	});
 }
