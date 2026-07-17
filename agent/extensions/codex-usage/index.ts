@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { deleteProfile, getCurrentProfile, getProfileCredential, listProfiles, saveCurrentProfile, useProfile } from "./profiles";
+import { deleteProfile, getCurrentProfile, getProfileCredential, listProfiles, readCurrentCredential, saveCurrentProfile, useProfile } from "./profiles";
 import { withRotationLock } from "./lock";
 import { fetchQuotaForCredential, formatFooterQuota, formatQuota, formatQuotaCommandOutput, normalizeQuota, quotaReason } from "./quota";
 import { chooseBestCandidate, isInCooldown, profileLabel, scoreCandidate } from "./scoring";
@@ -35,6 +35,7 @@ let stopWatcher: (() => void) | undefined;
 let activeContext: ExtensionContext | undefined;
 let lastSeenActiveProfile: string | undefined;
 let providerInFlight = false;
+let currentCredential: any;
 
 function isStaleContextError(error: unknown): boolean {
   return error instanceof Error && error.message.includes("extension ctx is stale");
@@ -63,7 +64,7 @@ function isCodexContext(ctx: ExtensionContext | ExtensionCommandContext): boolea
 }
 
 function getCurrentCredential(ctx: ExtensionContext | ExtensionCommandContext): any {
-  return ctx.modelRegistry.authStorage.get(CODEX_PROVIDER);
+  return currentCredential;
 }
 
 function getFallbackCodexAccountId(): string | undefined {
@@ -297,7 +298,8 @@ async function commitRotation(
 ): Promise<RotationResult> {
   if (!winner.token) return { rotated: false, reason: "winner has no token" };
 
-  const activeToken = useProfile(ctx, winner.profile.name);
+  const activeToken = await useProfile(ctx, winner.profile.name);
+  currentCredential = activeToken.credential;
 
   // Re-read after candidate network requests so committing a rotation cannot
   // erase a newer quota written by a footer refresh.
@@ -565,11 +567,11 @@ function startCrossProcessSync(ctx: ExtensionContext): void {
     const state = readState();
     if (state.activeProfile !== lastSeenActiveProfile) {
       lastSeenActiveProfile = state.activeProfile;
-      try {
-        ctx.modelRegistry.authStorage.reload();
-      } catch {
+      void readCurrentCredential(ctx, true).then((credential) => {
+        if (ctx === activeContext && readState().activeProfile === state.activeProfile) currentCredential = credential;
+      }).catch(() => {
         // Ignore reload errors; status will show last known state.
-      }
+      });
       quotaCache = undefined;
     }
 
@@ -688,7 +690,8 @@ export default function (pi: ExtensionAPI) {
         if (action === "save") {
           const name = rest.join(" ").trim();
           if (!name) throw new Error("Usage: /codex:profile save <name>");
-          const profile = saveCurrentProfile(ctx, name);
+          const profile = await saveCurrentProfile(ctx, name);
+          currentCredential = profile.credential;
           const state = syncStateForProfile(profile);
           setFooter(ctx, state);
           notify(ctx, `Saved Codex profile '${profile.name}'`, "info");
@@ -697,7 +700,8 @@ export default function (pi: ExtensionAPI) {
         if (action === "use") {
           const name = rest.join(" ").trim();
           if (!name) throw new Error("Usage: /codex:profile use <name>");
-          const profile = useProfile(ctx, name);
+          const profile = await useProfile(ctx, name);
+          currentCredential = profile.credential;
           const state = syncStateForProfile(profile);
           setFooter(ctx, state);
           notify(ctx, `Using Codex profile '${profile.name}'`, "info");
@@ -793,7 +797,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event, ctx) => {
     activeContext = ctx;
-    ctx.modelRegistry.authStorage.reload();
+    currentCredential = await readCurrentCredential(ctx, true);
     startCrossProcessSync(ctx);
     const state = await maybeEnsureActiveProfile();
     setFooter(ctx, state);
@@ -860,6 +864,7 @@ export default function (pi: ExtensionAPI) {
     stopWatcher?.();
     stopWatcher = undefined;
     activeContext = undefined;
+    currentCredential = undefined;
     try {
       ctx.ui.setStatus(EXTENSION_ID, undefined);
     } catch {

@@ -6,6 +6,57 @@ import { ensureCodexUsageDir, PROFILE_DIR } from "./paths";
 import { CODEX_PROVIDER } from "./types";
 const CURRENT_FILE = join(PROFILE_DIR, ".current");
 
+type CredentialRegistryCompat = {
+  authStorage?: {
+    get(provider: string): unknown;
+    set(provider: string, credential: AuthCredential): void;
+    reload(): void;
+  };
+  runtime?: {
+    credentials?: {
+      read(provider: string): Promise<unknown>;
+      modify(provider: string, update: () => Promise<AuthCredential>): Promise<unknown>;
+      store?: { reload?: () => void };
+    };
+  };
+};
+
+async function readCredential(
+  ctx: ExtensionContext | ExtensionCommandContext,
+  reload = false,
+): Promise<AuthCredential | undefined> {
+  const registry = ctx.modelRegistry as unknown as CredentialRegistryCompat;
+  if (registry.authStorage) {
+    if (reload) registry.authStorage.reload();
+    const credential = registry.authStorage.get(CODEX_PROVIDER);
+    return credential === undefined ? undefined : assertCredential(credential, CODEX_PROVIDER);
+  }
+
+  // Pi 0.80 moved credentials behind ModelRuntime without adding a public
+  // mutation API to ModelRegistry. Keep this compatibility access isolated so
+  // it can be removed when the extension API exposes credential management.
+  const credentials = registry.runtime?.credentials;
+  if (!credentials?.read) throw new Error("This Pi version does not expose credential storage to extensions");
+  if (reload) credentials.store?.reload?.();
+  const credential = await credentials.read(CODEX_PROVIDER);
+  return credential === undefined ? undefined : assertCredential(credential, CODEX_PROVIDER);
+}
+
+async function writeCredential(
+  ctx: ExtensionContext | ExtensionCommandContext,
+  credential: AuthCredential,
+): Promise<void> {
+  const registry = ctx.modelRegistry as unknown as CredentialRegistryCompat;
+  if (registry.authStorage) {
+    registry.authStorage.set(CODEX_PROVIDER, credential);
+    return;
+  }
+
+  const credentials = registry.runtime?.credentials;
+  if (!credentials?.modify) throw new Error("This Pi version does not expose credential storage to extensions");
+  await credentials.modify(CODEX_PROVIDER, async () => credential);
+}
+
 function ensureProfileDir(): void {
   ensureCodexUsageDir();
   mkdirSync(PROFILE_DIR, { recursive: true, mode: 0o700 });
@@ -137,9 +188,16 @@ export function getProfileCredential(name: string): ProfileCredentialResult {
   };
 }
 
-export function saveCurrentProfile(ctx: ExtensionContext | ExtensionCommandContext, name: string): StoredCodexProfile {
+export async function readCurrentCredential(
+  ctx: ExtensionContext | ExtensionCommandContext,
+  reload = false,
+): Promise<AuthCredential | undefined> {
+  return readCredential(ctx, reload);
+}
+
+export async function saveCurrentProfile(ctx: ExtensionContext | ExtensionCommandContext, name: string): Promise<StoredCodexProfile> {
   const safeName = validateProfileName(name);
-  const credential = assertCredential(ctx.modelRegistry.authStorage.get(CODEX_PROVIDER), safeName);
+  const credential = assertCredential(await readCredential(ctx), safeName);
   const profile: StoredCodexProfile = {
     version: 1,
     name: safeName,
@@ -155,9 +213,9 @@ export function saveCurrentProfile(ctx: ExtensionContext | ExtensionCommandConte
   return profile;
 }
 
-export function useProfile(ctx: ExtensionContext | ExtensionCommandContext, name: string): ProfileCredentialResult {
+export async function useProfile(ctx: ExtensionContext | ExtensionCommandContext, name: string): Promise<ProfileCredentialResult> {
   const profile = readStoredProfile(name);
-  ctx.modelRegistry.authStorage.set(CODEX_PROVIDER, profile.credential);
+  await writeCredential(ctx, profile.credential);
   const updated = { ...profile, lastUsedAt: Date.now() };
   atomicWriteJson(profilePath(profile.name), updated);
   setCurrentProfile(profile.name);
