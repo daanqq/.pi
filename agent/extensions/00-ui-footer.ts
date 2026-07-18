@@ -6,6 +6,11 @@ import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 const RIGHT_STATUS_ORDER = ["generation-stats", "codex-usage", "deepseek-balance", "openrouter-balance"] as const;
 const HIDDEN_STATUS_IDS = new Set<string>([...RIGHT_STATUS_ORDER, "ponytail"]);
+const MODEL_ALIASES: Readonly<Record<string, string>> = {
+  "gpt-5.6-sol": "sol",
+  "gpt-5.6-terra": "terra",
+  "gpt-5.6-luna": "luna",
+};
 
 type ThemeColor =
   | "text"
@@ -106,7 +111,7 @@ function formatProjectLabel(cwd: string, branch: string | null) {
 }
 
 function formatModelLabel(modelId: string | undefined, reasoning: boolean | undefined, thinkingLevel: string) {
-  const modelName = modelId || "no-model";
+  const modelName = modelId ? (MODEL_ALIASES[modelId] ?? modelId) : "no-model";
   if (!reasoning) return modelName;
   return thinkingLevel === "off" ? `${modelName} thinking off` : `${modelName} ${thinkingLevel}`;
 }
