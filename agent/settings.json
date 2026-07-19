@@ -1,6 +1,6 @@
 {
   "lastChangelogVersion": "0.80.10",
-  "defaultThinkingLevel": "medium",
+  "defaultThinkingLevel": "low",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.6-sol",
   "packages": [
@@ -22,7 +22,8 @@
   },
   "enabledModels": [
     "deepseek/deepseek-v4-pro",
-    "openai-codex/gpt-5.6-sol"
+    "openai-codex/gpt-5.6-sol",
+    "openai-codex/gpt-5.6-luna"
   ],
   "externalEditor": "code --wait",
   "transport": "sse",
