@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.81.0",
+  "lastChangelogVersion": "0.82.0",
   "defaultThinkingLevel": "medium",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.6-sol",
@@ -13,17 +13,19 @@
     "git:github.com/daanqq/pi-diff-review",
     "npm:pi-system-prompt",
     "npm:@ff-labs/pi-fff",
-    "npm:@plannotator/pi-extension"
+    "npm:@plannotator/pi-extension",
+    "npm:pi-mcp-adapter"
   ],
   "hideThinkingBlock": false,
   "theme": "alabaster",
-  "quietStartup": false,
+  "quietStartup": true,
   "compaction": {
     "enabled": false
   },
   "enabledModels": [
     "deepseek/deepseek-v4-pro",
-    "openai-codex/gpt-5.6-sol"
+    "openai-codex/gpt-5.6-sol",
+    "anthropic/claude-opus-4-8"
   ],
   "externalEditor": "code --wait",
   "transport": "sse",

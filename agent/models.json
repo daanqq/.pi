@@ -36,6 +36,13 @@
           }
         }
       }
+    },
+    "anthropic": {
+      "baseUrl": "http://daig.prod.pora.srv.corp",
+      "apiKey": "$ANTHROPIC_AUTH_TOKEN",
+      "headers": {
+        "Authorization": "Bearer $ANTHROPIC_AUTH_TOKEN"
+      }
     }
   }
 }

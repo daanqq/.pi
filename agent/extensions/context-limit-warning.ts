@@ -35,7 +35,7 @@ export default function (pi: ExtensionAPI) {
     wasAboveThreshold = true;
 
     ctx.ui.notify(
-      `Context usage crossed ${formatTokens(threshold)}. Consider /compact or /new.`,
+      `Context usage crossed ${formatTokens(threshold)}. Consider /shake, /compact or /new.`,
       "warning",
     );
   });
