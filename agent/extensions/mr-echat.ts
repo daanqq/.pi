@@ -1,11 +1,12 @@
 /**
  * mr-echat — commit + push + создание MR через glab.
- * Если MR для текущей ветки уже есть, генерирует только commit title.
+ * Если MR для текущей ветки уже есть, может дополнить его описание новыми изменениями.
  *
  * Заменяет agent/prompts/mr-echat.md: все механические шаги (git, glab,
  * файловый I/O, цикл подтверждения title) выполняются детерминированно
- * в коде. LLM (через complete()) используется только для генерации
- * MR description и commit title по диффу (или только commit title для существующего MR).
+ * в коде. Commit title генерируется отдельным complete() по diff. MR description
+ * генерируется дополнительным turn текущей pi-сессии, чтобы переиспользовать
+ * её модель, system prompt, tools и provider cache affinity.
  *
  * Использование:
  *   /mr-echat [task-branch]
@@ -15,8 +16,9 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { complete, type Message } from "@earendil-works/pi-ai";
+import { complete, type Message } from "@earendil-works/pi-ai/compat";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 
 // ---------------------------------------------------------------------------
@@ -26,6 +28,7 @@ import * as path from "node:path";
 const EUTP_ID_RE = /EUTP-\d+/i;
 const TITLE_MAX_ATTEMPTS = 3;
 const MR_DESC_TMP = "/tmp/mr_description.md";
+const LOG_FILE = path.join(os.homedir(), ".pi", "logs", "mr-echat.log");
 const GENERATION_PROVIDER = "openai-codex";
 const GENERATION_MODEL = "gpt-5.4-mini";
 const GENERATION_THINKING = "high";
@@ -64,38 +67,44 @@ Output format (strict):
 TITLE: <commit title>`;
 
 // ---------------------------------------------------------------------------
-// System prompt for complete() — generates MR description
+// Instructions appended to the current pi session for MR description generation
 // ---------------------------------------------------------------------------
 
-const UPDATE_MR_DESC_SYSTEM_PROMPT = `You update an existing GitLab MR description for an EChat project.
+const UPDATE_MR_DESC_PROMPT = `Update an existing GitLab MR description for an EChat project.
+Use the preceding session as context about the task, its intent, implementation decisions, and verification.
 Given the current MR description and a git diff with new changes, output the full updated MR description in Russian.
 
 Rules:
 - Keep the existing useful content and structure
 - Add only information from the new diff
-- Treat "Last agent response" only as background context about the preceding work; do not quote, paraphrase, or copy its wording into the MR description
-- Write the description from the diff exactly as you would if "Last agent response" were absent
+- Treat the git diff as the source of truth for implemented changes
+- Do not include planned, abandoned, or unverified work from the session
+- Use session context to explain intent and verification, but do not quote the conversation
 - Do not duplicate existing items
 - Keep Russian text
 - Remove HTML/markdown comments if present
+- Do not call tools
 
 Output format (strict):
 DESC:
 <full updated MR description>`;
 
-const MR_DESC_SYSTEM_PROMPT = `You are an MR description generator for an EChat project.
+const MR_DESC_PROMPT = `Generate an MR description for an EChat project.
+Use the preceding session as context about the task, its intent, implementation decisions, and verification.
 Given a git diff and an MR template, output exactly the filled MR description in Russian.
 
 MR description rules:
 - Take the template and fill in the sections
-- Treat "Last agent response" only as background context about the preceding work; do not quote, paraphrase, or copy its wording into the MR description
-- Write the description from the diff and template exactly as you would if "Last agent response" were absent
+- Treat the git diff as the source of truth for implemented changes
+- Do not include planned, abandoned, or unverified work from the session
+- Use session context to explain intent and verification, but do not quote the conversation
 - Replace "На что обратить внимание при ревью и тестировании" with two subsections:
   ### Краткое описание изменений — each item: one change/fix/feature, affected files/modules
   ### Что нужно проверить тестировщикам — each item: specific scenario or component to test manually
 - Remove any HTML/markdown comments from the template
 - Keep Russian text
 - If no migrations — keep "Нет."
+- Do not call tools
 
 Output format (strict):
 DESC:
@@ -104,6 +113,79 @@ DESC:
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+type LogFn = (event: string, details?: Record<string, unknown>) => void;
+
+type SessionGenerationFn = (
+  ctx: any,
+  prompt: string,
+  event: string,
+  details: Record<string, unknown>,
+  log: LogFn,
+) => Promise<string | null>;
+
+function assistantMessageText(message: any): string {
+  if (message?.role !== "assistant" || !Array.isArray(message.content)) return "";
+  return message.content
+    .filter((part: any) => part?.type === "text" && typeof part.text === "string")
+    .map((part: any) => part.text)
+    .join("\n")
+    .trim();
+}
+
+/** Создать best-effort логгер одного запуска, не влияющий на основной workflow. */
+function createRunLogger(): LogFn {
+  const runId = `${new Date().toISOString()}-${process.pid}`;
+  const startedAt = Date.now();
+
+  try {
+    fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true });
+  } catch {
+    // Диагностическое логирование не должно ломать создание MR.
+  }
+
+  return (event, details = {}) => {
+    try {
+      fs.appendFileSync(LOG_FILE, `${JSON.stringify({
+        timestamp: new Date().toISOString(),
+        runId,
+        elapsedMs: Date.now() - startedAt,
+        event,
+        ...details,
+      })}\n`, "utf-8");
+    } catch {
+      // Диагностическое логирование не должно ломать создание MR.
+    }
+  };
+}
+
+/** Не писать содержимое MR в лог вместе с аргументами glab. */
+function sanitizeExecArgs(args: string[]): string[] {
+  const sanitized = [...args];
+  const descriptionIndex = sanitized.indexOf("--description");
+  if (descriptionIndex >= 0 && descriptionIndex + 1 < sanitized.length) {
+    sanitized[descriptionIndex + 1] = `<redacted:${sanitized[descriptionIndex + 1].length} chars>`;
+  }
+  return sanitized;
+}
+
+async function withTiming<T>(
+  log: LogFn,
+  event: string,
+  details: Record<string, unknown>,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const startedAt = Date.now();
+  log(`${event}:start`, details);
+  try {
+    const result = await operation();
+    log(`${event}:end`, { durationMs: Date.now() - startedAt });
+    return result;
+  } catch (error: any) {
+    log(`${event}:error`, { durationMs: Date.now() - startedAt, error: error?.message ?? String(error) });
+    throw error;
+  }
+}
 
 /** Вытащить EUTP-ID из названия ветки. */
 function extractTaskId(branch: string): string | null {
@@ -161,7 +243,7 @@ function normalizeRemoteBranch(ref: string): string {
 }
 
 /** Найти родительскую EUTP-ветку, если текущая ветка ответвлена от неё, а не от main/master. */
-async function getParentTaskBranch(exec: ExecFn, branch: string): Promise<string | null> {
+async function getParentTaskBranch(exec: ExecFn, branch: string, log: LogFn): Promise<string | null> {
   const refsResult = await exec("git", ["for-each-ref", "--format=%(refname:short)", "refs/remotes/origin"]);
   if (refsResult.code !== 0) return null;
 
@@ -171,6 +253,7 @@ async function getParentTaskBranch(exec: ExecFn, branch: string): Promise<string
     const normalized = normalizeRemoteBranch(ref);
     return ref !== "origin/HEAD" && normalized !== branch && EUTP_ID_RE.test(normalized);
   });
+  log("parent-branch:candidates", { totalRemoteRefs: refs.length, candidateCount: candidates.length });
   if (candidates.length === 0) return null;
 
   const originHead = (await exec("git", ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"])).stdout.trim();
@@ -204,7 +287,9 @@ async function getParentTaskBranch(exec: ExecFn, branch: string): Promise<string
   }
 
   matches.sort((a, b) => a.distance - b.distance || a.branch.localeCompare(b.branch));
-  return matches[0]?.branch ?? null;
+  const selected = matches[0]?.branch ?? null;
+  log("parent-branch:selected", { selected, matchCount: matches.length });
+  return selected;
 }
 
 /** Найти MR для текущей ветки. */
@@ -341,7 +426,7 @@ async function ensureGitRepo(
 }
 
 /** Вызвать LLM для генерации commit title. */
-async function generateTitle(ctx: any, taskId: string, diff: string, lastAgentResponse: string | null): Promise<string | null> {
+async function generateTitle(ctx: any, taskId: string, diff: string, lastAgentResponse: string | null, log: LogFn): Promise<string | null> {
   const model = ctx.modelRegistry.find(GENERATION_PROVIDER, GENERATION_MODEL);
   if (!model) {
     ctx.ui.notify(`Модель не найдена: ${GENERATION_PROVIDER}/${GENERATION_MODEL}`, "error");
@@ -368,10 +453,12 @@ async function generateTitle(ctx: any, taskId: string, diff: string, lastAgentRe
 
   ctx.ui.notify("Генерирую заголовок коммита...", "info");
 
-  const response = await complete(
-    model,
-    { systemPrompt: TITLE_SYSTEM_PROMPT, messages: [userMessage] },
-    { apiKey: auth.apiKey, headers: auth.headers, reasoningEffort: GENERATION_THINKING },
+  const response = await withTiming(log, "llm:title", { diffChars: diff.length }, () =>
+    complete(
+      model,
+      { systemPrompt: TITLE_SYSTEM_PROMPT, messages: [userMessage] },
+      { apiKey: auth.apiKey, headers: auth.headers, reasoningEffort: GENERATION_THINKING },
+    ),
   );
 
   const text = response.content
@@ -394,40 +481,25 @@ async function generateDescription(
   taskId: string,
   diff: string,
   template: string,
-  lastAgentResponse: string | null,
+  log: LogFn,
+  generateInSession: SessionGenerationFn,
 ): Promise<string | null> {
-  const model = ctx.modelRegistry.find(GENERATION_PROVIDER, GENERATION_MODEL);
-  if (!model) {
-    ctx.ui.notify(`Модель не найдена: ${GENERATION_PROVIDER}/${GENERATION_MODEL}`, "error");
-    return null;
-  }
-
-  const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-  if (!auth.ok || !auth.apiKey) {
-    ctx.ui.notify(`Нет API-ключа для ${GENERATION_PROVIDER}`, "error");
-    return null;
-  }
-
   if (diff.length > 80_000) {
     ctx.ui.notify(`Diff большой (${diff.length} символов). Модель может не справиться.`, "warning");
   }
 
-  const userMessage: Message = {
-    role: "user",
-    content: [{ type: "text", text: [`Task: ${taskId}`, lastAgentResponse && `Last agent response:\n${lastAgentResponse}`, `Template:`, template, `Git diff:`, diff].filter(Boolean).join("\n\n") }],
-    timestamp: Date.now(),
-  };
+  const prompt = [MR_DESC_PROMPT, `Task: ${taskId}`, "Template:", template, "Git diff:", diff].join("\n\n");
 
   ctx.ui.notify("Генерирую описание MR...", "info");
-  const response = await complete(
-    model,
-    { systemPrompt: MR_DESC_SYSTEM_PROMPT, messages: [userMessage] },
-    { apiKey: auth.apiKey, headers: auth.headers, reasoningEffort: GENERATION_THINKING },
+  const text = await generateInSession(
+    ctx,
+    prompt,
+    "llm:description",
+    { diffChars: diff.length, templateChars: template.length },
+    log,
   );
-  const text = response.content
-    .filter((c: any): c is { type: "text"; text: string } => c.type === "text")
-    .map((c: any) => c.text)
-    .join("\n");
+  if (!text) return null;
+
   const descMatch = text.match(/^DESC:\s*([\s\S]*)$/m);
   if (!descMatch) {
     ctx.ui.notify("LLM вернул ответ не по формату. DESC: не найден.", "error");
@@ -442,44 +514,28 @@ async function generateUpdatedDescription(
   taskId: string,
   currentDescription: string,
   diff: string,
-  lastAgentResponse: string | null,
+  log: LogFn,
+  generateInSession: SessionGenerationFn,
 ): Promise<string | null> {
-  const model = ctx.modelRegistry.find(GENERATION_PROVIDER, GENERATION_MODEL);
-  if (!model) {
-    ctx.ui.notify(`Модель не найдена: ${GENERATION_PROVIDER}/${GENERATION_MODEL}`, "error");
-    return null;
-  }
-
-  const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-  if (!auth.ok || !auth.apiKey) {
-    ctx.ui.notify(`Нет API-ключа для ${GENERATION_PROVIDER}`, "error");
-    return null;
-  }
-
   const prompt = [
+    UPDATE_MR_DESC_PROMPT,
     `Task: ${taskId}`,
-    lastAgentResponse && `Last agent response:\n${lastAgentResponse}`,
     "Current MR description:",
     currentDescription,
     "New git diff:",
     diff,
-  ].filter(Boolean).join("\n\n");
-  const userMessage: Message = {
-    role: "user",
-    content: [{ type: "text", text: prompt }],
-    timestamp: Date.now(),
-  };
+  ].join("\n\n");
 
   ctx.ui.notify("Обновляю описание существующего MR...", "info");
-  const response = await complete(
-    model,
-    { systemPrompt: UPDATE_MR_DESC_SYSTEM_PROMPT, messages: [userMessage] },
-    { apiKey: auth.apiKey, headers: auth.headers, reasoningEffort: GENERATION_THINKING },
+  const text = await generateInSession(
+    ctx,
+    prompt,
+    "llm:description-update",
+    { diffChars: diff.length, currentDescriptionChars: currentDescription.length },
+    log,
   );
-  const text = response.content
-    .filter((c: any): c is { type: "text"; text: string } => c.type === "text")
-    .map((c: any) => c.text)
-    .join("\n");
+  if (!text) return null;
+
   const descMatch = text.match(/^DESC:\s*([\s\S]*)$/m);
   if (!descMatch) {
     ctx.ui.notify("LLM вернул ответ не по формату. DESC: не найден.", "error");
@@ -550,10 +606,97 @@ async function confirmTitle(
 // ---------------------------------------------------------------------------
 
 export default function (pi: ExtensionAPI) {
+  let sessionGenerationActive = false;
+
+  pi.on("tool_call", () => {
+    if (!sessionGenerationActive) return;
+    return { block: true, reason: "MR description generation must not call tools" };
+  });
+
+  pi.on("input", (_event, ctx) => {
+    if (!sessionGenerationActive) return;
+    ctx.ui.notify("Дождись завершения генерации описания MR", "warning");
+    return { action: "handled" };
+  });
+
+  const generateInSession: SessionGenerationFn = async (ctx, prompt, event, details, log) => {
+    if (sessionGenerationActive) {
+      ctx.ui.notify("Генерация описания MR уже выполняется", "error");
+      return null;
+    }
+    if (!ctx.model) {
+      ctx.ui.notify("В текущей сессии не выбрана модель", "error");
+      return null;
+    }
+
+    const auth = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model);
+    if (!auth.ok) {
+      ctx.ui.notify(`Нет авторизации для ${ctx.model.provider}/${ctx.model.id}`, "error");
+      return null;
+    }
+
+    const previousThinking = pi.getThinkingLevel();
+    const previousLeafId = ctx.sessionManager.getLeafId();
+    const startedAt = Date.now();
+    try {
+      sessionGenerationActive = true;
+      if (previousThinking !== "low") pi.setThinkingLevel("low");
+      log(`${event}:start`, {
+        ...details,
+        model: `${ctx.model.provider}/${ctx.model.id}`,
+        thinking: pi.getThinkingLevel(),
+        previousThinking,
+      });
+      pi.sendMessage({
+        customType: "mr-echat-generation",
+        content: prompt,
+        display: false,
+        details: { purpose: "mr-description" },
+      }, { triggerTurn: true });
+      await ctx.waitForIdle();
+
+      const branch = ctx.sessionManager.getBranch();
+      const previousLeafIndex = previousLeafId ? branch.findIndex((entry: any) => entry.id === previousLeafId) : -1;
+      const generatedEntries = branch.slice(previousLeafIndex + 1);
+      const response = [...generatedEntries]
+        .reverse()
+        .map((entry: any) => entry.type === "message" ? entry.message : null)
+        .find((message: any) => assistantMessageText(message));
+      const text = assistantMessageText(response);
+
+      log(`${event}:end`, {
+        ...details,
+        durationMs: Date.now() - startedAt,
+        usage: response?.usage,
+        responseChars: text.length,
+      });
+      if (!text) ctx.ui.notify("Модель не вернула текст описания MR", "error");
+      return text || null;
+    } catch (error: any) {
+      log(`${event}:error`, {
+        ...details,
+        durationMs: Date.now() - startedAt,
+        error: error?.message ?? String(error),
+      });
+      throw error;
+    } finally {
+      sessionGenerationActive = false;
+      if (pi.getThinkingLevel() !== previousThinking) pi.setThinkingLevel(previousThinking);
+    }
+  };
+
   pi.registerCommand("mr-echat", {
     description: "Commit + push + создать MR через glab; аргумент — ветка задачи",
     handler: async (args, ctx) => {
+      const log = createRunLogger();
+      log("run:start", { cwd: ctx.cwd || process.cwd(), args: args.trim() });
       try {
+        if (sessionGenerationActive) {
+          ctx.ui.notify("Предыдущая генерация описания MR ещё выполняется", "warning");
+          return;
+        }
+        await ctx.waitForIdle();
+
         const taskBranch = args.trim() || undefined;
         const lastAgentResponse = getLastAgentResponse(ctx);
 
@@ -562,7 +705,31 @@ export default function (pi: ExtensionAPI) {
         if (!repoDir) return;
 
         // Обёртка pi.exec с фиксированным cwd
-        const exec: ExecFn = (cmd, args, opts) => pi.exec(cmd, args, { ...opts, cwd: repoDir });
+        const exec: ExecFn = async (cmd, args, opts) => {
+          const commandStartedAt = Date.now();
+          const safeArgs = sanitizeExecArgs(args);
+          log("exec:start", { cmd, args: safeArgs });
+          try {
+            const result = await pi.exec(cmd, args, { ...opts, cwd: repoDir });
+            log("exec:end", {
+              cmd,
+              args: safeArgs,
+              durationMs: Date.now() - commandStartedAt,
+              code: result.code,
+              stdoutChars: result.stdout.length,
+              stderrChars: result.stderr?.length ?? 0,
+            });
+            return result;
+          } catch (error: any) {
+            log("exec:error", {
+              cmd,
+              args: safeArgs,
+              durationMs: Date.now() - commandStartedAt,
+              error: error?.message ?? String(error),
+            });
+            throw error;
+          }
+        };
 
         // 1. На базовой ветке создать переданную ветку задачи
         let branchResult = await exec("git", ["branch", "--show-current"]);
@@ -617,7 +784,7 @@ export default function (pi: ExtensionAPI) {
             return;
           }
 
-          const updatedDescription = await generateUpdatedDescription(ctx, taskId, currentDescription, branchDiff, lastAgentResponse);
+          const updatedDescription = await generateUpdatedDescription(ctx, taskId, currentDescription, branchDiff, log, generateInSession);
           if (!updatedDescription) return;
           const updateResult = await exec("glab", ["mr", "update", existingMr.ref, "--description", updatedDescription]);
           if (updateResult.code !== 0) {
@@ -661,9 +828,9 @@ export default function (pi: ExtensionAPI) {
           }
           commitTitle = `${manual.trim()} #${taskId}`;
         } else {
-          const firstTitle = await generateTitle(ctx, taskId, diff, lastAgentResponse);
+          const firstTitle = await generateTitle(ctx, taskId, diff, lastAgentResponse, log);
           if (!firstTitle) return;
-          const confirmed = await confirmTitle(ctx, taskId, firstTitle, previousTitle, async () => generateTitle(ctx, taskId, diff, lastAgentResponse));
+          const confirmed = await confirmTitle(ctx, taskId, firstTitle, previousTitle, async () => generateTitle(ctx, taskId, diff, lastAgentResponse, log));
           if (!confirmed) {
             ctx.ui.notify("Заголовок коммита не задан — отмена", "warning");
             return;
@@ -674,7 +841,7 @@ export default function (pi: ExtensionAPI) {
         if (existingMr) {
           updateExistingMrDescription = await ctx.ui.confirm("MR уже существует", "Дополнить описание MR новыми изменениями?");
         } else {
-          description = await generateDescription(ctx, taskId, diff, template!, lastAgentResponse);
+          description = await generateDescription(ctx, taskId, diff, template!, log, generateInSession);
           if (!description) return;
           fs.writeFileSync(MR_DESC_TMP, description, "utf-8");
         }
@@ -727,6 +894,7 @@ export default function (pi: ExtensionAPI) {
         ctx.ui.notify("Запушено ✓", "info");
         if (!existingMr) {
           ctx.ui.notify(description ? "Готовлю создание MR..." : "Генерирую описание MR...", "info");
+          log("mr-creation:prepare:start");
         }
 
         // 8. Если MR уже был — при необходимости обновить описание и выйти
@@ -737,7 +905,7 @@ export default function (pi: ExtensionAPI) {
               ctx.ui.notify("Не удалось прочитать текущее описание MR", "error");
               return;
             }
-            const updatedDescription = await generateUpdatedDescription(ctx, taskId, currentDescription, diff, lastAgentResponse);
+            const updatedDescription = await generateUpdatedDescription(ctx, taskId, currentDescription, diff, log, generateInSession);
             if (!updatedDescription) return;
             const updateResult = await exec("glab", ["mr", "update", existingMr.ref, "--description", updatedDescription]);
             if (updateResult.code !== 0) {
@@ -751,9 +919,13 @@ export default function (pi: ExtensionAPI) {
         }
 
         // 9. Создать MR
+        log("mr-creation:user:start");
         const username = await getGlabUser(exec);
+        log("mr-creation:user:end", { usernameFound: Boolean(username) });
         const descContent = description ?? fs.readFileSync(MR_DESC_TMP, "utf-8");
-        const targetBranch = await getParentTaskBranch(exec, branch);
+        log("mr-creation:parent-branch:start");
+        const targetBranch = await getParentTaskBranch(exec, branch, log);
+        log("mr-creation:parent-branch:end", { targetBranch });
 
         const mrArgs = [
           "mr", "create",
@@ -769,7 +941,9 @@ export default function (pi: ExtensionAPI) {
         }
 
         ctx.ui.notify(targetBranch ? `Создаю MR в ${targetBranch}...` : "Создаю MR...", "info");
+        log("mr-creation:glab-create:start", { targetBranch, hasAssignee: Boolean(username) });
         const createResult = await exec("glab", mrArgs);
+        log("mr-creation:glab-create:end", { code: createResult.code });
 
         if (createResult.code !== 0) {
           ctx.ui.notify(`Ошибка glab mr create: ${createResult.stderr}`, "error");
@@ -784,7 +958,10 @@ export default function (pi: ExtensionAPI) {
           ctx.ui.notify(`MR создан. Вывод:\n${createResult.stdout.slice(0, 500)}`, "info");
         }
       } catch (err: any) {
+        log("run:error", { error: err?.message ?? String(err) });
         ctx.ui.notify(`Ошибка mr-echat: ${err.message}`, "error");
+      } finally {
+        log("run:end");
       }
     },
   });

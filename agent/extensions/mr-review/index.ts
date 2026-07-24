@@ -44,6 +44,12 @@ type ExecFn = (cmd: string, args: string[], opts?: Record<string, unknown>) => P
 
 export default function (pi: ExtensionAPI) {
   let activeWorkspace: ReviewWorkspace | null = null;
+  let reviewAgentStarted: (() => void) | null = null;
+
+  pi.on("agent_start", () => {
+    reviewAgentStarted?.();
+    reviewAgentStarted = null;
+  });
 
   const handler = async (args: string, ctx: ExtensionCommandContext) => {
     if (!ctx.isIdle()) {
@@ -86,20 +92,37 @@ export default function (pi: ExtensionAPI) {
     }
 
     for (const error of errors) ctx.ui.notify(error, "error");
+    if (errors.length > 0 && process.env.URS_REVIEW_TASK_ID) {
+      if (workspace) await cleanupReviewWorkspace(pi, workspace);
+      throw new Error(`Не удалось подготовить все MR:\n${errors.join("\n")}`);
+    }
     if (prepared.length === 0) {
       if (workspace) await cleanupReviewWorkspace(pi, workspace);
+      if (process.env.URS_REVIEW_TASK_ID) throw new Error("Не удалось подготовить ни одного MR");
       return;
     }
 
-    renameSession(ctx, sessionNameForPreparedReviews(prepared));
+    const batchTaskId = extractTaskId(process.env.URS_REVIEW_TASK_ID ?? "");
+    const sessionName = sessionNameForPreparedReviews(prepared);
+    renameSession(ctx, batchTaskId ? `${batchTaskId} review · ${sessionName}` : sessionName);
     const reviewContext = buildReviewContext(prepared, params.extraInfo, relatedTasks);
     activeWorkspace = workspace;
+    let startTimer: ReturnType<typeof setTimeout> | undefined;
     try {
+      const agentStarted = new Promise<void>((resolve, reject) => {
+        reviewAgentStarted = resolve;
+        startTimer = setTimeout(() => reject(new Error("Агент ревью не запустился за 30 секунд")), 30_000);
+      });
       pi.sendUserMessage(`/skill:mr-review\n\n${reviewContext}`);
+      await agentStarted;
+      await ctx.waitForIdle();
     } catch (error) {
       if (activeWorkspace) await cleanupReviewWorkspace(pi, activeWorkspace);
       activeWorkspace = null;
       throw error;
+    } finally {
+      if (startTimer) clearTimeout(startTimer);
+      reviewAgentStarted = null;
     }
   };
 
