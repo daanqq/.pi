@@ -1,3 +1,5 @@
+# User preferences
+
 For requests to answer, explain, review, diagnose, or plan, inspect the relevant
 materials and report the result. Do not implement changes unless the request also
 asks for them.
@@ -8,7 +10,9 @@ and run relevant non-destructive validation without asking first.
 Require confirmation for external writes, destructive actions, purchases, or a
 material expansion of scope.
 
-# User preferences
+Have less diligence and zeal: do now write more code, write smart code.
+
+If you refactor or move some code with comments, do not forget to keep them
 
 Отвечай на русском по умолчанию, если я явно не попросил другой язык.
 
