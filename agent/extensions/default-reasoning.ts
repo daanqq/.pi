@@ -30,6 +30,14 @@ function getDefaultThinkingLevel(provider: string, modelId: string): ThinkingLev
   return undefined;
 }
 
+function isGptModel(model: ModelLike | undefined): boolean {
+  if (!model) return false;
+
+  const provider = model.provider.toLowerCase();
+  const id = model.id.toLowerCase();
+  return provider.includes("openai") || provider.includes("codex") || id.includes("gpt");
+}
+
 function hasConversationEntries(ctx: { sessionManager: { getEntries(): Array<{ type?: string }> } }): boolean {
   return ctx.sessionManager.getEntries().some((entry) => entry.type === "message");
 }
@@ -72,6 +80,12 @@ function isContextCacheAlreadyExpiredByTime(ctx: { sessionManager: { getEntries(
   return lastResponseTimestamp !== undefined && Date.now() - lastResponseTimestamp >= CONTEXT_CACHE_TTL_MS;
 }
 
+function showThinkingCacheWarning(ctx: any, level: ThinkingLevel) {
+  queueMicrotask(() => {
+    ctx.ui.notify(`Thinking level: ${level} • Context cache will be invalidated`, "info");
+  });
+}
+
 function sameModel(a: ModelLike | undefined, b: ModelLike | undefined) {
   return Boolean(a && b && a.provider === b.provider && a.id === b.id);
 }
@@ -85,10 +99,13 @@ function showModelCacheWarning(ctx: any, model: ModelLike, getThinkingLevel: () 
 }
 
 export default function defaultReasoningExtension(pi: ExtensionAPI) {
+  let suppressNextThinkingWarning = false;
+  let sessionInitialThinkingLevel: ThinkingLevel | undefined;
   let sessionInitialModel: ModelLike | undefined;
   let pendingModelWarningTimer: ReturnType<typeof setTimeout> | undefined;
 
   pi.on("session_start", (_event, ctx) => {
+    sessionInitialThinkingLevel = pi.getThinkingLevel();
     sessionInitialModel = ctx.model;
   });
 
@@ -118,6 +135,7 @@ export default function defaultReasoningExtension(pi: ExtensionAPI) {
     if (event.source === "restore") return;
 
     if (!event.model.reasoning) {
+      if (pi.getThinkingLevel() !== "off") suppressNextThinkingWarning = true;
       pi.setThinkingLevel("off");
       return;
     }
@@ -125,7 +143,25 @@ export default function defaultReasoningExtension(pi: ExtensionAPI) {
     const defaultLevel = getDefaultThinkingLevel(event.model.provider, event.model.id);
     if (!defaultLevel) return;
 
+    if (pi.getThinkingLevel() !== defaultLevel) suppressNextThinkingWarning = true;
     pi.setThinkingLevel(defaultLevel);
+  });
+
+  pi.on("thinking_level_select", (event, ctx) => {
+    if (suppressNextThinkingWarning) {
+      suppressNextThinkingWarning = false;
+      return;
+    }
+
+    if (!event.previousLevel || event.previousLevel === event.level) return;
+    if (sessionInitialThinkingLevel && event.level === sessionInitialThinkingLevel) {
+      clearCacheWarning(ctx);
+      return;
+    }
+    if (!hasConversationEntries(ctx) || !isGptModel(ctx.model) || isContextCacheAlreadyExpiredByTime(ctx)) return;
+
+    clearCacheWarning(ctx);
+    showThinkingCacheWarning(ctx, event.level);
   });
 
   pi.on("before_agent_start", (_event, ctx) => {
