@@ -8,6 +8,25 @@ and run relevant non-destructive validation without asking first.
 Require confirmation for external writes, destructive actions, purchases, or a
 material expansion of scope.
 
+# Subagents and review budget
+
+- По умолчанию используй не более одного subagent на один запрос пользователя.
+- Фраза «проведи ревью subagent» означает ровно один read-only проход одним
+  subagent: без автоматических исправлений, повторного ревью и дополнительных
+  reviewer-сессий.
+- Каждый subagent, выполняющий code review, всегда должен запускаться с
+  `harness: "pi"`, `model: "openai-codex/gpt-5.6-luna"` и
+  `reasoning_effort: "high"`.
+- Не запускай цикл review → fix → rereview, если пользователь явно не вызвал
+  workflow или skill, который требует такого цикла.
+- `implement-loop` — единственное стандартное исключение из лимита одного
+  subagent. За один его вызов разрешено не более шести subagent-сессий суммарно:
+  максимум три раунда, в каждом ровно два параллельных reviewer-а — Standards и
+  Spec. Не запускай вспомогательных, replacement, completion или final-review
+  subagent-ов сверх этих шести; неудачный или отменённый запуск тоже считается.
+- Если для любого другого запроса требуется больше одного subagent или лимита
+  `implement-loop` недостаточно, сначала запроси явное подтверждение пользователя.
+
 # User preferences
 
 Отвечай на русском по умолчанию, если я явно не попросил другой язык.
