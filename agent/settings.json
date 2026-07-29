@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.82.0",
+  "lastChangelogVersion": "0.82.1",
   "defaultThinkingLevel": "medium",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.6-sol",
@@ -24,8 +24,7 @@
   },
   "enabledModels": [
     "deepseek/deepseek-v4-pro",
-    "openai-codex/gpt-5.6-sol",
-    "anthropic/claude-opus-4-8"
+    "openai-codex/gpt-5.6-sol"
   ],
   "externalEditor": "code --wait",
   "transport": "sse",
