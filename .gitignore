@@ -37,3 +37,7 @@ node_modules/
 tmp/
 temp/
 *.log
+
+# Python cache
+__pycache__/
+*.py[cod]
