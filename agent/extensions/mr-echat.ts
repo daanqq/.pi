@@ -9,10 +9,11 @@
  * её модель, system prompt, tools и provider cache affinity.
  *
  * Использование:
- *   /mr-echat [task-branch]
+ *   /mr-echat [task-branch] [--cwd <repo-path>]
  *
  *   task-branch — опционально: название ветки задачи. Если команда запущена
  *   на базовой ветке, перед началом работы будет создана ветка с этим названием.
+ *   --cwd — опционально: git-репозиторий, относительно cwd сессии или абсолютный.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -116,6 +117,11 @@ DESC:
 
 type LogFn = (event: string, details?: Record<string, unknown>) => void;
 
+type CommandArgs = {
+  taskBranch?: string;
+  cwd?: string;
+};
+
 type SessionGenerationFn = (
   ctx: any,
   prompt: string,
@@ -131,6 +137,32 @@ function assistantMessageText(message: any): string {
     .map((part: any) => part.text)
     .join("\n")
     .trim();
+}
+
+/** Разобрать позиционную ветку и опциональную рабочую директорию. */
+function parseCommandArgs(raw: string): CommandArgs {
+  const parts = raw.trim().split(/\s+/).filter(Boolean);
+  let taskBranch: string | undefined;
+  let cwd: string | undefined;
+
+  for (let index = 0; index < parts.length; index++) {
+    const part = parts[index];
+    if (part === "--cwd") {
+      cwd = parts[++index];
+      if (!cwd) throw new Error("После --cwd нужно указать путь к репозиторию");
+    } else if (part.startsWith("--cwd=")) {
+      cwd = part.slice("--cwd=".length);
+      if (!cwd) throw new Error("После --cwd= нужно указать путь к репозиторию");
+    } else if (part.startsWith("-")) {
+      throw new Error(`Неизвестный аргумент: ${part}`);
+    } else if (!taskBranch) {
+      taskBranch = part;
+    } else {
+      throw new Error(`Лишний аргумент: ${part}`);
+    }
+  }
+
+  return { taskBranch, cwd };
 }
 
 /** Создать best-effort логгер одного запуска, не влияющий на основной workflow. */
@@ -385,17 +417,33 @@ function getLastAgentResponse(ctx: any): string | null {
   return null;
 }
 
-/** Проверить, что мы в git-репозитории. Если нет — найти дочерние и дать выбрать. */
+/** Проверить выбранную директорию. Без явного пути при необходимости найти дочерний репозиторий. */
 async function ensureGitRepo(
   pi: ExtensionAPI,
   ctx: any,
+  requestedCwd?: string,
 ): Promise<string | null> {
-  const cwd = ctx.cwd || process.cwd();
+  const sessionCwd = ctx.cwd || process.cwd();
+  const cwd = requestedCwd ? path.resolve(sessionCwd, requestedCwd) : sessionCwd;
+
+  if (requestedCwd) {
+    try {
+      if (!fs.statSync(cwd).isDirectory()) throw new Error("not a directory");
+    } catch {
+      ctx.ui.notify(`Директория не найдена: ${cwd}`, "error");
+      return null;
+    }
+  }
 
   // Проверяем, является ли текущая папка git-репозиторием
-  const check = await pi.exec("git", ["rev-parse", "--git-dir"], { cwd });
+  const check = await pi.exec("git", ["rev-parse", "--show-toplevel"], { cwd });
   if (check.code === 0) {
-    return cwd;
+    return check.stdout.trim() || cwd;
+  }
+
+  if (requestedCwd) {
+    ctx.ui.notify(`Не git-репозиторий: ${cwd}`, "error");
+    return null;
   }
 
   // Не репозиторий — ищем дочерние папки с .git
@@ -635,17 +683,14 @@ export default function (pi: ExtensionAPI) {
       return null;
     }
 
-    const previousThinking = pi.getThinkingLevel();
     const previousLeafId = ctx.sessionManager.getLeafId();
     const startedAt = Date.now();
     try {
       sessionGenerationActive = true;
-      if (previousThinking !== "low") pi.setThinkingLevel("low");
       log(`${event}:start`, {
         ...details,
         model: `${ctx.model.provider}/${ctx.model.id}`,
         thinking: pi.getThinkingLevel(),
-        previousThinking,
       });
       pi.sendMessage({
         customType: "mr-echat-generation",
@@ -681,12 +726,11 @@ export default function (pi: ExtensionAPI) {
       throw error;
     } finally {
       sessionGenerationActive = false;
-      if (pi.getThinkingLevel() !== previousThinking) pi.setThinkingLevel(previousThinking);
     }
   };
 
   pi.registerCommand("mr-echat", {
-    description: "Commit + push + создать MR через glab; аргумент — ветка задачи",
+    description: "Commit + push + создать MR через glab; [ветка] [--cwd путь]",
     handler: async (args, ctx) => {
       const log = createRunLogger();
       log("run:start", { cwd: ctx.cwd || process.cwd(), args: args.trim() });
@@ -697,12 +741,13 @@ export default function (pi: ExtensionAPI) {
         }
         await ctx.waitForIdle();
 
-        const taskBranch = args.trim() || undefined;
+        const { taskBranch, cwd: requestedCwd } = parseCommandArgs(args);
         const lastAgentResponse = getLastAgentResponse(ctx);
 
         // 0. Определить рабочую директорию (git-репозиторий)
-        const repoDir = await ensureGitRepo(pi, ctx);
+        const repoDir = await ensureGitRepo(pi, ctx, requestedCwd);
         if (!repoDir) return;
+        log("repo:selected", { repoDir, explicit: Boolean(requestedCwd) });
 
         // Обёртка pi.exec с фиксированным cwd
         const exec: ExecFn = async (cmd, args, opts) => {
