@@ -4,6 +4,22 @@ export interface NumberedDiffLine {
 	text: string;
 }
 
+export function formatPatchSummaryCounts(
+	summary: string,
+	formatAdded: (text: string) => string,
+	formatRemoved: (text: string) => string,
+	formatMuted: (text: string) => string,
+): string {
+	return summary
+		.split("\n")
+		.map((line) => {
+			const counts = line.match(/^(.*?)(\+\d+)(\s+)(-\d+)$/);
+			if (!counts) return formatMuted(line);
+			return `${formatMuted(counts[1]!)}${formatAdded(counts[2]!)}${formatMuted(counts[3]!)}${formatRemoved(counts[4]!)}`;
+		})
+		.join(formatMuted("\n"));
+}
+
 export function formatNumberedDiffLines(lines: NumberedDiffLine[]): string[] {
 	const width = Math.max(1, ...lines.map(({ lineNumber }) => lineNumber === undefined ? 0 : String(lineNumber).length));
 	return lines.map(({ marker, lineNumber, text }) => {

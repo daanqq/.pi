@@ -6,7 +6,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { keyHint, renderDiff, withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { Box, Container, Spacer, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { buildUpdatePreview, formatNumberedDiffLines, numberUpdateDiffLines } from "./diff-lines.ts";
+import { buildUpdatePreview, formatNumberedDiffLines, formatPatchSummaryCounts, numberUpdateDiffLines } from "./diff-lines.ts";
 
 const APPLY_PATCH_PARAMETERS = Type.Object({
 	input: Type.String({
@@ -348,10 +348,12 @@ function formatApplyPatchHeader(
 }
 
 function formatApplyPatchHeaderSummary(summary: string, theme: { fg(role: string, text: string): string }): string {
-	return summary
-		.split(/([+-]\d+)/g)
-		.map((part) => part.startsWith("+") ? theme.fg("toolDiffAdded", part) : part.startsWith("-") ? theme.fg("toolDiffRemoved", part) : theme.fg("muted", part))
-		.join("");
+	return formatPatchSummaryCounts(
+		summary,
+		(text) => theme.fg("toolDiffAdded", text),
+		(text) => theme.fg("toolDiffRemoved", text),
+		(text) => theme.fg("muted", text),
+	);
 }
 
 function formatInProgressApplyPatchSummary(actions: Array<{ path: string; movePath?: string | undefined }>, cwd: string): string {

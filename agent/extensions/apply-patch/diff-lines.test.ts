@@ -1,6 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildUpdatePreview, formatNumberedDiffLines, numberUpdateDiffLines } from "./diff-lines.ts";
+import { buildUpdatePreview, formatNumberedDiffLines, formatPatchSummaryCounts, numberUpdateDiffLines } from "./diff-lines.ts";
+
+test("colors only trailing patch counts in a summary", () => {
+	const rendered = formatPatchSummaryCounts(
+		"../tidy-client-EUIP-159592/file.ts +5 -22",
+		(text) => `<added>${text}</added>`,
+		(text) => `<removed>${text}</removed>`,
+		(text) => `<muted>${text}</muted>`,
+	);
+	assert.equal(rendered, "<muted>../tidy-client-EUIP-159592/file.ts </muted><added>+5</added><muted> </muted><removed>-22</removed>");
+});
 
 test("hides context-only preview lines for a pure move", () => {
 	assert.deepEqual(buildUpdatePreview([
