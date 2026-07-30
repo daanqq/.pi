@@ -24,7 +24,7 @@ Review the targets described by the review context passed in the skill arguments
 ## Workflow
 
 1. Read the complete review context included in the user request.
-2. Load and read the complete `thermo-nuclear-code-quality-review` skill from `~/.agents/skills/thermo-nuclear-code-quality-review/SKILL.md`. Apply it as the mandatory quality bar unless the user explicitly opts out.
+2. Load and read the complete `thermo-nuclear-code-quality-review` skill from `~/.pi/agent/skills/thermo-nuclear-code-quality-review/SKILL.md`. Apply it as the mandatory quality bar unless the user explicitly opts out.
 3. Run the listed diff commands and inspect repository status where present.
 4. Read every changed file needed to understand the implementation, plus immediate callers, consumers, tests, schemas, mappers, and canonical helpers.
 5. Build the end-to-end flow before judging individual fragments. For protocol or API changes, inspect producers and consumers on both sides.
