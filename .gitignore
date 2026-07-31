@@ -14,6 +14,7 @@ agent/mcp-npx-cache.json
 agent/mcp-onboarding.json
 agent/codex-usage/
 agent/sessions/
+agent/subagent-sessions/
 cache/
 logs/
 memory/

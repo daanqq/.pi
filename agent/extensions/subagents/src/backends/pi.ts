@@ -3,14 +3,16 @@
  *
  * Each subagent is an in-process `AgentSession` (a port of v1
  * subagents/manager.ts + shared/child-session.ts):
- * - real session files visible in /resume, child resources loaded per-cwd
- *   with trust gating, and the child tool denylist;
+ * - real session files stored outside the main /resume and Pond session tree,
+ *   child resources loaded per-cwd with trust gating, and the child tool
+ *   denylist;
  * - `session.subscribe()` events translated to normalized SubagentEvents;
  * - send() steers a streaming run or starts a fresh prompt() when idle;
  * - interrupt clears the queue and aborts; closing the session scope emits
  *   the child session_shutdown hook and disposes the session.
  */
 
+import { join } from "node:path";
 import type { AssistantMessage, Message, Model } from "@earendil-works/pi-ai";
 import type {
   AgentSession,
@@ -287,7 +289,10 @@ const makePiSession = (
         );
         const { session } = await createAgentSession({
           cwd: task.cwd,
-          sessionManager: SessionManager.create(task.cwd),
+          sessionManager: SessionManager.create(
+            task.cwd,
+            join(getAgentDir(), "subagent-sessions"),
+          ),
           settingsManager,
           resourceLoader: loader,
           model,
