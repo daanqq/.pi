@@ -88,6 +88,7 @@ const COLLAPSED_PREVIEW_LINE_LIMIT = 40;
 
 export default function (pi: ExtensionAPI) {
 	let editHiddenByGptToolPolicy = false;
+	let writeHiddenByGptToolPolicy = false;
 
 	const applyModelToolPolicy = (model: ModelLike | undefined) => {
 		const activeTools = pi.getActiveTools();
@@ -101,9 +102,16 @@ export default function (pi: ExtensionAPI) {
 				editHiddenByGptToolPolicy = true;
 				changed = true;
 			}
+			const writeIndex = nextTools.indexOf("write");
+			if (writeIndex !== -1) {
+				nextTools.splice(writeIndex, 1);
+				writeHiddenByGptToolPolicy = true;
+				changed = true;
+			}
 
 			if (!nextTools.includes("apply_patch")) {
-				const insertAt = editIndex === -1 ? nextTools.length : Math.min(editIndex, nextTools.length);
+				const replacedIndexes = [editIndex, writeIndex].filter((index) => index !== -1);
+				const insertAt = replacedIndexes.length === 0 ? nextTools.length : Math.min(...replacedIndexes, nextTools.length);
 				nextTools.splice(insertAt, 0, "apply_patch");
 				changed = true;
 			}
@@ -119,7 +127,13 @@ export default function (pi: ExtensionAPI) {
 				nextTools.splice(insertAt, 0, "edit");
 				changed = true;
 			}
+			if (writeHiddenByGptToolPolicy && !nextTools.includes("write")) {
+				const insertAt = patchIndex === -1 ? nextTools.length : Math.min(patchIndex, nextTools.length);
+				nextTools.splice(insertAt, 0, "write");
+				changed = true;
+			}
 			editHiddenByGptToolPolicy = false;
+			writeHiddenByGptToolPolicy = false;
 		}
 
 		if (changed) pi.setActiveTools(uniqueStrings(nextTools));
