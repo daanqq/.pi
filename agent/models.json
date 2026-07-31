@@ -31,8 +31,7 @@
         },
         "gpt-5.6-luna": {
           "thinkingLevelMap": {
-            "minimal": null,
-            "max": null
+            "minimal": null
           }
         }
       }

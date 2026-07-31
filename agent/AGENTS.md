@@ -16,7 +16,7 @@ material expansion of scope.
   reviewer-сессий.
 - Каждый subagent, выполняющий code review, всегда должен запускаться с
   `harness: "pi"`, `model: "openai-codex/gpt-5.6-luna"` и
-  `reasoning_effort: "high"`.
+  `reasoning_effort: "xhigh"`.
 - Не запускай цикл review → fix → rereview, если пользователь явно не вызвал
   workflow или skill, который требует такого цикла.
 - `implement-loop` — единственное стандартное исключение из лимита одного
