@@ -1,6 +1,7 @@
 ---
 name: prompt-ab-experiment
 description: Controlled A/B experiment for measuring the effect of a prompt fragment or skill. Use when the user wants to test whether instructions change model behavior, compare a prompt or skill against a baseline, or quantify prompt compliance.
+disable-model-invocation: true
 ---
 
 # Prompt A/B Experiment
