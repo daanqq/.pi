@@ -1,6 +1,6 @@
 {
-  "lastChangelogVersion": "0.82.1",
-  "defaultThinkingLevel": "medium",
+  "lastChangelogVersion": "0.83.0",
+  "defaultThinkingLevel": "low",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.6-sol",
   "packages": [
@@ -10,21 +10,26 @@
         "-skills/librarian/SKILL.md"
       ]
     },
-    "git:github.com/daanqq/pi-diff-review",
     "npm:pi-system-prompt",
     "npm:@ff-labs/pi-fff",
     "npm:@plannotator/pi-extension",
-    "npm:pi-mcp-adapter"
+    {
+      "source": "npm:pi-mcp-adapter",
+      "extensions": [
+        "-index.ts"
+      ]
+    },
+    "git:github.com/algal/pi-openai-server-compaction"
   ],
   "hideThinkingBlock": false,
   "theme": "alabaster",
-  "quietStartup": true,
+  "quietStartup": false,
   "compaction": {
     "enabled": false
   },
   "enabledModels": [
-    "deepseek/deepseek-v4-pro",
-    "openai-codex/gpt-5.6-sol"
+    "openai-codex/gpt-5.6-sol",
+    "openai-codex/gpt-5.6-luna"
   ],
   "externalEditor": "code --wait",
   "transport": "auto",
@@ -54,9 +59,14 @@
     "-extensions/agents-local.ts",
     "-extensions/handoff.ts",
     "-extensions/session-hygiene.ts",
-    "-extensions/codex-review.ts"
+    "-extensions/codex-review.ts",
+    "-extensions/workflows/index.ts",
+    "-extensions/background-terminals/index.ts"
   ],
   "httpIdleTimeoutMs": 120000,
   "defaultProjectTrust": "always",
-  "outputPad": 0
+  "outputPad": 0,
+  "skills": [
+    "-skills/background-terminals/SKILL.md"
+  ]
 }
