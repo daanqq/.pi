@@ -245,7 +245,12 @@ function audit(pi: ExtensionAPI, type: string, data: Record<string, unknown>): v
   }
 }
 
-async function scanCandidates(state: RotationState, skipProfile?: string, signal?: AbortSignal): Promise<CandidateScan[]> {
+async function scanCandidates(
+  state: RotationState,
+  skipProfile?: string,
+  signal?: AbortSignal,
+  eligibleAbovePercent = CONFIG.eligibleAbovePercent,
+): Promise<CandidateScan[]> {
   const list = listProfiles();
   const now = Date.now();
   pruneCooldowns(state, now);
@@ -263,7 +268,7 @@ async function scanCandidates(state: RotationState, skipProfile?: string, signal
         const quota = await fetchQuotaForCredential(token.credential, token.accountId ?? profile.accountId, signal);
         const normalizedQuota = normalizeQuota(quota);
         if (normalizedQuota) state.lastQuotaByProfile[profile.name] = normalizedQuota;
-        return scoreCandidate({ profile, token, quota, normalizedQuota, eligible: false }, CONFIG.eligibleAbovePercent);
+        return scoreCandidate({ profile, token, quota, normalizedQuota, eligible: false }, eligibleAbovePercent);
       } catch (error) {
         state.cooldowns[profile.name] = { until: Date.now() + CONFIG.cooldownMs, reason: "auth_error" };
         return { profile, eligible: false, reason: error instanceof Error ? error.message : String(error) };
@@ -326,7 +331,7 @@ async function rotateToBest(
   pi: ExtensionAPI,
   ctx: ExtensionContext | ExtensionCommandContext,
   reason: string,
-  options: { force?: boolean; skipProfile?: string } = {},
+  options: { force?: boolean; skipProfile?: string; eligibleAbovePercent?: number } = {},
 ): Promise<RotationResult> {
   if (providerInFlight && !options.force) return { rotated: false, reason: "provider request in flight" };
 
@@ -343,7 +348,7 @@ async function rotateToBest(
     })();
     const from = stateProfileForCurrent(state, list.current);
     const skipProfile = options.skipProfile ?? from;
-    const scans = await scanCandidates(state, skipProfile, signal);
+    const scans = await scanCandidates(state, skipProfile, signal, options.eligibleAbovePercent);
     const winner = chooseBestCandidate(scans);
     if (!winner) {
       audit(pi, "codex-usage-skip", { from, reason, detail: "no eligible profiles", scans: summarizeScans(scans) });
@@ -777,7 +782,7 @@ export default function (pi: ExtensionAPI) {
         }
         if (action === "now") {
           await ctx.waitForIdle();
-          const result = await rotateToBest(pi, ctx, "manual_now", { force: true });
+          const result = await rotateToBest(pi, ctx, "manual_now", { force: true, eligibleAbovePercent: 0 });
           if (!result.rotated) notify(ctx, `Codex rotation skipped: ${result.reason}`, "warning");
           return;
         }
@@ -799,7 +804,7 @@ export default function (pi: ExtensionAPI) {
     handler: async (_args, ctx) => {
       try {
         await ctx.waitForIdle();
-        const result = await rotateToBest(pi, ctx, "manual_now", { force: true });
+        const result = await rotateToBest(pi, ctx, "manual_now", { force: true, eligibleAbovePercent: 0 });
         if (!result.rotated) notify(ctx, `Codex rotation skipped: ${result.reason}`, "warning");
       } catch (error) {
         notify(ctx, `Codex rotation error: ${error instanceof Error ? error.message : String(error)}`, "error");

@@ -178,7 +178,7 @@ Shows current usage/rotation state:
 
 ### `/codex:rotate now`
 
-Forces a scan of saved profiles and switches to the best eligible profile.
+Forces a scan of saved profiles and switches to the profile with the most remaining quota. Manual rotation does not apply the automatic rotation candidate threshold.
 
 ### `/rotate`
 
