@@ -6,7 +6,8 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { keyHint, renderDiff, withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { Box, Container, Spacer, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { buildUpdatePreview, formatNumberedDiffLines, formatPatchSummaryCounts, numberUpdateDiffLines } from "./diff-lines.ts";
+import { buildReplacementPreview, buildUpdatePreview, formatNumberedDiffLines, formatPatchSummaryCounts, numberUpdateDiffLines } from "./diff-lines.ts";
+import { normalizePatchPath, parsePatchActionHeaders, parsePatchActions, type ParsedPatchAction } from "./patch-actions.ts";
 
 const APPLY_PATCH_PARAMETERS = Type.Object({
 	input: Type.String({
@@ -14,14 +15,6 @@ const APPLY_PATCH_PARAMETERS = Type.Object({
 			"Required. The complete patch text, starting with *** Begin Patch and ending with *** End Patch. Do not use fields named patch, patchText, command, or content.",
 	}),
 }, { additionalProperties: false });
-
-interface ParsedPatchAction {
-	type: "add" | "delete" | "update";
-	path: string;
-	movePath?: string | undefined;
-	newFile?: string | undefined;
-	lines?: string[] | undefined;
-}
 
 interface ExecutePatchResult {
 	changedFiles: string[];
@@ -156,6 +149,7 @@ export default function (pi: ExtensionAPI) {
 		promptGuidelines: [
 			"Use apply_patch to create, update, delete, or move files. Always call apply_patch with exactly one JSON field: input.",
 			"The apply_patch input value must contain the full patch text from *** Begin Patch through *** End Patch.",
+			"Every *** Update File action, including a pure move with *** Move to, must contain at least one non-empty @@ hunk. A Move to header alone is invalid; use Delete File plus Add File when replacing an existing destination.",
 			"Do not call apply_patch with patch, patchText, command, content, or raw text outside the input field.",
 			"Group related edits in one apply_patch call, and read failed files before retrying after partial_failure.",
 		],
@@ -381,20 +375,6 @@ function formatInProgressApplyPatchBody(actions: Array<{ path: string; movePath?
 	return actions.map((action) => `  └ ${formatPatchTarget(action.path, action.movePath, cwd)}`).join("\n");
 }
 
-function parsePatchActionHeaders(text: string): Array<{ path: string; movePath?: string | undefined }> {
-	const actions: Array<{ path: string; movePath?: string | undefined }> = [];
-	let current: { path: string; movePath?: string | undefined } | undefined;
-	for (const line of text.split("\n")) {
-		if (line.startsWith("*** Add File: ") || line.startsWith("*** Delete File: ") || line.startsWith("*** Update File: ")) {
-			current = { path: normalizePatchPath(line.slice(line.indexOf(": ") + 2)) };
-			actions.push(current);
-			continue;
-		}
-		if (current && line.startsWith("*** Move to: ")) current.movePath = normalizePatchPath(line.slice("*** Move to: ".length));
-	}
-	return actions.filter((action) => action.path.length > 0);
-}
-
 function previewPatch(patchText: string, cwd: string): PatchPreview {
 	try {
 		const files = buildFilePreviews(patchText, cwd);
@@ -527,77 +507,6 @@ async function withPatchMutationQueues<T>(cwd: string, patchText: string, fn: ()
 		return withFileMutationQueue(absolutePaths[index]!, () => run(index + 1));
 	};
 	return run(0);
-}
-
-function parsePatchActions(text: string): ParsedPatchAction[] {
-	// The bundled binary accepts both LF and CRLF patches. Normalize here too so
-	// the TUI preview does not report a false "No files were modified" after a
-	// CRLF patch was successfully applied.
-	const lines = text.trim().replace(/\r\n?/g, "\n").split("\n");
-	if (lines.length < 2 || !lines[0]!.startsWith("*** Begin Patch") || lines.at(-1) !== "*** End Patch") {
-		throw new Error("Invalid patch text");
-	}
-	const actions: ParsedPatchAction[] = [];
-	const seenPaths = new Set<string>();
-	let index = 1;
-	while (index < lines.length - 1) {
-		const line = lines[index]!;
-		if (line.startsWith("*** Add File: ")) {
-			const path = normalizePatchPath(line.slice("*** Add File: ".length));
-			checkDuplicatePath(seenPaths, path, "Add File");
-			index += 1;
-			const newLines: string[] = [];
-			while (index < lines.length - 1 && !isActionHeader(lines[index]!)) {
-				const value = lines[index]!;
-				if (!value.startsWith("+")) throw new Error(`Invalid Add File line: ${value}`);
-				newLines.push(value.slice(1));
-				index += 1;
-			}
-			actions.push({ type: "add", path, newFile: newLines.length === 0 ? "" : `${newLines.join("\n")}\n` });
-			continue;
-		}
-		if (line.startsWith("*** Delete File: ")) {
-			const path = normalizePatchPath(line.slice("*** Delete File: ".length));
-			checkDuplicatePath(seenPaths, path, "Delete File");
-			actions.push({ type: "delete", path });
-			index += 1;
-			continue;
-		}
-		if (line.startsWith("*** Update File: ")) {
-			const path = normalizePatchPath(line.slice("*** Update File: ".length));
-			checkDuplicatePath(seenPaths, path, "Update File");
-			index += 1;
-			let movePath: string | undefined;
-			if (index < lines.length - 1 && lines[index]!.startsWith("*** Move to: ")) {
-				movePath = normalizePatchPath(lines[index]!.slice("*** Move to: ".length));
-				index += 1;
-			}
-			const bodyStart = index;
-			while (index < lines.length - 1 && !isActionHeader(lines[index]!)) index += 1;
-			const bodyLines = lines.slice(bodyStart, index);
-			if (bodyLines.length === 0) throw new Error(`Update file hunk for '${path}' is empty`);
-			actions.push({ type: "update", path, movePath, lines: bodyLines });
-			continue;
-		}
-		throw new Error(`Invalid patch hunk: ${line}`);
-	}
-	if (actions.length === 0) throw new Error("No files were modified.");
-	return actions;
-}
-
-function isActionHeader(line: string): boolean {
-	return line.startsWith("*** Add File: ") || line.startsWith("*** Delete File: ") || line.startsWith("*** Update File: ");
-}
-
-function checkDuplicatePath(seenPaths: Set<string>, path: string, action: string): void {
-	if (seenPaths.has(path)) throw new Error(`${action} Error: Duplicate Path: ${path}`);
-	seenPaths.add(path);
-}
-
-function normalizePatchPath(path: string): string {
-	const trimmed = path.trim();
-	const withoutAt = trimmed.startsWith("@") ? trimmed.slice(1) : trimmed;
-	return withoutAt.replace(/^['"]|['"]$/g, "");
 }
 
 function resolvePatchPath(cwd: string, patchPath: string): string {
@@ -749,24 +658,38 @@ function formatApplyPatchDiffFromFiles(files: FilePreview[], cwd: string): strin
 }
 
 function buildFilePreviews(patchText: string, cwd: string): FilePreview[] {
-	try {
-		return parsePatchActions(patchText).map((action) => {
-			if (action.type === "add") {
-				const lines = splitFileLines(action.newFile ?? "");
-				return { verb: "Added", path: action.path, added: lines.length, removed: 0, lines: formatNumberedDiffLines(lines.map((text, index) => ({ marker: "+", lineNumber: index + 1, text }))) };
-			}
-			if (action.type === "delete") {
-				const lines = readFileLines(cwd, action.path);
-				return { verb: "Deleted", path: action.path, added: 0, removed: lines.length, lines: formatNumberedDiffLines(lines.map((text, index) => ({ marker: "-", lineNumber: index + 1, text }))) };
-			}
-			const body = action.lines ?? [];
-			const numbered = numberUpdateDiffLines(readFileLines(cwd, action.path), body);
-			const updatePreview = buildUpdatePreview(numbered, Boolean(action.movePath));
-			return { verb: updatePreview.pureMove ? "Moved" : "update", path: action.path, movePath: action.movePath, ...updatePreview };
-		});
-	} catch {
-		return [];
+	const actions = parsePatchActions(patchText);
+	const files: FilePreview[] = [];
+	for (let index = 0; index < actions.length; index += 1) {
+		const action = actions[index]!;
+		const nextAction = actions[index + 1];
+		if (action.type === "delete" && nextAction?.type === "add" && action.path === nextAction.path) {
+			const removedLines = readFileLines(cwd, action.path);
+			const addedLines = splitFileLines(nextAction.newFile ?? "");
+			files.push({
+				verb: "update",
+				path: action.path,
+				...buildReplacementPreview(removedLines, addedLines),
+			});
+			index += 1;
+			continue;
+		}
+		if (action.type === "add") {
+			const lines = splitFileLines(action.newFile ?? "");
+			files.push({ verb: "Added", path: action.path, added: lines.length, removed: 0, lines: formatNumberedDiffLines(lines.map((text, index) => ({ marker: "+", lineNumber: index + 1, text }))) });
+			continue;
+		}
+		if (action.type === "delete") {
+			const lines = readFileLines(cwd, action.path);
+			files.push({ verb: "Deleted", path: action.path, added: 0, removed: lines.length, lines: formatNumberedDiffLines(lines.map((text, index) => ({ marker: "-", lineNumber: index + 1, text }))) });
+			continue;
+		}
+		const body = action.lines ?? [];
+		const numbered = numberUpdateDiffLines(readFileLines(cwd, action.path), body);
+		const updatePreview = buildUpdatePreview(numbered, Boolean(action.movePath));
+		files.push({ verb: updatePreview.pureMove ? "Moved" : "update", path: action.path, movePath: action.movePath, ...updatePreview });
 	}
+	return files;
 }
 
 function readFileLines(cwd: string, path: string): string[] {

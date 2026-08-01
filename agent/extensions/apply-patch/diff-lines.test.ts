@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildUpdatePreview, formatNumberedDiffLines, formatPatchSummaryCounts, numberUpdateDiffLines } from "./diff-lines.ts";
+import { buildReplacementPreview, buildUpdatePreview, formatNumberedDiffLines, formatPatchSummaryCounts, numberUpdateDiffLines } from "./diff-lines.ts";
 
 test("colors only trailing patch counts in a summary", () => {
 	const rendered = formatPatchSummaryCounts(
@@ -16,6 +16,14 @@ test("hides context-only preview lines for a pure move", () => {
 	assert.deepEqual(buildUpdatePreview([
 		{ marker: " ", lineNumber: 2, text: "name: example" },
 	], true), { added: 0, removed: 0, lines: [], pureMove: true });
+});
+
+test("renders a delete-add replacement as one full-file diff", () => {
+	assert.deepEqual(buildReplacementPreview(["old one", "old two"], ["new"]), {
+		added: 1,
+		removed: 2,
+		lines: ["-1 old one", "-2 old two", "+1 new"],
+	});
 });
 
 test("keeps the diff body aligned across line-number digit boundaries", () => {

@@ -35,6 +35,17 @@ export function buildUpdatePreview(numbered: NumberedDiffLine[], hasMovePath: bo
 	return { added, removed, lines: pureMove ? [] : formatNumberedDiffLines(numbered), pureMove };
 }
 
+export function buildReplacementPreview(original: string[], replacement: string[]): { added: number; removed: number; lines: string[] } {
+	return {
+		added: replacement.length,
+		removed: original.length,
+		lines: formatNumberedDiffLines([
+			...original.map((text, index) => ({ marker: "-" as const, lineNumber: index + 1, text })),
+			...replacement.map((text, index) => ({ marker: "+" as const, lineNumber: index + 1, text })),
+		]),
+	};
+}
+
 export function numberUpdateDiffLines(original: string[], body: string[]): NumberedDiffLine[] {
 	const result: NumberedDiffLine[] = [];
 	let searchFrom = 0;
