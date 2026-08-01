@@ -58,10 +58,11 @@
     "-extensions/open-last-agent-response.ts",
     "-extensions/agents-local.ts",
     "-extensions/handoff.ts",
-    "-extensions/session-hygiene.ts",
     "-extensions/codex-review.ts",
     "-extensions/workflows/index.ts",
-    "-extensions/background-terminals/index.ts"
+    "-extensions/background-terminals/index.ts",
+    "-extensions/session-delete.ts",
+    "-extensions/branch-summary-model.ts"
   ],
   "httpIdleTimeoutMs": 120000,
   "defaultProjectTrust": "always",
