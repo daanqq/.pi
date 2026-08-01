@@ -2,118 +2,51 @@
 
 # pi-config
 
-Personal configuration repository for the `pi` coding agent.
+Personal configuration for the `pi` coding agent.
 
-## Current setup
+## Setup
 
-- Default provider/model: `openai-codex/gpt-5.5`
-- Default thinking level: `low`
-- Enabled models:
-  - `openai-codex/gpt-5.5`
-  - `deepseek/deepseek-v4-pro`
+- Default model: `openai-codex/gpt-5.6-sol`, thinking `low`
 - Theme: `alabaster`
-- Quiet startup enabled
-- Built-in compaction enabled
-- Skill commands enabled
-- Installed pi packages:
-  - `pi-web-access`
-  - `pi-rtk-optimizer`
-  - `pi-total-recall`
+- Packages: `pi-web-access`, `pi-system-prompt`, `@ff-labs/pi-fff`, `@plannotator/pi-extension`, `pi-mcp-adapter`, `pi-openai-server-compaction`
 
-## Tracked files
+## Repository
 
-- `agent/settings.json` — main pi settings: model defaults, packages, UI behavior, enabled models, terminal/editor preferences.
-- `agent/extensions/` — local TypeScript extensions.
-- `agent/skills/` — local agent skills.
-- `agent/zshrc` — lightweight zsh startup sourced only for pi user bash commands.
-- `agent/extensions/pi-rtk-optimizer/config.json` — local RTK/output compaction settings.
-- `agent/themes/alabaster.json` — custom theme.
-- `web-search.json` — web-search defaults.
-- `.gitignore` — excludes local auth, sessions, memory DBs, indexes, logs, caches, and editor files.
+- `agent/settings.json` — Pi settings.
+- `agent/extensions/` — local extensions.
+- `agent/skills/` — local skills.
+- `agent/themes/` — local themes.
+- `agent/zshrc` — shell setup.
 
-## Handoff implementation flow
+## Prompt template
 
-`/handoff-implement [focus]` automates the old manual handoff-to-new-session workflow:
-
-1. waits for the current agent to become idle;
-2. summarizes the active session branch and current git snapshot with the current model;
-3. writes two temp artifacts under `pi-handoffs/`: `handoff-*.md` and `plan-*.md`;
-4. reads `readiness` from generated metadata;
-5. when ready, starts a fresh session by default with a kickoff prompt that tells the new agent to read both artifacts before editing; pass `--confirm` to require an interactive confirmation first.
-
-Flags:
-
-- `--draft` — only generate files and prefill the editor with the kickoff prompt; do not create a new session.
-- `--force` — allow starting even when the generated plan says `readiness: blocked`.
-- `--confirm` — ask for interactive confirmation before starting the fresh implementation session.
-
-Progress while `/handoff-implement` runs is refreshed every second. `Esc` cancels in-flight handoff generation; `/quit` aborts it before shutdown.
-
-If artifact splitting fails, raw model output is saved as `handoff-implement-raw-*.md` and no new session is started.
-
-## Local/runtime files intentionally not tracked
-
-- `agent/auth.json` and backups — local provider credentials.
-- `agent/sessions/` — local pi session logs.
-- `agent/codex-usage/` — local Codex usage/rotation runtime state, lock, and plaintext profile credentials.
-- `memory/` — local memory database.
-- `session-search/` — local session-search index.
-- `*.db`, `*.db-shm`, `*.db-wal`, `*.sqlite*` — runtime databases.
-- `.env*`, keys, logs, cache and editor directories.
-
-## Custom skills
-
-| Skill | What it does |
-| --- | --- |
-| `librarian/` | Caches and refreshes remote git repositories under `~/.cache/checkouts/<host>/<org>/<repo>` with a reusable `checkout.sh` helper. |
-
-## Custom prompt templates
-
-| Template | What it does | Command |
+| Template | Description | Command |
 | --- | --- | --- |
-| `yeet.md` | Expands into the add/commit/push workflow: stage all changes, inspect the staged diff, commit with a concise generated message, push with upstream tracking when needed, and print the repository or pull-request URL. Extra arguments are included as additional instructions. | `/yeet [instructions]` |
+| `yeet.md` | Splits changes into logical commits and pushes them. | `/yeet [instructions]` |
 
-## Custom extensions
+## Extensions
 
-| Extension | What it does | Commands / shortcuts |
+| Extension | Description | Commands |
 | --- | --- | --- |
-| `agent-pulse.ts` | Unified agent activity indicator: replaces the built-in working indicator with a two-space-indented, terminal-width-truncated activity pulse rendered inside the custom input editor via `00-ui-editor.ts`, freezes the initial thinking-level border color through the active and final elapsed-time states, adds a bold shimmer/pulse over the active message text, owns the terminal title, shows working/tool/done states from one shared 120 ms pulse clock, updates terminal titles only on state transitions, keeps the final elapsed-time status visible until the next request, and rings the terminal bell when an agent turn finishes. | — |
-| `agents-local.ts` | Adds `AGENTS.local.md` files to the system prompt on each agent turn, using the same broad shape as Pi context files: global `~/.pi/agent/AGENTS.local.md`, then ancestor directories, then the current directory. | — |
-| `analyze-eutp.ts` | Loads EUTP task data, sends a structured codebase-analysis prompt, and renames the current session to `EUTP-ID: task title` when task data/title is available. | `/analyze-eutp <url> [session] [info]` |
-| `apply-patch/` | Adds an `apply_patch` tool for Codex-style `*** Begin Patch` edits. For GPT/OpenAI/Codex models it hides the built-in `edit` and `write` tools and enables `apply_patch`; for non-GPT models it hides `apply_patch` and restores `edit` and `write` when the extension hid them. Strongly prompts models to call exactly `{ input }`, accepts legacy `{ patch }`/`{ patchText }`/`{ command }`/`{ content }` as recovery aliases, renders Pi-native boxed previews with cached component trees and colored diff bodies, avoids rendering hidden diff lines while collapsed, reuses one parsed file preview for summaries and diffs, shows green/red `+N -M` counts, hides context-only bodies and empty `+0 -0` counts for pure moves, shows active targets, and uses bundled platform binaries with partial-failure recovery guidance. | — |
-| `codex-usage/` | Unified Codex usage extension: owns `/codex:quotas` and its `/status`/`/s` aliases, `/codex:profile`, compact footer quota status without a leading `codex` label, and Codex OAuth profile rotation. It stores native plaintext profiles in `~/.pi/agent/codex-usage/profiles/`, fetches ChatGPT/Codex 5h/7d quota from `chatgpt.com/backend-api/wham/usage`, refetches the active footer quota every 60 seconds so percentages stay current even when rotation is disabled, rotates `openai-codex` credentials across saved native profiles when quota drops below 5%, scores candidates by the weaker quota window, avoids mid-provider-request switching, marks 429/auth-error cooldowns, persists global state in `~/.pi/agent/codex-usage/state.json`, uses a global lock for multi-process safety, and watches state changes to reload auth in other Pi processes. It does not rotate in `before_agent_start`, so prompt submission is not blocked by quota scans. | `/codex:quotas`, `/status`, `/s`, `/codex:profile status`, `/codex:profile list`, `/codex:profile save <name>`, `/codex:profile use <name>`, `/codex:profile delete <name>`, `/codex:rotate status`, `/codex:rotate now`, `/codex:rotate on`, `/codex:rotate off`, `/codex:rotate profile <name>`, `/codex:rotate scan` |
-| `subagents/` | Runs autonomous background agents through in-process Pi sessions, Claude Code, or Codex CLI. It exposes tools for spawning, waiting, cancelling, checking, and listing agents, limits concurrency to four, delivers settled results back to the parent session, and provides an interactive takeover view. The `/btw` command opens a one-off Pi side session while the main agent keeps working. | `/subagents`, `/btw [question]` |
-| `workflows/` | Runs sandboxed JavaScript orchestration workflows with named phases, parallel isolated agents, optional JSON-schema results, progress dashboards, and persisted artifacts. | `/workflows` |
-| `codex-review.ts` | Adds a Codex-style `/review` command in one self-contained extension file: selects or accepts the base comparison branch and target changes branch, runs the review in a separate named `pi -p --no-extensions` session so current chat context is not included but long/failed reviews remain resumable, reviews tracked/untracked changes with `git diff <merge-base>..<target-branch>`, and shows readable review cards as a notification without overwriting the current editor draft. When run outside a git repository, discovers immediate child git repositories and lets the user select one. | `/review [--base branch]` |
-| `context-limit-warning.ts` | Shows a UI warning after an agent response first crosses `128000` context tokens, then warns again only after usage drops below the threshold and crosses it later. | — |
-| `session-hygiene.ts` | Helps keep session history clean: `/delete` asks for confirmation, starts a fresh session, then removes the previous current session file from history. When `/quit` or `/q` is used in an unnamed idle UI session, asks whether to delete it, name it before quitting, quit without deleting, or cancel. | `/delete` |
-| `balance.ts` | Shows DeepSeek and OpenRouter account balances for their respective models, immediately reuses each provider's last successful balance when switching back, and refreshes asynchronously on session/model/turn events so model switching is not blocked by balance requests. Reads API keys from `~/.pi/agent/auth.json` (`deepseek.*` and `openrouter.*`: `key`, `apiKey`, or `token`). | `/deepseek:balance`, `/openrouter:balance` |
-| `default-reasoning.ts` | Applies model-specific thinking defaults on manual model selection: DeepSeek/Xiaomi/`gpt-5.4-mini` → `high`, other GPT models → `low`, non-reasoning models → `off`. Skips restored session selections. In non-empty sessions, appends `• Context cache will be invalidated` to the native model-switch status line for any model change and to the native thinking-level status line for GPT/OpenAI thinking changes; switching model or thinking back to the runtime's initial value clears/skips the warning, and reload/startup treats the current model/thinking as the new baseline. | — |
-| `00-ui-editor.ts` | Owns the custom input editor behavior and loads first to minimize the default-editor frame during startup and reload: removes the editor's horizontal separator bars with a cheap fast path for ordinary lines, lets extensions intercept editor submits before Pi's built-in command handling, tracks bash mode on editor changes instead of concatenating the full draft during every render, renders the `agent-pulse.ts` line inside the editor without inheriting `!`/`!!` coloring, and auto-triggers autocomplete for `$skill-name` syntax. Project/model labels now live in the footer. | — |
-| `handoff.ts` | Writes compact handoff artifacts into the OS temp directory (`pi-handoffs/`). `/handoff` creates a summary document for a fresh agent. `/handoff-implement` generates both a handoff and an implementation-plan contract from the current session branch and git snapshot, gates on plan readiness, and starts a fresh implementation session with a kickoff prompt referencing both files by default. Uses the current model, a local suggested-skills allowlist, and best-effort secret redaction. | `/handoff [focus]`, `/handoff-implement [--draft] [--force] [--confirm] [focus]` |
-| `mr-echat.ts` | Automates EChat commit + push with upstream tracking and GitLab MR creation through `glab` without enabling source-branch deletion on merge; its optional argument is a task branch name, which is created automatically when work starts on main/master/develop/dev/stage/staging, including after repository selection. `--cwd` runs the workflow against an explicit repository resolved relative to the session cwd or as an absolute path. If a normal push is rejected and the remote branch has commits missing from the local branch, offers a `--force-with-lease` retry with “No” selected by default. If the current EUTP branch was branched from another EUTP branch instead of a base branch, creates the MR into that parent branch. Generates commit titles separately with `openai-codex/gpt-5.4-mini` at high reasoning, while MR descriptions use the active pi session with its current thinking level so its full context and prompt-cache affinity are preserved; tools are blocked for that generation turn. Generated diff noise (lockfiles, build/coverage/generated outputs) is excluded before model input. If an MR already exists, asks whether to update its description from the current description plus new diff; if there are no local changes, treats the command as a request to update the existing MR description from the full branch diff against the MR target branch. If a previous task commit title is found, first offers to reuse it without calling the model, and generation starts only on request. Before generation, asks whether to generate the commit title or enter it manually; MR description generation starts only after the final commit title is chosen. Writes per-run timing diagnostics for model, git, and glab operations to `~/.pi/logs/mr-echat.log`, with MR descriptions redacted from command arguments. | `/mr-echat [task-branch] [--cwd path]` |
-| `mr-review/` | Adds `/review` for GitLab MR and local EChat changes. GitLab targets are fetched through shared clones under `/home/user/echat/reviews/<repo>` and checked out as detached worktrees in a unique per-review workspace, so concurrent pi processes can inspect and test different MR states without sharing working trees. Multiple targets are reviewed as one logical multi-repo change; temporary worktrees remain available for follow-up questions and are removed on the next review or session shutdown. | `/review`, `/mr-review` |
-| `00-ui-header.ts` | Replaces the built-in header with a slightly brighter smooth darker-to-lighter gradient derived from the current theme thinking level color; it rerenders when thinking level changes. | — |
-| `shake.ts` | Adds an OMP-style `/shake` command: `elide` replaces tool-result messages and giant fenced/XML blocks with short placeholders and saves originals next to the session; `images` removes image blocks. Shows a notification after rewriting context without reloading the session. | `/shake [elide\|images]` |
-| `00-ui-footer.ts` | Installs a two-line custom footer with two-cell horizontal padding: the first line shows project path/git branch on the left and selected model/thinking level on the right; the second line shows token/cost/context stats on the left and extension statuses on the right. Compact model aliases show the GPT-5.6 variants as `sol`, `terra`, and `luna`. Session usage is scanned once at startup and then maintained incrementally instead of traversing the complete session on every TUI render. Shows latest prompt cache-hit rate as `CH82.9%` when cache tokens are present, keeps subscription-backed model cost as plain `$0.000`, and hides the noisy `ponytail` extension status. Context usage is shown as absolute current/window tokens (`44k/272k`) instead of a percentage. Footer text uses the active thinking-level theme color; extension-provided ANSI colors are stripped before display. Uses `pi-tui` width helpers so emoji/wide glyph statuses are truncated safely. | — |
-| `commands-aliases.ts` | Adds short slash-command aliases for quitting and starting a new session. | `/exit`, `/q`, `/e`, `/n` |
-| `skill-dollar.ts` | Adds `$skill-name` skill references with autocomplete and expands every recognized marker in one prompt into the same `<skill>` instruction blocks used by Pi's native skill invocation. Multiple skills and skills hidden from model invocation can therefore be explicitly loaded in one agent turn; duplicate markers load once and unknown markers remain untouched. The `$` autocomplete auto-trigger lives in `00-ui-editor.ts` because only one extension can own the custom editor. | `$<skill-name>` skill references |
-| `zsh.ts` | Runs user bash commands through non-interactive zsh (`PI_USER_BASH=1 zsh -fc ...`) while preserving pi's local bash operations. Self-disables on Windows or when no executable zsh is available. Avoids sourcing `~/.zshrc`; sources `~/.pi/agent/zshrc` instead for safe aliases/functions, then evals the command so aliases expand. Honors `PI_USER_BASH_SHELL`, `PI_USER_ZSHRC`, then falls back to `$SHELL` or `/bin/zsh`. | — |
-
-## Batch URS reviews
-
-`agent/bin/runreviews` загружает переданные URS-задачи через PORA, извлекает из каждой все ссылки на GitLab MR и запускает отдельный headless-процесс `pi` с `/mr-review`. Каталог `~/.pi/agent/bin` уже входит в `PATH`, поэтому команда доступна как `runreviews`. Одна URS-задача всегда соответствует одной сохраняемой pi-сессии; несколько MR внутри задачи проверяются одним агентом. По умолчанию одновременно работают не больше четырёх процессов, а вывод каждого сохраняется в `/home/user/echat/reviews/logs/`.
-
-```bash
-runreviews "$PORA_SESSION" \
-  https://urs.esoft.tech/issue/EUTP-12345 \
-  https://urs.esoft.tech/issue/EUTP-12346
-```
-
-Чтобы не передавать токен аргументом процесса, используй уже экспортированный `PORA_SESSION` и пустой первый аргумент:
-
-```bash
-runreviews '' https://urs.esoft.tech/issue/EUTP-12345
-```
-
-Поддерживаются `--concurrency N` и `--dry-run`; директории можно переопределить через `RUNREVIEWS_CWD` и `RUNREVIEWS_LOG_ROOT`.
+| `00-ui-editor.ts` | Custom input editor and skill autocomplete. | — |
+| `00-ui-footer.ts` | Compact two-line status footer. | — |
+| `00-ui-header.ts` | Theme-aware gradient header. | — |
+| `agent-pulse.ts` | Agent activity and elapsed-time indicator. | — |
+| `agents-local.ts` | Loads hierarchical `AGENTS.local.md` files. | — |
+| `analyze-eutp.ts` | Analyzes an EUTP task and names the session. | `/analyze-eutp` |
+| `apply-patch/` | Adds the Codex-style `apply_patch` tool. | — |
+| `balance.ts` | Shows DeepSeek and OpenRouter balances. | `/deepseek:balance`, `/openrouter:balance` |
+| `codex-review.ts` | Reviews Git changes in an isolated session. | `/review` |
+| `codex-usage/` | Shows quota and rotates Codex profiles. | `/status`, `/codex:profile`, `/codex:rotate` |
+| `commands-aliases.ts` | Adds common command aliases. | `/exit`, `/q`, `/e`, `/n` |
+| `context-limit-warning.ts` | Warns when context exceeds 128k tokens. | — |
+| `default-reasoning.ts` | Applies model-specific reasoning defaults. | — |
+| `handoff.ts` | Creates handoffs and implementation plans. | `/handoff`, `/handoff-implement` |
+| `mr-echat.ts` | Commits, pushes, and creates EChat merge requests. | `/mr-echat` |
+| `mr-review/` | Reviews GitLab merge requests and local changes. | `/review`, `/mr-review` |
+| `session-delete.ts` | Deletes the current session safely. | `/delete` |
+| `shake.ts` | Removes bulky content from session context. | `/shake` |
+| `skill-dollar.ts` | Expands `$skill-name` references. | `$<skill-name>` |
+| `subagents/` | Runs background agents. | `/subagents`, `/btw` |
+| `workflows/` | Runs multi-agent workflows. | `/workflows` |
+| `zsh.ts` | Runs user shell commands through zsh. | — |
