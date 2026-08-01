@@ -234,7 +234,7 @@ function formatElapsed(ms: number): string {
 }
 
 function formatFinalDuration(ms: number, tps: number): string {
-	return `Worked for ${formatElapsed(ms)}${tps > 0 ? `  ${tps}tps` : ""}`;
+	return `Worked for ${formatElapsed(ms)}${tps > 0 ? ` / ${tps}tps` : ""}`;
 }
 
 function renderShimmeredMessage(message: string, elapsedMs: number, base: ColorFn, bright: ColorFn): string {
