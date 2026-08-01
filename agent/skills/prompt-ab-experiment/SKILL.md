@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 Run a controlled experiment: hold the model, task distribution, resources, and evaluation fixed; vary only the intervention. Predictability means repeating this process, not forcing identical outputs.
 
-Never edit the user's live prompt, `AGENTS.md`, or skill during the experiment. Copy the intervention into the experiment directory and record its hash.
+Never edit the user's live prompt, `AGENTS.md`, or skill during the experiment. Store all experiment runs under `/tmp/experiments/`, copy the intervention into the run directory, and record its hash.
 
 ## 1. Lock the brief
 
@@ -34,7 +34,7 @@ Read [`PROTOCOL.md`](PROTOCOL.md#experiment-manifest) when filling the manifest.
 
 ## 2. Freeze the intervention
 
-Create a new experiment directory outside the intervention's owning directory. Copy the exact treatment text or skill into it, preserve the original formatting, and record the source path plus content hash in `manifest.json`. Keep the copy as the immutable treatment for the entire run.
+Create `/tmp/experiments/` when it does not exist, then create a unique run directory at `/tmp/experiments/<experiment-id>/`. Never place the run inside the intervention's owning directory. Copy the exact treatment text or skill into the run directory, preserve the original formatting, and record the source path plus content hash in `manifest.json`. Keep the copy as the immutable treatment for the entire run.
 
 For a section of a larger prompt, extract only that section. For a skill, copy the complete skill directory when its body points to sibling files; a partial copy can silently change its behavior.
 

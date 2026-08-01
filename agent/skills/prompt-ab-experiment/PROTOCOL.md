@@ -4,7 +4,7 @@ This is mandatory reference for the matching steps in [`SKILL.md`](SKILL.md). It
 
 ## Experiment manifest
 
-Write `manifest.json` before generation:
+Create the run at `/tmp/experiments/<experiment-id>/` and write `manifest.json` there before generation:
 
 ```json
 {
@@ -128,7 +128,7 @@ For a two-arm run, `comparison` may be `treatment-vs-baseline`; for three arms, 
 ## Artifact tree
 
 ```text
-experiment/
+/tmp/experiments/<experiment-id>/
 ├── manifest.json
 ├── intervention/
 ├── prompts.json
