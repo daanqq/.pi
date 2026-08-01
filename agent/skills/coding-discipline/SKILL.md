@@ -1,6 +1,6 @@
 ---
 name: coding-discipline
-description: "Use when implementing, fixing, refactoring, testing, or deleting code. Do not use for read-only code reviews. Enforces surgical changes, broad search before deletion/unused claims, and explicit verification."
+description: "Use when implementing, fixing, refactoring, testing, or deleting code (not just text files). Do not use for read-only code reviews. Enforces surgical changes, broad search before deletion/unused claims, and explicit verification."
 ---
 
 # Coding Discipline
