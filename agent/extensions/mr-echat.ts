@@ -19,7 +19,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { complete, type Message } from "@earendil-works/pi-ai/compat";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 
 // ---------------------------------------------------------------------------
@@ -29,7 +28,6 @@ import * as path from "node:path";
 const EUTP_ID_RE = /EUTP-\d+/i;
 const TITLE_MAX_ATTEMPTS = 3;
 const MR_DESC_TMP = "/tmp/mr_description.md";
-const LOG_FILE = path.join(os.homedir(), ".pi", "logs", "mr-echat.log");
 const GENERATION_PROVIDER = "openai-codex";
 const GENERATION_MODEL = "gpt-5.4-mini";
 const GENERATION_THINKING = "high";
@@ -163,32 +161,6 @@ function parseCommandArgs(raw: string): CommandArgs {
   }
 
   return { taskBranch, cwd };
-}
-
-/** Создать best-effort логгер одного запуска, не влияющий на основной workflow. */
-function createRunLogger(): LogFn {
-  const runId = `${new Date().toISOString()}-${process.pid}`;
-  const startedAt = Date.now();
-
-  try {
-    fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true });
-  } catch {
-    // Диагностическое логирование не должно ломать создание MR.
-  }
-
-  return (event, details = {}) => {
-    try {
-      fs.appendFileSync(LOG_FILE, `${JSON.stringify({
-        timestamp: new Date().toISOString(),
-        runId,
-        elapsedMs: Date.now() - startedAt,
-        event,
-        ...details,
-      })}\n`, "utf-8");
-    } catch {
-      // Диагностическое логирование не должно ломать создание MR.
-    }
-  };
 }
 
 /** Не писать содержимое MR в лог вместе с аргументами glab. */
@@ -732,7 +704,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("mr-echat", {
     description: "Commit + push + создать MR через glab; [ветка] [--cwd путь]",
     handler: async (args, ctx) => {
-      const log = createRunLogger();
+      const log: LogFn = () => {};
       log("run:start", { cwd: ctx.cwd || process.cwd(), args: args.trim() });
       try {
         if (sessionGenerationActive) {
