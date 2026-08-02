@@ -52,16 +52,7 @@
   "enableInstallTelemetry": true,
   "doubleEscapeAction": "tree",
   "extensions": [
-    "-extensions/compact.ts",
-    "-extensions/answer/index.ts",
-    "-extensions/generation-stats.ts",
-    "-extensions/open-last-agent-response.ts",
-    "-extensions/agents-local.ts",
-    "-extensions/handoff.ts",
-    "-extensions/codex-review.ts",
-    "-extensions/workflows/index.ts",
     "-extensions/background-terminals/index.ts",
-    "-extensions/session-delete.ts",
     "-extensions/branch-summary-model.ts"
   ],
   "httpIdleTimeoutMs": 120000,
