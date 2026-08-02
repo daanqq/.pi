@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
-type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 type ModelLike = {
   provider: string;
@@ -14,13 +14,9 @@ function getDefaultThinkingLevel(provider: string, modelId: string): ThinkingLev
   const normalizedModelId = modelId.toLowerCase();
 
   if (
-    normalizedProvider.includes("deepseek") ||
-    normalizedModelId.includes("deepseek") ||
-    normalizedProvider.includes("xiaomi") ||
-    normalizedModelId.includes("xiaomi") ||
-    normalizedModelId.includes("gpt-5.4-mini")
+    normalizedProvider.includes("deepseek")
   ) {
-    return "high";
+    return "max";
   }
 
   if (normalizedModelId.includes("gpt")) {
