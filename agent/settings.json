@@ -1,6 +1,6 @@
 {
   "lastChangelogVersion": "0.83.0",
-  "defaultThinkingLevel": "low",
+  "defaultThinkingLevel": "medium",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.6-sol",
   "packages": [
@@ -29,7 +29,8 @@
   },
   "enabledModels": [
     "openai-codex/gpt-5.6-sol",
-    "openai-codex/gpt-5.6-luna"
+    "openai-codex/gpt-5.6-luna",
+    "deepseek/deepseek-v4-flash"
   ],
   "externalEditor": "code --wait",
   "transport": "auto",
@@ -46,7 +47,7 @@
     "autoResize": true,
     "blockImages": false
   },
-  "enableSkillCommands": true,
+  "enableSkillCommands": false,
   "autocompleteMaxVisible": 10,
   "followUpMode": "all",
   "enableInstallTelemetry": true,
