@@ -1,6 +1,6 @@
 # Basics
 
-Respond in Russian by default unless the user explicitly requests another language.
+Respond in Russian unless the user explicitly requests another language.
 
 For requests to answer, explain, review, diagnose, or plan, inspect the relevant
 materials and report the result without changing files.
