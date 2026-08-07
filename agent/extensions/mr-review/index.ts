@@ -347,14 +347,15 @@ async function prepareMrReview(
   const sourceExec: ExecFn = (cmd, args, opts) => pi.exec(cmd, args, { ...opts, cwd: sourceRepoDir });
   const mr = await fetchGitLabMr(pi, ref);
   const headRef = `refs/mr-review/${ref.repo}/${ref.iid}`;
-  const baseRef = await preferredBaseBranch(pi, sourceRepoDir, mr?.target_branch);
+  const targetBranch = mr?.target_branch ?? "master";
+  const baseRef = `${headRef}-base`;
   const worktreeDir = path.join(workspaceRoot, `${ref.repo}--mr-${ref.iid}`);
   const worktree = { repo: ref.repo, sourceRepoDir, worktreeDir };
   let worktreeAdded = false;
 
   try {
     await withRepoLock(ref.repo, async () => {
-      await fetchMr(sourceExec, ref.iid, headRef);
+      await fetchMr(sourceExec, ref.iid, headRef, targetBranch, baseRef);
       await addWorktree(sourceExec, worktreeDir, headRef);
       worktreeAdded = true;
     });
@@ -459,9 +460,14 @@ function parseJsonObject<T extends object>(text: string): T | null {
   }
 }
 
-async function fetchMr(exec: ExecFn, iid: string, ref: string) {
-  const result = await exec("git", ["fetch", "origin", `+merge-requests/${iid}/head:${ref}`], { timeout: 60_000 });
-  if (result.code !== 0) throw new Error(`git fetch MR failed: ${result.stderr || result.stdout}`);
+async function fetchMr(exec: ExecFn, iid: string, headRef: string, targetBranch: string, baseRef: string) {
+  const result = await exec("git", [
+    "fetch",
+    "origin",
+    `+merge-requests/${iid}/head:${headRef}`,
+    `+refs/heads/${targetBranch}:${baseRef}`,
+  ], { timeout: 60_000 });
+  if (result.code !== 0) throw new Error(`git fetch MR and target ${targetBranch} failed: ${result.stderr || result.stdout}`);
 }
 
 async function addWorktree(exec: ExecFn, worktreeDir: string, ref: string) {
@@ -648,14 +654,14 @@ function buildReviewContext(reviews: PreparedReview[], extraInfo: string, relate
 ## Targets
 ${reviewTable(reviews)}
 
+## Scope contract
+Review only changes described by each target's path, merge base, head and scope above. Files outside that diff may be read for context, but findings must be caused by an in-scope changed line. Do not review other branches, sibling worktrees or unrelated working-tree changes.
+
 ## Primary task
 ${taskSummary(primary.taskId, primary.task)}
 ${detectedTasksSection(reviews, primary.taskId)}${extraInfo ? `\n## Additional information\n${extraInfo}\n` : ""}${relatedTasks.length ? `\n## Related tasks\n${relatedTasks.map(({ id, task }) => `### ${id}\n${taskSummary(id, task)}`).join("\n\n")}\n` : ""}
 ## Repository state
 ${reviews.map(repositoryState).join("\n\n")}
-
-## Diff commands
-${reviews.flatMap(diffCommands).map((command) => `- \`${command}\``).join("\n")}
 `;
 }
 
@@ -664,21 +670,6 @@ function repositoryState(review: PreparedReview): string {
   if (review.status) lines.push("", "```text", review.status, "```");
   if (review.untrackedFiles.length) lines.push("", "Untracked files:", ...review.untrackedFiles.map((file) => `- \`${file}\``));
   return lines.join("\n");
-}
-
-function diffCommands(review: PreparedReview): string[] {
-  const prefix = `git -C ${shellQuote(review.repoDir)}`;
-  const commands: string[] = [];
-  if (review.scope === "branch" || review.scope === "all") commands.push(`${prefix} diff ${review.mergeBase}..${review.headRef}`);
-  if (review.scope === "working-tree" || review.scope === "all") {
-    commands.push(`${prefix} diff --cached`, `${prefix} diff`);
-    for (const file of review.untrackedFiles) commands.push(`read ${path.join(review.repoDir, file)}`);
-  }
-  return commands;
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
 function detectedTasksSection(reviews: PreparedReview[], primaryTaskId: string | null): string {

@@ -14,18 +14,19 @@ Review the targets described by the review context passed in the skill arguments
 - Work across every target in the request. For a multi-repository task, evaluate them as one logical change rather than isolated diffs.
 - Read local targets directly at their absolute paths. Do not expect their branches or working-tree changes to exist in the review clones.
 - Run every Git command with an explicit repository path: `git -C <repoDir> ...`.
-- Use the commands listed under `Diff commands` to establish the exact review scope.
-- For `branch`, review committed changes from merge base through `HEAD` or the fetched MR ref.
+- Derive the diff only from each target's `Path`, `Merge base`, `Head`, and `Scope`. Do not choose another base branch or inspect a sibling checkout.
+- For `branch`, review committed changes with `git -C <repoDir> diff <mergeBase>..<headRef>`.
 - For `working-tree`, review staged, unstaged, and listed untracked files.
 - For `all`, combine branch, staged, unstaged, and untracked changes without reporting the same issue twice.
 - If the request lists untracked files, read them explicitly because `git diff` does not include them.
+- Establish an in-scope changed-file and changed-line set before reviewing. Files outside it may be read only as supporting context; do not report a finding unless its cause is an in-scope changed line.
 - Do not assume tests were run; execute focused checks when practical and state exactly what was or was not run.
 
 ## Workflow
 
 1. Read the complete review context included in the user request.
 2. Load and read the complete `thermo-nuclear-code-quality-review` skill from `~/.pi/agent/skills/thermo-nuclear-code-quality-review/SKILL.md`. Apply it as the mandatory quality bar unless the user explicitly opts out.
-3. Run the listed diff commands and inspect repository status where present.
+3. Build and run the minimal diff commands from each target's path, merge base, head, and scope. Record the changed files and hunks as the hard review boundary; inspect repository status only for local working-tree scopes.
 4. Read every changed file needed to understand the implementation, plus immediate callers, consumers, tests, schemas, mappers, and canonical helpers.
 5. Build the end-to-end flow before judging individual fragments. For protocol or API changes, inspect producers and consumers on both sides.
 6. Compare the implementation with the primary task, additional information, and related tasks from the request.
