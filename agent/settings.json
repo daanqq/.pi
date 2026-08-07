@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.83.0",
+  "lastChangelogVersion": "0.84.0",
   "defaultThinkingLevel": "medium",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.6-sol",
@@ -61,5 +61,7 @@
   "outputPad": 0,
   "skills": [
     "-skills/background-terminals/SKILL.md"
-  ]
+  ],
+  "fullscreenScrollbar": "auto",
+  "tuiMode": "regular"
 }
