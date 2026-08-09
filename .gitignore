@@ -1,5 +1,6 @@
 # Secrets / local auth
 agent/auth.json
+agent/secrets/
 **/auth.json**
 *.key
 *.pem

@@ -1,7 +1,7 @@
 {
   "lastChangelogVersion": "0.84.0",
   "defaultThinkingLevel": "medium",
-  "defaultProvider": "openai-codex",
+  "defaultProvider": "cliproxy",
   "defaultModel": "gpt-5.6-sol",
   "packages": [
     {
@@ -28,9 +28,8 @@
     "enabled": false
   },
   "enabledModels": [
-    "openai-codex/gpt-5.6-sol",
-    "openai-codex/gpt-5.6-luna",
-    "deepseek/deepseek-v4-flash"
+    "cliproxy/gpt-5.6-sol",
+    "cliproxy/gpt-5.6-luna"
   ],
   "externalEditor": "code --wait",
   "transport": "auto",

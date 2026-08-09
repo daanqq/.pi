@@ -34,7 +34,7 @@ confident. Avoid documentation tone.
 
 - Use at most one subagent per user request unless the user explicitly approves
   more.
-- Code-review subagents must use `harness: "pi"`, `model: "openai-codex/gpt-5.6-luna"`,
+- Code-review subagents must use `harness: "pi"`, `model: "cliproxy/gpt-5.6-luna"`,
   and `reasoning_effort: "xhigh"`.
 - Do not run review → fix → rereview unless an explicitly invoked workflow or
   skill requires it.

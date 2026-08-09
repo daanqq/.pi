@@ -28,8 +28,8 @@ import * as path from "node:path";
 const EUTP_ID_RE = /EUTP-\d+/i;
 const TITLE_MAX_ATTEMPTS = 3;
 const MR_DESC_TMP = "/tmp/mr_description.md";
-const GENERATION_PROVIDER = "openai-codex";
-const GENERATION_MODEL = "gpt-5.4-mini";
+const GENERATION_PROVIDER = "cliproxy";
+const GENERATION_MODEL = "gpt-5.6-luna";
 const GENERATION_THINKING = "high";
 const BASE_BRANCHES = new Set(["main", "master", "develop", "dev", "stage", "staging"]);
 const GENERATED_DIFF_EXCLUDES = [

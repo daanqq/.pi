@@ -20,8 +20,8 @@ Pi can use any model shown by `pi --list-models`. Prefer `provider/model-id`; a 
 | Model                            | Recommended effort |
 | -------------------------------- | ------------------ |
 | inherited parent model (default) | inherited          |
-| `openai-codex/gpt-5.6-sol`       | `high`             |
-| `openai-codex/gpt-5.6-terra`     | `high`             |
+| `cliproxy/gpt-5.6-sol`           | `high`             |
+| `cliproxy/gpt-5.6-terra`         | `high`             |
 | `opencode/claude-fable-5`        | `medium`           |
 
 **Thinking budgets:** `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. These map directly to pi thinking levels.
