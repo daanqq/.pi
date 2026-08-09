@@ -53,7 +53,8 @@
   "doubleEscapeAction": "tree",
   "extensions": [
     "-extensions/background-terminals/index.ts",
-    "-extensions/branch-summary-model.ts"
+    "-extensions/branch-summary-model.ts",
+    "-extensions/codex-usage/index.ts"
   ],
   "httpIdleTimeoutMs": 120000,
   "defaultProjectTrust": "always",

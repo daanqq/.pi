@@ -4,7 +4,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
-const RIGHT_STATUS_ORDER = ["generation-stats", "codex-usage", "deepseek-balance", "openrouter-balance"] as const;
+const RIGHT_STATUS_ORDER = ["generation-stats", "codex-usage", "cliproxy-quota", "deepseek-balance", "openrouter-balance"] as const;
 const HIDDEN_STATUS_IDS = new Set<string>([...RIGHT_STATUS_ORDER, "ponytail"]);
 const MODEL_ALIASES: Readonly<Record<string, string>> = {
   "gpt-5.6-sol": "sol",
