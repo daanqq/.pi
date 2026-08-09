@@ -28,6 +28,21 @@ export function formatNumberedDiffLines(lines: NumberedDiffLine[]): string[] {
 	});
 }
 
+export function visualizeChangedLineIndentation(diffText: string): string {
+	return diffText
+		.split("\n")
+		.map((line) => {
+			const parsed = line.match(/^([+-])(\s*\d*) (.*)$/);
+			if (!parsed) return line;
+			const content = parsed[3]!;
+			const indentation = content.match(/^[ \t]+/)?.[0];
+			if (!indentation) return line;
+			const visibleIndentation = indentation.replace(/ /g, "·").replace(/\t/g, "→");
+			return `${parsed[1]!}${parsed[2]!} ${visibleIndentation}${content.slice(indentation.length)}`;
+		})
+		.join("\n");
+}
+
 export function buildUpdatePreview(numbered: NumberedDiffLine[], hasMovePath: boolean): { added: number; removed: number; lines: string[]; pureMove: boolean } {
 	const added = numbered.filter((line) => line.marker === "+").length;
 	const removed = numbered.filter((line) => line.marker === "-").length;

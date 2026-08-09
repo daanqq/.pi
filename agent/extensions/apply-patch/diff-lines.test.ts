@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildReplacementPreview, buildUpdatePreview, formatNumberedDiffLines, formatPatchSummaryCounts, numberUpdateDiffLines } from "./diff-lines.ts";
+import { buildReplacementPreview, buildUpdatePreview, formatNumberedDiffLines, formatPatchSummaryCounts, numberUpdateDiffLines, visualizeChangedLineIndentation } from "./diff-lines.ts";
 
 test("colors only trailing patch counts in a summary", () => {
 	const rendered = formatPatchSummaryCounts(
@@ -35,6 +35,21 @@ test("keeps the diff body aligned across line-number digit boundaries", () => {
 	]);
 	const bodyColumns = rendered.map((line, index) => line.indexOf(["nine", "ten", "nine-nine-nine", "one-thousand"][index]!));
 	assert.deepEqual(bodyColumns, [6, 6, 6, 6]);
+});
+
+test("shows spaces and tabs in changed-line indentation", () => {
+	const rendered = visualizeChangedLineIndentation([
+		"-182 \t  old",
+		"+182     new",
+		" 182 \t  context",
+		"+183 no-indent",
+	].join("\n"));
+	assert.equal(rendered, [
+		"-182 →··old",
+		"+182 ····new",
+		" 182 \t  context",
+		"+183 no-indent",
+	].join("\n"));
 });
 
 test("tracks old and new line numbers through update hunks", () => {
