@@ -38,7 +38,7 @@ function hasConversationEntries(ctx: { sessionManager: { getEntries(): Array<{ t
   return ctx.sessionManager.getEntries().some((entry) => entry.type === "message");
 }
 
-const CACHE_WARNING_WIDGET_ID = "gpt-cache-warning";
+const CACHE_WARNING_ID = "gpt-cache-warning";
 const CONTEXT_CACHE_TTL_MS = 10 * 60 * 1000;
 
 type SessionEntryLike = {
@@ -48,7 +48,10 @@ type SessionEntryLike = {
 };
 
 function clearCacheWarning(ctx: any) {
-  ctx.ui.setWidget(CACHE_WARNING_WIDGET_ID, undefined);
+  // Clear both surfaces so reloads also remove warnings created by older
+  // versions of this extension.
+  ctx.ui.setWidget(CACHE_WARNING_ID, undefined);
+  ctx.ui.setStatus(CACHE_WARNING_ID, undefined);
 }
 
 function entryTimestampMs(entry: SessionEntryLike): number | undefined {
@@ -78,7 +81,7 @@ function isContextCacheAlreadyExpiredByTime(ctx: { sessionManager: { getEntries(
 
 function showThinkingCacheWarning(ctx: any, level: ThinkingLevel) {
   queueMicrotask(() => {
-    ctx.ui.notify(`Thinking level: ${level} • Context cache will be invalidated`, "info");
+    ctx.ui.setStatus(CACHE_WARNING_ID, `Thinking level: ${level} • Context cache will be invalidated`);
   });
 }
 
@@ -90,7 +93,7 @@ function showModelCacheWarning(ctx: any, model: ModelLike, getThinkingLevel: () 
   return setTimeout(() => {
     const thinkingLevel = getThinkingLevel();
     const thinking = model.reasoning && thinkingLevel !== "off" ? ` (thinking: ${thinkingLevel})` : "";
-    ctx.ui.notify(`Switched to ${model.name || model.id}${thinking} • Context cache will be invalidated`, "info");
+    ctx.ui.setStatus(CACHE_WARNING_ID, `Switched to ${model.name || model.id}${thinking} • Context cache will be invalidated`);
   }, 0);
 }
 
