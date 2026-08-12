@@ -1,8 +1,8 @@
 import type {
   ExtensionAPI,
   ExtensionContext,
-} from "@mariozechner/pi-coding-agent";
-import { VERSION } from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
+import { VERSION } from "@earendil-works/pi-coding-agent";
 
 const RESET = "\x1b[0m";
 
@@ -153,15 +153,16 @@ function renderHeader(theme: HeaderTheme, _width: number, phase: number, thinkin
 }
 
 export default function (pi: ExtensionAPI) {
-  let requestRender: (() => void) | undefined;
-
   function installHeader(ctx: ExtensionContext) {
+    // Keep the header palette stable for the lifetime of the session. Recoloring
+    // all logo rows on every Shift+Tab forces a large top-of-screen repaint and
+    // makes long sessions visibly jump. A reload/new session picks up the
+    // currently selected thinking level.
+    const headerThinkingLevel = pi.getThinkingLevel();
     ctx.ui.setHeader((tui, theme) => {
-      requestRender = () => tui.requestRender();
       return {
         render(width: number) {
-          const thinkingLevel = pi.getThinkingLevel();
-          return renderHeader(theme, width, 0, thinkingLevel);
+          return renderHeader(theme, width, 0, headerThinkingLevel);
         },
         invalidate() {
           tui.requestRender();
@@ -173,10 +174,6 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", (_event, ctx) => {
     if (!ctx.hasUI) return;
     installHeader(ctx);
-  });
-
-  pi.on("thinking_level_select", () => {
-    requestRender?.();
   });
 
   pi.on("session_shutdown", (_event, ctx) => {
