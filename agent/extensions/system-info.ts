@@ -10,7 +10,7 @@ function safe<T>(fn: () => T): T | undefined {
   }
 }
 
-function systemInfo(cwd: string) {
+function systemInfo() {
   const user = safe(() => os.userInfo().username) ?? "unknown";
 
   return [
@@ -20,13 +20,12 @@ function systemInfo(cwd: string) {
     `- User: ${user}`,
     `- Home: ${os.homedir()}`,
     `- Shell: ${process.env.SHELL ?? process.env.ComSpec ?? "unknown"}`,
-    `- CWD: ${cwd}`,
     `- Node: ${process.version}`,
   ].join("\n");
 }
 
 export default function (pi: ExtensionAPI) {
-  pi.on("before_agent_start", async (event, ctx) => ({
-    systemPrompt: `${event.systemPrompt}\n\n${systemInfo(ctx.cwd)}`,
+  pi.on("before_agent_start", async (event) => ({
+    systemPrompt: `${event.systemPrompt}\n\n${systemInfo()}`,
   }));
 }
