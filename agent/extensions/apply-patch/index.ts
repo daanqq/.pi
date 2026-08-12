@@ -6,7 +6,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { keyHint, renderDiff, withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { Box, Container, Spacer, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { buildReplacementPreview, buildUpdatePreview, formatNumberedDiffLines, formatPatchSummaryCounts, numberUpdateDiffLines, visualizeChangedLineIndentation } from "./diff-lines.ts";
+import { buildReplacementPreview, buildUpdatePreview, formatNumberedDiffLines, formatPatchSummaryCounts, numberUpdateDiffLines, visualizeIndentationOnlyChanges } from "./diff-lines.ts";
 import { normalizePatchPath, parsePatchActionHeaders, parsePatchActions, type ParsedPatchAction } from "./patch-actions.ts";
 
 const APPLY_PATCH_PARAMETERS = Type.Object({
@@ -398,7 +398,7 @@ function renderPatchPreview(
 	const visibleDiff = expanded || diffLines.length <= COLLAPSED_PREVIEW_LINE_LIMIT
 		? preview.diff
 		: diffLines.slice(0, COLLAPSED_PREVIEW_LINE_LIMIT).join("\n");
-	let body = colorPatchCountPairs(renderDiff(visualizeChangedLineIndentation(visibleDiff)), theme);
+	let body = colorPatchCountPairs(renderDiff(visualizeIndentationOnlyChanges(visibleDiff)), theme);
 	if (!expanded && diffLines.length > COLLAPSED_PREVIEW_LINE_LIMIT) {
 		body += `\n${theme.fg("muted", `... (${diffLines.length - COLLAPSED_PREVIEW_LINE_LIMIT} more lines; ${keyHint("app.tools.expand", "to expand")})`)}`;
 	}

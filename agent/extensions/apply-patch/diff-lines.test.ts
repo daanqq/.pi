@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildReplacementPreview, buildUpdatePreview, formatNumberedDiffLines, formatPatchSummaryCounts, numberUpdateDiffLines, visualizeChangedLineIndentation } from "./diff-lines.ts";
+import { buildReplacementPreview, buildUpdatePreview, formatNumberedDiffLines, formatPatchSummaryCounts, numberUpdateDiffLines, visualizeIndentationOnlyChanges } from "./diff-lines.ts";
 
 test("colors only trailing patch counts in a summary", () => {
 	const rendered = formatPatchSummaryCounts(
@@ -37,18 +37,66 @@ test("keeps the diff body aligned across line-number digit boundaries", () => {
 	assert.deepEqual(bodyColumns, [6, 6, 6, 6]);
 });
 
-test("shows spaces and tabs in changed-line indentation", () => {
-	const rendered = visualizeChangedLineIndentation([
+test("shows spaces and tabs when only indentation changed", () => {
+	const rendered = visualizeIndentationOnlyChanges([
 		"-182 \t  old",
-		"+182     new",
-		" 182 \t  context",
-		"+183 no-indent",
+		"+182     old",
 	].join("\n"));
 	assert.equal(rendered, [
 		"-182 →··old",
-		"+182 ····new",
-		" 182 \t  context",
-		"+183 no-indent",
+		"+182 ····old",
+	].join("\n"));
+});
+
+test("marks only the added indentation characters", () => {
+	const rendered = visualizeIndentationOnlyChanges([
+		"-182 \told",
+		"+182 \t old",
+	].join("\n"));
+	assert.equal(rendered, [
+		"-182 \u2800\u2800\u2800old",
+		"+182 \u2800\u2800\u2800·old",
+	].join("\n"));
+});
+
+test("marks only the removed indentation characters", () => {
+	const rendered = visualizeIndentationOnlyChanges([
+		"-182      old",
+		"+182     old",
+	].join("\n"));
+	assert.equal(rendered, [
+		"-182 \u2800\u2800\u2800\u2800·old",
+		"+182 \u2800\u2800\u2800\u2800old",
+	].join("\n"));
+});
+
+test("keeps whitespace invisible for code changes and standalone additions", () => {
+	const rendered = visualizeIndentationOnlyChanges([
+		"-182     old",
+		"+182     new",
+		" 183 context",
+		"+184     added",
+	].join("\n"));
+	assert.equal(rendered, [
+		"-182     old",
+		"+182     new",
+		" 183 context",
+		"+184     added",
+	].join("\n"));
+});
+
+test("shows indentation-only changes across a line group", () => {
+	const rendered = visualizeIndentationOnlyChanges([
+		"-10 \tone",
+		"-11 \ttwo",
+		"+10   one",
+		"+11   two",
+	].join("\n"));
+	assert.equal(rendered, [
+		"-10 →one",
+		"-11 →two",
+		"+10 ··one",
+		"+11 ··two",
 	].join("\n"));
 });
 

@@ -28,19 +28,78 @@ export function formatNumberedDiffLines(lines: NumberedDiffLine[]): string[] {
 	});
 }
 
-export function visualizeChangedLineIndentation(diffText: string): string {
-	return diffText
-		.split("\n")
-		.map((line) => {
-			const parsed = line.match(/^([+-])(\s*\d*) (.*)$/);
-			if (!parsed) return line;
-			const content = parsed[3]!;
-			const indentation = content.match(/^[ \t]+/)?.[0];
-			if (!indentation) return line;
-			const visibleIndentation = indentation.replace(/ /g, "·").replace(/\t/g, "→");
-			return `${parsed[1]!}${parsed[2]!} ${visibleIndentation}${content.slice(indentation.length)}`;
-		})
-		.join("\n");
+export function visualizeIndentationOnlyChanges(diffText: string): string {
+	const lines = diffText.split("\n");
+	const result: string[] = [];
+	let index = 0;
+
+	while (index < lines.length) {
+		const removed: ParsedChangedLine[] = [];
+		while (index < lines.length) {
+			const parsed = parseChangedLine(lines[index]!);
+			if (parsed?.marker !== "-") break;
+			removed.push(parsed);
+			index += 1;
+		}
+
+		if (removed.length === 0) {
+			result.push(lines[index]!);
+			index += 1;
+			continue;
+		}
+
+		const added: ParsedChangedLine[] = [];
+		while (index < lines.length) {
+			const parsed = parseChangedLine(lines[index]!);
+			if (parsed?.marker !== "+") break;
+			added.push(parsed);
+			index += 1;
+		}
+
+		const indentationOnly = removed.length === added.length && removed.every((oldLine, pairIndex) => {
+			const newLine = added[pairIndex]!;
+			return oldLine.content.slice(oldLine.indentation.length) === newLine.content.slice(newLine.indentation.length)
+				&& oldLine.indentation !== newLine.indentation;
+		});
+		if (indentationOnly) {
+			result.push(
+				...removed.map((line, pairIndex) => formatIndentationDifference(line, added[pairIndex]!)),
+				...added.map((line, pairIndex) => formatIndentationDifference(line, removed[pairIndex]!)),
+			);
+		} else {
+			result.push(...removed.map((line) => line.raw), ...added.map((line) => line.raw));
+		}
+	}
+
+	return result.join("\n");
+}
+
+type ParsedChangedLine = { marker: "+" | "-"; gutter: string; content: string; indentation: string; raw: string };
+
+function parseChangedLine(line: string): ParsedChangedLine | undefined {
+	const parsed = line.match(/^([+-])(\s*\d*) (.*)$/);
+	if (!parsed) return undefined;
+	const content = parsed[3]!;
+	return {
+		marker: parsed[1] as "+" | "-",
+		gutter: parsed[2]!,
+		content,
+		indentation: content.match(/^[ \t]+/)?.[0] ?? "",
+		raw: line,
+	};
+}
+
+function formatIndentationDifference(line: ParsedChangedLine, counterpart: ParsedChangedLine): string {
+	let commonLength = 0;
+	while (line.indentation[commonLength] === counterpart.indentation[commonLength] && commonLength < line.indentation.length) {
+		commonLength += 1;
+	}
+	const unchangedIndentation = line.indentation
+		.slice(0, commonLength)
+		.replace(/ /g, "\u2800")
+		.replace(/\t/g, "\u2800\u2800\u2800");
+	const changedIndentation = line.indentation.slice(commonLength).replace(/ /g, "·").replace(/\t/g, "→");
+	return `${line.marker}${line.gutter} ${unchangedIndentation}${changedIndentation}${line.content.slice(line.indentation.length)}`;
 }
 
 export function buildUpdatePreview(numbered: NumberedDiffLine[], hasMovePath: boolean): { added: number; removed: number; lines: string[]; pureMove: boolean } {
