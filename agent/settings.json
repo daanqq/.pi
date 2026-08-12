@@ -1,6 +1,6 @@
 {
-  "lastChangelogVersion": "0.84.0",
-  "defaultThinkingLevel": "medium",
+  "lastChangelogVersion": "0.84.1",
+  "defaultThinkingLevel": "high",
   "defaultProvider": "cliproxy",
   "defaultModel": "gpt-5.6-sol",
   "packages": [
@@ -54,7 +54,11 @@
   "extensions": [
     "-extensions/background-terminals/index.ts",
     "-extensions/branch-summary-model.ts",
-    "-extensions/codex-usage/index.ts"
+    "-extensions/codex-usage/index.ts",
+    "-extensions/mr-review/index.ts",
+    "-extensions/analyze-eutp.ts",
+    "-extensions/default-reasoning.test.ts",
+    "+extensions/default-reasoning.ts"
   ],
   "httpIdleTimeoutMs": 120000,
   "defaultProjectTrust": "always",
