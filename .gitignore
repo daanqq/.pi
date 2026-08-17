@@ -14,12 +14,14 @@ agent/mcp-cache.json
 agent/mcp-npx-cache.json
 agent/mcp-onboarding.json
 agent/codex-usage/
+agent/fff/
 agent/sessions/
 agent/subagent-sessions/
 cache/
 logs/
 memory/
 session-search/
+web-search-cache/
 *.db
 *.db-shm
 *.db-wal
