@@ -97,9 +97,8 @@ MR description rules:
 - Treat the git diff as the source of truth for implemented changes
 - Do not include planned, abandoned, or unverified work from the session
 - Use session context to explain intent and verification, but do not quote the conversation
-- Replace "На что обратить внимание при ревью и тестировании" with two subsections:
+- Replace "На что обратить внимание при ревью и тестировании" with only this subsection:
   ### Краткое описание изменений — each item: one change/fix/feature, affected files/modules
-  ### Что нужно проверить тестировщикам — each item: specific scenario or component to test manually
 - Remove any HTML/markdown comments from the template
 - Keep Russian text
 - If no migrations — keep "Нет."
