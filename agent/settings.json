@@ -1,6 +1,6 @@
 {
-  "lastChangelogVersion": "0.84.1",
-  "defaultThinkingLevel": "high",
+  "lastChangelogVersion": "0.84.2",
+  "defaultThinkingLevel": "medium",
   "defaultProvider": "cliproxy",
   "defaultModel": "gpt-5.6-sol",
   "packages": [
