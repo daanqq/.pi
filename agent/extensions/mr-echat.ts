@@ -13,12 +13,13 @@
  *
  *   task-branch — опционально: название ветки задачи. Если команда запущена
  *   на базовой ветке, перед началом работы будет создана ветка с этим названием.
- *   --cwd — опционально: git-репозиторий, относительно cwd сессии или абсолютный.
+ *   --cwd — опционально: git-репозиторий, относительно cwd сессии, абсолютный или через ~/.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { complete, type Message } from "@earendil-works/pi-ai/compat";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 
 // ---------------------------------------------------------------------------
@@ -396,7 +397,8 @@ async function ensureGitRepo(
   requestedCwd?: string,
 ): Promise<string | null> {
   const sessionCwd = ctx.cwd || process.cwd();
-  const cwd = requestedCwd ? path.resolve(sessionCwd, requestedCwd) : sessionCwd;
+  const expandedCwd = requestedCwd?.replace(/^~(?=$|[\\/])/, os.homedir());
+  const cwd = expandedCwd ? path.resolve(sessionCwd, expandedCwd) : sessionCwd;
 
   if (requestedCwd) {
     try {
