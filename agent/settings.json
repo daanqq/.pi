@@ -68,5 +68,6 @@
     "-skills/background-terminals/SKILL.md"
   ],
   "fullscreenScrollbar": "auto",
-  "tuiMode": "regular"
+  "tuiMode": "regular",
+  "showCacheMissNotices": true
 }

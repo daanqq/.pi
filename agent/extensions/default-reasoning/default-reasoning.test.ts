@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import defaultReasoningExtension from "../default-reasoning.ts";
 
-test("reasoning changes use footer status instead of chat notifications", async () => {
-  const handlers = new Map<string, (event: any, ctx: any) => unknown>();
+function createHarness() {
   let thinkingLevel = "low";
+  const handlers = new Map<string, (event: any) => unknown>();
   const pi = {
-    on(name: string, handler: (event: any, ctx: any) => unknown) {
+    on(name: string, handler: (event: any) => unknown) {
       handlers.set(name, handler);
     },
     getThinkingLevel() {
@@ -17,41 +17,36 @@ test("reasoning changes use footer status instead of chat notifications", async 
     },
   };
   defaultReasoningExtension(pi as any);
-
-  const notifications: string[] = [];
-  const statuses: Array<[string, string | undefined]> = [];
-  const ctx = {
-    model: { provider: "cliproxy", id: "gpt-5.6-luna", reasoning: true },
-    sessionManager: {
-      getEntries: () => [
-        { type: "message", timestamp: Date.now(), message: { role: "assistant" } },
-      ],
+  return {
+    selectModel(event: any) {
+      handlers.get("model_select")?.(event);
     },
-    ui: {
-      notify(message: string) {
-        notifications.push(message);
-      },
-      setStatus(id: string, text: string | undefined) {
-        statuses.push([id, text]);
-      },
-      setWidget() {},
-    },
+    getThinkingLevel: () => thinkingLevel,
   };
+}
 
-  await handlers.get("session_start")?.({}, ctx);
-  thinkingLevel = "medium";
-  await handlers.get("thinking_level_select")?.(
-    { previousLevel: "low", level: "medium" },
-    ctx,
-  );
-  await new Promise<void>((resolve) => queueMicrotask(resolve));
+test("applies default thinking levels on model select", () => {
+  const pi = createHarness();
 
-  assert.deepEqual(notifications, []);
-  assert.deepEqual(statuses.at(-1), [
-    "gpt-cache-warning",
-    "Thinking level: medium • Context cache will be invalidated",
-  ]);
+  pi.selectModel({ source: "user", model: { provider: "deepseek", id: "deepseek-v4-flash", reasoning: true } });
+  assert.equal(pi.getThinkingLevel(), "max");
 
-  await handlers.get("before_agent_start")?.({}, ctx);
-  assert.deepEqual(statuses.at(-1), ["gpt-cache-warning", undefined]);
+  pi.selectModel({ source: "user", model: { provider: "cliproxy", id: "gpt-5.6-luna", reasoning: true } });
+  assert.equal(pi.getThinkingLevel(), "low");
+});
+
+test("disables thinking for models without reasoning", () => {
+  const pi = createHarness();
+
+  pi.selectModel({ source: "user", model: { provider: "deepseek", id: "deepseek-v4-flash", reasoning: true } });
+  pi.selectModel({ source: "user", model: { provider: "other", id: "plain-model", reasoning: false } });
+  assert.equal(pi.getThinkingLevel(), "off");
+});
+
+test("does not override thinking level on session restore", () => {
+  const pi = createHarness();
+
+  pi.selectModel({ source: "user", model: { provider: "deepseek", id: "deepseek-v4-flash", reasoning: true } });
+  pi.selectModel({ source: "restore", model: { provider: "deepseek", id: "deepseek-v4-flash", reasoning: true } });
+  assert.equal(pi.getThinkingLevel(), "max");
 });

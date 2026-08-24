@@ -2,20 +2,11 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
 type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
-type ModelLike = {
-  provider: string;
-  id: string;
-  name?: string;
-  reasoning?: boolean;
-};
-
 function getDefaultThinkingLevel(provider: string, modelId: string): ThinkingLevel | undefined {
   const normalizedProvider = provider.toLowerCase();
   const normalizedModelId = modelId.toLowerCase();
 
-  if (
-    normalizedProvider.includes("deepseek")
-  ) {
+  if (normalizedProvider.includes("deepseek")) {
     return "max";
   }
 
@@ -26,156 +17,17 @@ function getDefaultThinkingLevel(provider: string, modelId: string): ThinkingLev
   return undefined;
 }
 
-function isGptModel(model: ModelLike | undefined): boolean {
-  if (!model) return false;
-
-  const provider = model.provider.toLowerCase();
-  const id = model.id.toLowerCase();
-  return provider.includes("openai") || provider.includes("codex") || id.includes("gpt");
-}
-
-function hasConversationEntries(ctx: { sessionManager: { getEntries(): Array<{ type?: string }> } }): boolean {
-  return ctx.sessionManager.getEntries().some((entry) => entry.type === "message");
-}
-
-const CACHE_WARNING_ID = "gpt-cache-warning";
-const CONTEXT_CACHE_TTL_MS = 10 * 60 * 1000;
-
-type SessionEntryLike = {
-  type?: string;
-  timestamp?: string | number;
-  message?: { role?: string };
-};
-
-function clearCacheWarning(ctx: any) {
-  // Clear both surfaces so reloads also remove warnings created by older
-  // versions of this extension.
-  ctx.ui.setWidget(CACHE_WARNING_ID, undefined);
-  ctx.ui.setStatus(CACHE_WARNING_ID, undefined);
-}
-
-function entryTimestampMs(entry: SessionEntryLike): number | undefined {
-  if (typeof entry.timestamp === "number") return Number.isFinite(entry.timestamp) ? entry.timestamp : undefined;
-  if (typeof entry.timestamp !== "string") return undefined;
-
-  const timestamp = Date.parse(entry.timestamp);
-  return Number.isFinite(timestamp) ? timestamp : undefined;
-}
-
-function lastAssistantResponseTimestampMs(ctx: { sessionManager: { getEntries(): SessionEntryLike[] } }): number | undefined {
-  const entries = ctx.sessionManager.getEntries();
-  for (let index = entries.length - 1; index >= 0; index--) {
-    const entry = entries[index];
-    if (entry?.type === "message" && entry.message?.role === "assistant") {
-      return entryTimestampMs(entry);
-    }
-  }
-
-  return undefined;
-}
-
-function isContextCacheAlreadyExpiredByTime(ctx: { sessionManager: { getEntries(): SessionEntryLike[] } }): boolean {
-  const lastResponseTimestamp = lastAssistantResponseTimestampMs(ctx);
-  return lastResponseTimestamp !== undefined && Date.now() - lastResponseTimestamp >= CONTEXT_CACHE_TTL_MS;
-}
-
-function showThinkingCacheWarning(ctx: any, level: ThinkingLevel) {
-  queueMicrotask(() => {
-    ctx.ui.setStatus(CACHE_WARNING_ID, `Thinking level: ${level} • Context cache will be invalidated`);
-  });
-}
-
-function sameModel(a: ModelLike | undefined, b: ModelLike | undefined) {
-  return Boolean(a && b && a.provider === b.provider && a.id === b.id);
-}
-
-function showModelCacheWarning(ctx: any, model: ModelLike, getThinkingLevel: () => ThinkingLevel) {
-  return setTimeout(() => {
-    const thinkingLevel = getThinkingLevel();
-    const thinking = model.reasoning && thinkingLevel !== "off" ? ` (thinking: ${thinkingLevel})` : "";
-    ctx.ui.setStatus(CACHE_WARNING_ID, `Switched to ${model.name || model.id}${thinking} • Context cache will be invalidated`);
-  }, 0);
-}
-
 export default function defaultReasoningExtension(pi: ExtensionAPI) {
-  let suppressNextThinkingWarning = false;
-  let sessionInitialThinkingLevel: ThinkingLevel | undefined;
-  let sessionInitialModel: ModelLike | undefined;
-  let pendingModelWarningTimer: ReturnType<typeof setTimeout> | undefined;
-
-  pi.on("session_start", (_event, ctx) => {
-    sessionInitialThinkingLevel = pi.getThinkingLevel();
-    sessionInitialModel = ctx.model;
-  });
-
-  pi.on("model_select", (event, ctx) => {
-    const modelActuallyChanged =
-      !event.previousModel ||
-      event.previousModel.provider !== event.model.provider ||
-      event.previousModel.id !== event.model.id;
-
-    if (pendingModelWarningTimer) {
-      clearTimeout(pendingModelWarningTimer);
-      pendingModelWarningTimer = undefined;
-    }
-
-    if (
-      event.source !== "restore" &&
-      event.previousModel &&
-      modelActuallyChanged &&
-      hasConversationEntries(ctx)
-    ) {
-      clearCacheWarning(ctx);
-      if (!sameModel(event.model, sessionInitialModel) && !isContextCacheAlreadyExpiredByTime(ctx)) {
-        pendingModelWarningTimer = showModelCacheWarning(ctx, event.model, () => pi.getThinkingLevel());
-      }
-    }
-
+  pi.on("model_select", (event) => {
+    // При восстановлении сессии не переопределяем сохранённый уровень мышления.
     if (event.source === "restore") return;
 
     if (!event.model.reasoning) {
-      if (pi.getThinkingLevel() !== "off") suppressNextThinkingWarning = true;
       pi.setThinkingLevel("off");
       return;
     }
 
     const defaultLevel = getDefaultThinkingLevel(event.model.provider, event.model.id);
-    if (!defaultLevel) return;
-
-    if (pi.getThinkingLevel() !== defaultLevel) suppressNextThinkingWarning = true;
-    pi.setThinkingLevel(defaultLevel);
-  });
-
-  pi.on("thinking_level_select", (event, ctx) => {
-    if (suppressNextThinkingWarning) {
-      suppressNextThinkingWarning = false;
-      return;
-    }
-
-    if (!event.previousLevel || event.previousLevel === event.level) return;
-    if (sessionInitialThinkingLevel && event.level === sessionInitialThinkingLevel) {
-      clearCacheWarning(ctx);
-      return;
-    }
-    if (!hasConversationEntries(ctx) || !isGptModel(ctx.model) || isContextCacheAlreadyExpiredByTime(ctx)) return;
-
-    clearCacheWarning(ctx);
-    showThinkingCacheWarning(ctx, event.level);
-  });
-
-  pi.on("before_agent_start", (_event, ctx) => {
-    if (pendingModelWarningTimer) {
-      clearTimeout(pendingModelWarningTimer);
-      pendingModelWarningTimer = undefined;
-    }
-    clearCacheWarning(ctx);
-  });
-
-  pi.on("session_shutdown", (_event, ctx) => {
-    if (pendingModelWarningTimer) {
-      clearTimeout(pendingModelWarningTimer);
-      pendingModelWarningTimer = undefined;
-    }
-    clearCacheWarning(ctx);
+    if (defaultLevel) pi.setThinkingLevel(defaultLevel);
   });
 }
