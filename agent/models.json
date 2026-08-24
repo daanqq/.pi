@@ -1,41 +1,5 @@
 {
   "providers": {
-    "openai-codex": {
-      "modelOverrides": {
-        "gpt-5.5": {
-          "thinkingLevelMap": {
-            "minimal": null
-          }
-        },
-        "gpt-5.4": {
-          "thinkingLevelMap": {
-            "minimal": null
-          }
-        },
-        "gpt-5.4-mini": {
-          "thinkingLevelMap": {
-            "minimal": null
-          }
-        },
-        "gpt-5.6-sol": {
-          "thinkingLevelMap": {
-            "minimal": null,
-            "max": null
-          }
-        },
-        "gpt-5.6-terra": {
-          "thinkingLevelMap": {
-            "minimal": null,
-            "max": null
-          }
-        },
-        "gpt-5.6-luna": {
-          "thinkingLevelMap": {
-            "minimal": null
-          }
-        }
-      }
-    },
     "cliproxy": {
       "baseUrl": "http://127.0.0.1:8317/v1",
       "api": "openai-responses",
@@ -44,6 +8,13 @@
         {
           "id": "gpt-5.6-sol",
           "reasoning": true,
+          "thinkingLevelMap": {
+            "minimal": null,
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh"
+          },
           "input": ["text", "image"],
           "contextWindow": 272000,
           "cost": {
@@ -65,6 +36,13 @@
         {
           "id": "gpt-5.6-luna",
           "reasoning": true,
+          "thinkingLevelMap": {
+            "minimal": null,
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh"
+          },
           "input": ["text", "image"],
           "contextWindow": 272000,
           "cost": {

@@ -29,7 +29,8 @@
   },
   "enabledModels": [
     "cliproxy/gpt-5.6-sol",
-    "cliproxy/gpt-5.6-luna"
+    "cliproxy/gpt-5.6-luna",
+    "deepseek/deepseek-v4-flash"
   ],
   "externalEditor": "code --wait",
   "transport": "auto",
