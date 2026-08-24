@@ -29,7 +29,6 @@ import * as path from "node:path";
 const EUTP_ID_RE = /EUTP-\d+/i;
 const TITLE_MAX_ATTEMPTS = 3;
 const MR_DESC_TMP = "/tmp/mr_description.md";
-const LOG_PATH = "/tmp/mr-echat.log";
 const GENERATION_PROVIDER = "cliproxy";
 const GENERATION_MODEL = "gpt-5.6-luna";
 const GENERATION_THINKING = "high";
@@ -706,19 +705,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("mr-echat", {
     description: "Commit + push + создать MR через glab; [ветка] [--cwd путь]",
     handler: async (args, ctx) => {
-      const runId = `${Date.now()}-${process.pid}`;
-      const log: LogFn = (event, details = {}) => {
-        try {
-          fs.appendFileSync(LOG_PATH, `${JSON.stringify({
-            timestamp: new Date().toISOString(),
-            runId,
-            event,
-            ...details,
-          })}\n`, "utf-8");
-        } catch {
-          // Ошибка диагностического лога не должна прерывать создание MR.
-        }
-      };
+      const log: LogFn = () => {};
       log("run:start", { cwd: ctx.cwd || process.cwd(), args: args.trim() });
       try {
         if (sessionGenerationActive) {
