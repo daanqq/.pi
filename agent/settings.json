@@ -1,8 +1,8 @@
 {
-  "lastChangelogVersion": "0.84.2",
-  "defaultThinkingLevel": "medium",
-  "defaultProvider": "cliproxy",
-  "defaultModel": "gpt-5.6-sol",
+  "lastChangelogVersion": "0.84.3",
+  "defaultThinkingLevel": "high",
+  "defaultProvider": "openrouter",
+  "defaultModel": "z-ai/glm-5.3-flash",
   "packages": [
     {
       "source": "npm:pi-web-access",
@@ -30,7 +30,8 @@
   "enabledModels": [
     "cliproxy/gpt-5.6-sol",
     "cliproxy/gpt-5.6-luna",
-    "deepseek/deepseek-v4-flash"
+    "deepseek/deepseek-v4-flash-vision-exp",
+    "openrouter/z-ai/glm-5.3-flash"
   ],
   "externalEditor": "code --wait",
   "transport": "auto",
@@ -59,7 +60,8 @@
     "-extensions/mr-review/index.ts",
     "-extensions/analyze-eutp.ts",
     "-extensions/default-reasoning.test.ts",
-    "+extensions/default-reasoning.ts"
+    "+extensions/default-reasoning.ts",
+    "+extensions/balance.ts"
   ],
   "httpIdleTimeoutMs": 120000,
   "defaultProjectTrust": "always",
