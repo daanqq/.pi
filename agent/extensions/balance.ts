@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { EnvHttpProxyAgent, fetch as proxyFetch } from "undici";
 import type {
   ExtensionAPI,
   ExtensionContext,
@@ -64,16 +65,23 @@ function getApiKey(providerId: string) {
   return undefined;
 }
 
+// Глобальный fetch игнорирует HTTP(S)_PROXY, а прямой egress в этом окружении
+// заблокирован; родной dispatcher из undici несовместим с встроенным fetch pi,
+// поэтому используем fetch самого undici с EnvHttpProxyAgent (уважает NO_PROXY,
+// при отсутствии прокси-переменных ходит напрямую).
+const proxyDispatcher = new EnvHttpProxyAgent();
+
 async function fetchBalance<TBalance extends BalanceWithError>(
   config: ProviderConfig<TBalance>,
   apiKey: string,
 ): Promise<TBalance> {
-  const response = await fetch(config.balanceUrl, {
+  const response = await proxyFetch(config.balanceUrl, {
     method: "GET",
     headers: {
       Accept: "application/json",
       Authorization: `Bearer ${apiKey}`,
     },
+    dispatcher: proxyDispatcher,
   });
 
   let data: TBalance;

@@ -17,6 +17,7 @@ Personal configuration for the `pi` coding agent.
 - `agent/skills/` — local skills.
 - `agent/themes/` — local themes.
 - `agent/zshrc` — shell setup.
+- `agent/extensions/package.json` — npm deps for local extensions (currently `undici`, used by `balance.ts` to route balance checks through the env HTTP proxy).
 
 ## Prompt template
 
