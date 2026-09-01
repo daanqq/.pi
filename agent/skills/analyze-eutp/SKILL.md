@@ -1,6 +1,6 @@
 ---
 name: analyze-eutp
-description: Analyze an EUTP issue from an ESOFT YouTrack URL or text, fetch and normalize its API data, then inspect the relevant codebase read-only and produce a strict implementation plan. Use when the user asks for primary analysis or planning for an EUTP ticket.
+description: Analyze an EUTP issue from an ESOFT YouTrack URL or text, fetch and normalize its API data, inspect the relevant codebase read-only, and produce a strict implementation plan. Also defines the worktree location for a follow-up implementation request. Use when the user asks for primary analysis or planning for an EUTP ticket.
 compatibility: Requires Python 3.10+ and HTTPS access to urs.esoft.tech; authenticated API access requires a PORA session cookie.
 ---
 
@@ -64,3 +64,9 @@ Do not add prefaces, conclusions, or extra headings.
 ```
 
 Use `— не найдено` as the only list item when a section has no supported entries. Keep the result to analysis and planning; never claim that changes were implemented.
+
+## 4. Handle a follow-up implementation request
+
+The analysis remains read-only. If the user later explicitly asks to implement the planned changes, do the implementation in a dedicated git worktree rather than the original checkout.
+
+Place each worktree under `~/echat/worktrees/` unless the user specifies another location. Name it `<repository>-EUTP-<digits>`, using the repository name and the actual issue number from step 1. For example, work for `EUTP-123123` in repository `echat-web` belongs in `~/echat/worktrees/echat-web-EUTP-123123`. If the implementation spans multiple repositories, create one worktree per repository with the same suffix.

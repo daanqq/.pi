@@ -23,6 +23,16 @@ Before writing code, stop at the first rung that works:
 
 If a simpler approach exists, push back before implementing the larger one.
 
+Reuse requires evidence. Before adding a non-trivial helper, service method,
+component, style token, icon, or library configuration, search the owning
+module and its siblings for the same domain concept. Check project UI kits and
+the defaults of any installed library involved in the change. Record the
+candidate you will reuse, extend, or deliberately reject before writing the
+replacement.
+
+Completion criterion: the chosen approach names the existing candidates that
+were checked, or states the search scope and that none were found.
+
 ## Working loop
 
 1. State the intended behavior change and success criteria; done when both are concrete enough to verify.
@@ -32,6 +42,17 @@ If a simpler approach exists, push back before implementing the larger one.
 5. Verify with the cheapest reliable check: focused test, existing test, typecheck, lint, build, or manual reproduction; done when the check result is known and reportable.
 6. Review the diff for structural regression before final response; for non-trivial changes, use [`QUALITY-GATE.md`](QUALITY-GATE.md).
 7. Report what changed, what was verified, and what remains skipped or uncertain.
+
+## Behavioral edge-case gate
+
+For changes to business rules, persistence, permissions, external services,
+retries, or user-visible state, run the behavioral questions in
+[`QUALITY-GATE.md`](QUALITY-GATE.md) before implementation and again against
+the finished diff. Resolve each applicable case in code or report it as an
+explicit product decision or risk.
+
+Completion criterion: every applicable behavioral question has an answer based
+on the implementation, its callers, and the relevant state boundary.
 
 ## Branches
 

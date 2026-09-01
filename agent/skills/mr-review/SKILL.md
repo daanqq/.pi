@@ -34,6 +34,16 @@ Review the targets described by the review context passed in the skill arguments
 8. Run focused tests, type checks, or lint checks when they materially increase confidence.
 9. Report only actionable, high-confidence findings. Do not add cosmetic nits to make the review look populated.
 
+## Follow-up implementation
+
+If the user asks to implement fixes after the review, keep the review checkout read-only and do the work in a persistent task worktree:
+
+1. Create or reuse `/home/user/echat/worktrees/<repo>-<TASK_ID>`, for example `/home/user/echat/worktrees/tidy-client-EUTP-123123`. For a multi-repository task, use one task worktree per repository.
+2. Prefer the task branch from the normal source repository under `/home/user/echat`, including its remote-tracking branch when needed. Use the MR head only when no task branch is available, and state that fallback.
+3. Apply and verify changes only in the task worktree. Do not modify generated review workspaces or repositories under `/home/user/echat/reviews`.
+
+Before reusing an existing path, verify its repository, branch, and working-tree state. Preserve unrelated local changes.
+
 ## Review standard
 
 Use `thermo-nuclear-code-quality-review` as the single source of truth for maintainability, structural simplification, abstraction quality, file size, type boundaries, canonical ownership, and the approval bar. In addition, prioritize correctness, security, data loss, races, compatibility, regressions, and task compliance.

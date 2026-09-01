@@ -49,6 +49,27 @@ Treat `review-context.json` as the source of truth. Review every target as one l
 7. Compare implementation with the primary task, related tasks, and additional information in the context. A missing task must not block review.
 8. Run focused non-destructive tests, type checks, or lint checks when practical. State exactly what ran.
 
+## Behavioral and reuse checklist
+
+Apply these checks to every relevant changed flow:
+
+1. Search for existing services, model or collection methods, UI components,
+   icons, style tokens, and domain helpers before accepting a new equivalent.
+2. Check whether manual DOM logic, measurements, animation, or configuration
+   duplicates defaults or built-in features of an installed library.
+3. Trace existing-entity, repeated-call, concurrent-call, transient-failure,
+   `null` or empty-value, and user-role paths. Check the order of lookup,
+   authorization, validation, and side effects.
+4. Distinguish infrastructure failures from valid empty results, unavailable
+   business states, and normal pagination completion.
+5. Check that new services and files live in the module that owns the domain,
+   and that non-obvious queues, retries, quotas, and state transitions are
+   documented where a local reader needs the invariant.
+
+Completion criterion: every applicable item is checked against the actual diff
+and its immediate callers. Any finding must still be caused by an in-scope
+changed line or listed untracked file.
+
 Report only actionable, high-confidence correctness, security, data-loss, race, compatibility, regression, task-compliance, or concrete maintainability issues. Use Blocker, Major, or Minor severity. Include repository, `path:line`, mechanism, impact, and a concrete correction. If there are no findings, say so explicitly and still summarize task coverage and checks.
 
 Respond in Russian unless the user requests another language.
