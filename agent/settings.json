@@ -54,21 +54,11 @@
   "enableInstallTelemetry": true,
   "doubleEscapeAction": "tree",
   "extensions": [
-    "-extensions/background-terminals/index.ts",
-    "-extensions/branch-summary-model.ts",
-    "-extensions/codex-usage/index.ts",
-    "-extensions/mr-review/index.ts",
-    "-extensions/analyze-eutp.ts",
-    "-extensions/default-reasoning.test.ts",
-    "+extensions/default-reasoning.ts",
     "+extensions/balance.ts"
   ],
   "httpIdleTimeoutMs": 120000,
   "defaultProjectTrust": "always",
   "outputPad": 0,
-  "skills": [
-    "-skills/background-terminals/SKILL.md"
-  ],
   "fullscreenScrollbar": "auto",
   "tuiMode": "regular",
   "showCacheMissNotices": true

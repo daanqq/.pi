@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { parseCodexWindows, resetText } from "../codex-usage/quota.ts";
+import { parseCodexWindows, resetText } from "./windows.ts";
 
 const MANAGEMENT_URL = process.env.CLIPROXY_MANAGEMENT_URL ?? "http://127.0.0.1:8317";
 const MANAGEMENT_KEY = process.env.CLIPROXY_MANAGEMENT_KEY ?? "";

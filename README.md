@@ -6,7 +6,7 @@ Personal configuration for the `pi` coding agent.
 
 ## Setup
 
-- Default model: `cliproxy/sol`, thinking `high`
+- Default model: `cliproxy/sol`, thinking `medium` (Pi's configured default; no per-model reasoning override).
 - Theme: `alabaster`
 - Packages: `pi-web-access`, `pi-system-prompt`, `@ff-labs/pi-fff`, `@plannotator/pi-extension`, `pi-mcp-adapter`, `pi-openai-server-compaction`
 
@@ -97,16 +97,12 @@ editing, while routine response style stays in `agent/AGENTS.md`.
 | `00-ui-footer.ts` | Compact two-line status footer. | — |
 | `00-ui-header.ts` | Theme-aware gradient header. | — |
 | `agent-pulse.ts` | Agent activity and elapsed-time indicator. | — |
-| `analyze-eutp.ts` | Analyzes an EUTP task and names the session. | `/analyze-eutp` |
 | `apply-patch/` | Adds the Codex-style `apply_patch` tool. | — |
 | `auto-session-name/` | Names new sessions after the first completed response. | — |
 | `balance.ts` | Shows DeepSeek and OpenRouter balances. | `/deepseek:balance`, `/openrouter:balance` |
-| `codex-usage/` | Shows quota and rotates Codex profiles. | `/status`, `/codex:profile`, `/codex:rotate` |
-| `commands-aliases.ts` | Adds common command aliases. | `/exit`, `/q`, `/e`, `/n` |
+| `cliproxy-quota/` | Shows combined and per-account Codex quotas through CLIProxyAPI. | `/cliproxy:quota`, `/statuses` |
 | `context-limit-warning.ts` | Warns when context exceeds 128k tokens. | — |
-| `default-reasoning.ts` | Applies model-specific reasoning defaults. | — |
 | `mr-echat.ts` | Commits, pushes, and creates EChat merge requests. | `/mr-echat` |
-| `mr-review/` | Reviews GitLab merge requests and local changes. | `/review`, `/mr-review` |
 | `session-delete.ts` | Deletes the current session safely. | `/delete` |
 | `shake.ts` | Removes bulky content from session context. | `/shake` |
 | `skill-dollar.ts` | Expands `$skill-name` references. | `$<skill-name>` |
@@ -117,5 +113,4 @@ editing, while routine response style stays in `agent/AGENTS.md`.
 
 | Command | Purpose |
 | --- | --- |
-| `agent/bin/runreviews` | Runs parallel MR reviews for URS tasks. |
 | `agent/bin/runanalyses` | Runs parallel EUTP analyses in separate Pi TUI tabs inside one Herdr Space and skips tasks whose `Что было сделано?` section already contains a GitLab MR. |
