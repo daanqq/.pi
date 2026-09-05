@@ -80,8 +80,8 @@ An explicit no-writes request also excludes temporary files.
 `code-review` distinguishes `branch`, `working-tree`, and `all` scopes, including
 untracked files where applicable. Missing specifications limit Spec coverage without
 blocking the rest of the review. `diagnosing-bugs` uses a short diagnosis path and
-loads advanced techniques only for difficult cases. `unslop` is for requested prose
-editing, while routine response style stays in `agent/AGENTS.md`.
+loads advanced techniques only for difficult cases. Routine response style stays
+in `agent/AGENTS.md`.
 
 ## Prompt template
 
