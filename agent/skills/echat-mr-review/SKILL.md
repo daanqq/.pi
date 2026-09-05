@@ -9,7 +9,7 @@ metadata:
 
 # EChat MR review
 
-Use the bundled deterministic CLI to prepare review inputs. Do not recreate its Git, GitLab, worktree, scope, or task-discovery logic in the model.
+Use the bundled deterministic CLI to prepare review inputs. Do not recreate its Git, GitLab, worktree, scope, or task-discovery logic in the model. Preparation creates isolated temporary artifacts under the active `AGENTS.md` permission policy; it must not edit the user's working files. If the user explicitly forbids all writes, do not run preparation: review already available inputs and report any missing scope evidence.
 
 ## Prepare
 
@@ -76,7 +76,7 @@ Respond in Russian unless the user requests another language.
 
 ## Cleanup
 
-Keep the prepared workspace until all file reads and checks are complete. Then clean it even when the review finds errors:
+Keep the prepared workspace until all file reads and checks are complete. Then clean task-created temporary artifacts even when the review finds errors, subject to the ownership and data-preservation rules in `AGENTS.md`. Before cleanup, confirm the manifest belongs to this task and no user changes or pre-existing artifacts would be removed. If ownership or preservation is uncertain, retain the workspace and ask rather than deleting it:
 
 ```sh
 python3 "$SKILL_ROOT/scripts/review_prepare.py" cleanup <workspace-or-manifest-path>

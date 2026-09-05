@@ -66,6 +66,23 @@ Keep both secret files at mode `0600`.
 - `agent/zshrc` — shell setup.
 - `agent/extensions/package.json` — npm deps for local extensions (currently `undici`, used by `balance.ts` to route balance checks through the env HTTP proxy).
 
+## Agent instructions and skills
+
+`agent/AGENTS.md` owns task permissions, clarification boundaries, verification
+stopping rules, response style, and subagent model selection. Skills reference
+that policy rather than pinning their own models. Pi subagents inherit the parent
+model and reasoning unless the user selects an override.
+
+Read-only work preserves project files and user data while allowing necessary,
+isolated temporary artifacts. Cleanup is limited to verified task-owned artifacts.
+An explicit no-writes request also excludes temporary files.
+
+`code-review` distinguishes `branch`, `working-tree`, and `all` scopes, including
+untracked files where applicable. Missing specifications limit Spec coverage without
+blocking the rest of the review. `diagnosing-bugs` uses a short diagnosis path and
+loads advanced techniques only for difficult cases. `unslop` is for requested prose
+editing, while routine response style stays in `agent/AGENTS.md`.
+
 ## Prompt template
 
 | Template | Description | Command |

@@ -25,13 +25,13 @@ Use the cheapest level that proves the actual claim. A higher level is not autom
 
 1. State the user-visible or maintainer-visible completion predicate.
 2. List what the planned checks prove and what they do not prove.
-3. Run the narrowest direct check. Prefer repository commands and existing harnesses before creating new code.
+3. Use the narrowest direct check. Reuse evidence for the current artifact under the verification policy in `AGENTS.md`; otherwise run the check. Prefer repository commands and existing harnesses before creating new code.
 4. Inspect the real artifact: diff, file contents, generated output, runtime state, response, screenshot, trace, or side effect.
-5. For delegated work, inspect the child artifact and rerun the relevant check. A summary is not evidence.
+5. For delegated work, inspect the child artifact and underlying check output. Establish that the evidence covers the current artifact and requested behavior. Rerun only if the evidence is stale, unavailable, insufficient, or contradicted by a concrete concern. A child summary alone is not evidence.
 6. If the observation is surprising or passes too easily, verify the observation method before trusting the result.
-7. Report the achieved evidence level, exact check, result, and remaining gap.
+7. Report the check, result, and any material gap. Use the detailed report below when the task or uncertainty warrants it.
 
-Use `VERIFIED` only when the evidence reaches the stated predicate. Use `NOT VERIFIED` when it fails and `INCONCLUSIVE` when the necessary runtime, permission, external system, or safe environment is unavailable.
+When using verdict labels, use `VERIFIED` only when the evidence reaches the stated predicate, `NOT VERIFIED` when it fails, and `INCONCLUSIVE` when the necessary runtime, permission, external system, or safe environment is unavailable.
 
 ## Guardrails
 
@@ -43,6 +43,8 @@ Use `VERIFIED` only when the evidence reaches the stated predicate. Use `NOT VER
 - Keep a reusable proof script only when it will catch the same risk again. Otherwise place disposable scaffolding under `/tmp`, report its path, and ask before deleting it when deletion requires confirmation under the active AGENTS.md rules.
 
 ## Report
+
+For a small change, state the check performed, its result, and any material limitation in a short paragraph. For complex verification or an explicitly requested audit, include:
 
 - Predicate.
 - Evidence level reached.

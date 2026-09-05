@@ -39,7 +39,7 @@ were checked, or states the search scope and that none were found.
 2. Read before writing until you can name the owning module, affected immediate callers, local convention to follow, relevant tests or gaps, and the cheapest verification path.
 3. For a non-trivial change, ask whether one behavior-preserving move would make the requested edit simpler; done when you either make that move or can explain why direct change is safer.
 4. Implement surgically: touch only required code, match local style, and avoid unrelated cleanup.
-5. Verify with the cheapest reliable check: focused test, existing test, typecheck, lint, build, or manual reproduction; done when the check result is known and reportable.
+5. Verify with the cheapest reliable check: focused test, existing test, typecheck, lint, build, or manual reproduction. Follow the `AGENTS.md` verification policy for reusing current evidence and stopping; done when the result is known and reportable.
 6. Review the diff for structural regression before final response; for non-trivial changes, use [`QUALITY-GATE.md`](QUALITY-GATE.md).
 7. Report what changed, what was verified, and what remains skipped or uncertain.
 
@@ -85,7 +85,7 @@ Prefer a slightly larger behavior-preserving restructure when it removes repeate
 
 ## General guardrails
 
-- Ask rather than guess when ambiguity affects behavior.
+- Resolve routine reversible choices from repository conventions. Follow `AGENTS.md` clarification boundaries when ambiguity materially changes behavior, a public contract, scope, or required permission.
 - Surface conflicting patterns; choose one deliberately instead of averaging them.
 - Tests should encode intent, not just line coverage.
 - Non-trivial logic leaves one minimal runnable check behind. Trivial one-liners need no test.

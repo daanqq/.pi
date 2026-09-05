@@ -37,7 +37,7 @@ If a `CONTEXT-MAP.md` exists at the root, the repo has multiple contexts. The ma
 │       └── docs/adr/
 ```
 
-Create files lazily: only when you have something to write. If no `CONTEXT.md` exists, create one when the first term is resolved. If no `docs/adr/` exists, create it when the first ADR is needed.
+Create or edit domain documents only when the user has requested those changes. Discussing or agreeing on a term does not authorize a file edit; in read-only work, present the proposed glossary entry or decision in the response. When document changes are authorized, create files lazily: create `CONTEXT.md` when the first term is resolved, and `docs/adr/` when the first ADR is needed.
 
 ## During the session
 
@@ -59,7 +59,7 @@ When the user states how something works, check whether the code agrees. If you 
 
 ### Update CONTEXT.md inline
 
-When a term is resolved, update `CONTEXT.md` right there. Don't batch these up: capture them as they happen. Use the format in [CONTEXT-FORMAT.md](./CONTEXT-FORMAT.md).
+When updates to the domain documentation are authorized, record resolved terms in `CONTEXT.md` as they are agreed. Otherwise keep proposed entries in the response without writing files. Use the format in [CONTEXT-FORMAT.md](./CONTEXT-FORMAT.md) for an authorized update or a requested draft.
 
 `CONTEXT.md` should be totally devoid of implementation details. Do not treat `CONTEXT.md` as a spec, a scratch pad, or a repository for implementation decisions. It is a glossary and nothing else.
 

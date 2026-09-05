@@ -15,12 +15,12 @@ Do not spawn scouts, workers, completion reviewers, final reviewers, or any
 other auxiliary subagents. Never exceed the cap to obtain a clean review; stop
 and report remaining findings instead.
 
-Every reviewer must use `harness: "pi"`,
-`model: "cliproxy/luna"`, and `reasoning_effort: "high"`.
+Every reviewer follows the harness, model, and reasoning policy in the active
+`AGENTS.md`. This skill overrides only the review-round and session budgets.
 
-1. Pin the current `HEAD` as the review fixed point and treat the described task as the spec.
+1. Pin the current `HEAD` as the review fixed point and treat the described task as the spec. Record any pre-existing pending changes so they are not attributed to this task.
 2. Load `coding-discipline`. Before implementation, complete its reuse search and behavioral edge-case gate. Implement the task, run the gate again against the diff, then run the relevant deterministic checks.
-3. Invoke `code-review` against the fixed point and spec. Add `coding-discipline/QUALITY-GATE.md` to the Standards sources. Require the Standards reviewer to check reuse, installed-library defaults, and domain placement. Require the Spec reviewer to trace existing-entity, repeated-call, transient-failure, null or empty-value, access-control, and failure-versus-empty-result behavior where applicable. Spawn fresh, parallel Standards and Spec reviewers with `subagent_spawn` using `harness: "pi"`, `model: "cliproxy/luna"`, and `reasoning_effort: "high"`; wait for both.
+3. Invoke `code-review` with scope `all` against the fixed point and spec, including task-created untracked files. Exclude pre-existing unrelated changes from findings. Add `coding-discipline/QUALITY-GATE.md` to the Standards sources. Require the Standards reviewer to check reuse, installed-library defaults, and domain placement. Require the Spec reviewer to trace existing-entity, repeated-call, transient-failure, null or empty-value, access-control, and failure-versus-empty-result behavior where applicable. Spawn fresh, parallel Standards and Spec reviewers with `subagent_spawn` under the active `AGENTS.md` model policy; wait for both.
 4. Deduplicate and verify their findings. If none remain and all checks pass, finish. Otherwise, fix every valid finding, rerun the checks, and return to step 3.
 
 Stop after three review rounds, after six total subagent spawns, or when the same

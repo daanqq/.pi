@@ -20,7 +20,15 @@ Example:
 
 `github.com/mitsuhiko/minijinja` → `~/.cache/checkouts/github.com/mitsuhiko/minijinja`
 
-## Command
+## Permission boundary
+
+Follow `AGENTS.md` for read-only work and temporary artifacts. In a read-only investigation, reuse an existing checkout without updating it when its current revision is sufficient. If fresh remote content is needed, use an isolated task-owned temporary clone outside working files rather than modifying a pre-existing shared checkout. Report the revision inspected. A request to cache or refresh the repository authorizes the reusable-cache workflow below; a reference URL alone does not authorize updating an existing checkout.
+
+If the user explicitly forbids all writes, use available read-only content or explain the access limitation. Temporary cleanup follows the task-ownership checks in `AGENTS.md`.
+
+## Cache command
+
+Use this command only for an authorized cache creation or refresh. `--path-only` controls output; it does not make the command read-only.
 
 ```bash
 bash checkout.sh <repo> --path-only
@@ -52,9 +60,9 @@ bash checkout.sh <repo> --force-update --path-only
 
 ## Recommended workflow
 
-1. Resolve repository path via `checkout.sh --path-only`.
-2. Use that path for searching, reading, and analysis.
-3. On later references to the same repo, call `checkout.sh` again; it will find and update the cached checkout.
+1. Choose read-only inspection, isolated temporary retrieval, or authorized reusable-cache refresh under the permission boundary above.
+2. For authorized cache refresh, resolve the repository path via `checkout.sh --path-only`; otherwise inspect the existing or temporary path directly.
+3. Use that path and its recorded revision for searching, reading, and analysis. Refresh only when fresh content is needed and updating the cache is authorized.
 
 ## If edits are needed
 

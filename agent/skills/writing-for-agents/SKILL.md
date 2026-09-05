@@ -71,7 +71,7 @@ Hunt for opportunities to refactor with leading words. A triad spelled out at th
 
 You win twice: fewer tokens, and a sharper hook for the agent to hang its thinking on. Assume every document is carrying restatements that leading words retire. Go find them.
 
-**Negation** is the failure mode beside this lever: steering by prohibition drags the forbidden behaviour into context and makes it _more_ available, not less. _Don't think of an elephant_, and the elephant is all there is; the negation is a weak modifier the strongly-activated concept overruns, so the ban half-reads as an instruction to do the thing. Prompt the **positive**: state the target behaviour ("write one-line comments") so the banned one is never spoken. A prohibition earns its place only as a hard guardrail you cannot phrase positively; even then, pair it with the positive target so attention lands on what to do.
+**Positive instructions and prohibitions** serve different purposes. State the desired action when it makes the next step clearer; use explicit prohibitions for boundaries the agent must respect. A negative instruction does not inherently cause the prohibited behavior. Evaluate wording against observed behavior on representative tasks with the target model, rather than treating a prompting theory as a universal rule. When a prohibition leaves the next action unclear, name the permitted alternative.
 
 ## Pruning
 

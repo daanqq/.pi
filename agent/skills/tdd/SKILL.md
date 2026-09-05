@@ -1,11 +1,11 @@
 ---
 name: tdd
-description: Test-driven development. Use when the user wants to build features or fix bugs test-first, mentions "red-green-refactor", or wants integration tests.
+description: Test-driven development for features and fixes. Use when the user requests test-first work or red-green-refactor; integration tests alone do not imply TDD.
 ---
 
 # Test-Driven Development
 
-TDD is the red → green loop. This skill is the reference that makes that loop produce tests worth keeping: what a good test is, where tests go, the anti-patterns, and the rules of the loop. Every section applies on every cycle: consult them before and during the loop, not after.
+TDD is the red → green loop. Use the rules below to choose meaningful behavior tests and an appropriate public boundary. Consult supporting examples when a test-design decision needs them; follow `AGENTS.md` for verification scope, evidence reuse, and stopping.
 
 When exploring the codebase, read `CONTEXT.md` (if it exists) so test names and interface vocabulary match the project's domain language, and respect ADRs in the area you're touching.
 
@@ -19,11 +19,9 @@ See [tests.md](tests.md) for examples and [mocking.md](mocking.md) for mocking g
 
 A **seam** is the public boundary you test at: the interface where you observe behavior without reaching inside. Tests live at seams, never against internals.
 
-**Test only at pre-agreed seams.** Before writing any test, write down the seams under test and confirm them with the user. No test is written at an unconfirmed seam. You can't test everything, so agreeing the seams up front is how testing effort lands on the critical paths and complex logic instead of every edge case.
+Choose the narrowest existing public boundary that exercises the requested behavior, using the owning code and repository tests. Record the boundary and intended observable result in working notes, then proceed without routine confirmation. Ask when the expected contract is genuinely disputed or the choice would materially change scope or a public interface; continue independent authorized work while awaiting an answer.
 
-Ask: "What's the public interface, and which seams should we test?"
-
-When the shape of that interface is itself in question (how deep the module is, where the seam belongs, what the interface should expose), call the Skill tool with "codebase-design" for the vocabulary. It is the shared source of the module, interface, depth, seam, adapter, leverage and locality terms, and it is a reference to consult, not a session to run.
+When the shape of that interface is itself in question, read [codebase-design](../codebase-design/SKILL.md) for the interface and module-design vocabulary. Consult it as reference rather than starting a separate design workflow.
 
 ## Anti-patterns
 
