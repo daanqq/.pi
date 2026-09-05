@@ -7,7 +7,7 @@ const MAX_CONTEXT_CHARS = 4_000;
 const MAX_TITLE_CHARS = 60;
 const REQUEST_TIMEOUT_MS = 15_000;
 
-const SYSTEM_PROMPT = `Create a concise name for this coding-agent session.
+const SYSTEM_PROMPT = `Create a concise name for this coding-agent session, in English.
 
 Rules:
 - Output exactly one line and nothing else.
