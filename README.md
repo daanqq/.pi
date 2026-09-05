@@ -48,3 +48,10 @@ Personal configuration for the `pi` coding agent.
 | `skill-dollar.ts` | Expands `$skill-name` references. | `$<skill-name>` |
 | `subagents/` | Runs background agents. | `/subagents`, `/btw` |
 | `zsh.ts` | Runs user shell commands through zsh. | — |
+
+## Local commands
+
+| Command | Purpose |
+| --- | --- |
+| `agent/bin/runreviews` | Runs parallel MR reviews for URS tasks. |
+| `agent/bin/runanalyses` | Runs parallel EUTP analyses in separate Pi TUI tabs inside one Herdr Space and skips tasks whose `Что было сделано?` section already contains a GitLab MR. |

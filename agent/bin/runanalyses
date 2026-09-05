@@ -1,0 +1,500 @@
+#!/usr/bin/env node
+
+import fs from "node:fs";
+import path from "node:path";
+import process from "node:process";
+import { spawn } from "node:child_process";
+import { pathToFileURL } from "node:url";
+
+const API_BASE = "https://urs.esoft.tech/api/user/youtrack/v1/issues";
+const URS_ORIGIN = "https://urs.esoft.tech";
+const DEFAULT_CWD = "/home/user/echat";
+const DEFAULT_LOG_ROOT = "/home/user/echat/analyses/logs";
+const DEFAULT_CONCURRENCY = 4;
+const HERDR_AGENT_START_TIMEOUT = "300000";
+const TASK_ID_RE = /EUTP-\d+/i;
+const READY_MR_RE = /https:\/\/git\.esoft\.tech\/(?:[^/\s()[\]<>]+\/)+-\/merge_requests\/\d+(?:[/?#][^\s()[\]<>]*)?/i;
+const COMPLETED_HEADING = "что было сделано";
+
+export function extractTaskId(value) {
+  return value.match(TASK_ID_RE)?.[0].toUpperCase() ?? null;
+}
+
+export function canonicalIssueUrl(taskId) {
+  return `${URS_ORIGIN}/issue/${taskId.toUpperCase()}`;
+}
+
+function normalizeHeading(value) {
+  return value
+    .replace(/[*_`~]/g, "")
+    .replace(/[?#.!:;,]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLocaleLowerCase("ru-RU");
+}
+
+export function extractCompletedSection(markdown) {
+  if (typeof markdown !== "string" || markdown.length === 0) return "";
+
+  const lines = markdown.replace(/\r\n?/g, "\n").split("\n");
+  const section = [];
+  let headingLevel = null;
+
+  for (const line of lines) {
+    const heading = line.match(/^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$/);
+
+    if (headingLevel === null) {
+      if (heading && normalizeHeading(heading[2]) === COMPLETED_HEADING) {
+        headingLevel = heading[1].length;
+      }
+      continue;
+    }
+
+    if (heading && heading[1].length <= headingLevel) break;
+    section.push(line);
+  }
+
+  return section.join("\n").trim();
+}
+
+export function issueDescription(payload) {
+  if (typeof payload?.textMd === "string") return payload.textMd;
+  if (typeof payload?.description === "string") return payload.description;
+  return "";
+}
+
+export function hasReadyMr(payload) {
+  const completedSection = extractCompletedSection(issueDescription(payload));
+  return READY_MR_RE.test(completedSection.replace(/\\_/g, "_"));
+}
+
+export function analysisExitCode(processCode, output) {
+  if (processCode !== 0) return processCode;
+  if (!output.trim() || output.includes("Extension error")) return 1;
+  return 0;
+}
+
+export function parseArguments(argv, env = process.env) {
+  let concurrency = Number(env.RUNANALYSES_CONCURRENCY ?? DEFAULT_CONCURRENCY);
+  let dryRun = false;
+  let mode = "headless";
+  let modeWasSet = false;
+  const positional = [];
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--help" || arg === "-h") return { help: true };
+    if (arg === "--dry-run") dryRun = true;
+    else if (arg === "--herdr" || arg === "--headless") {
+      if (modeWasSet) throw new Error("Укажите только один режим запуска: --herdr или --headless");
+      mode = arg === "--herdr" ? "herdr" : "headless";
+      modeWasSet = true;
+    }
+    else if (arg === "--concurrency") concurrency = Number(argv[++index]);
+    else if (arg.startsWith("--concurrency=")) concurrency = Number(arg.slice("--concurrency=".length));
+    else if (arg.startsWith("-")) throw new Error(`Неизвестный аргумент: ${arg}`);
+    else positional.push(arg);
+  }
+
+  if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 16) {
+    throw new Error("Параллелизм должен быть целым числом от 1 до 16");
+  }
+  if (positional.length < 2) throw new Error("Нужны PORA token и хотя бы одна ссылка на URS-задачу");
+
+  const tokenArg = positional.shift();
+  const token = tokenArg && tokenArg !== "''" ? tokenArg : env.PORA_SESSION;
+  if (!token) throw new Error("PORA token пуст и PORA_SESSION не задан");
+  if (/\r|\n/.test(token)) throw new Error("PORA token содержит недопустимый перевод строки");
+
+  const tasksById = new Map();
+  for (const value of positional) {
+    const id = extractTaskId(value);
+    if (!id) throw new Error(`Не удалось извлечь EUTP-ID из ссылки: ${value}`);
+    if (!tasksById.has(id)) tasksById.set(id, { id, url: canonicalIssueUrl(id) });
+  }
+
+  return { help: false, concurrency, dryRun, mode, token, tasks: [...tasksById.values()] };
+}
+
+async function fetchTask(taskId, token) {
+  const response = await fetch(`${API_BASE}/${taskId}`, {
+    signal: AbortSignal.timeout(15_000),
+    redirect: "error",
+    headers: {
+      Accept: "application/json",
+      Cookie: `pora-gatekeeper-session=${token}`,
+    },
+  });
+  if (!response.ok) throw new Error(`PORA вернула HTTP ${response.status}`);
+  const payload = await response.json();
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new Error("PORA вернула некорректные данные задачи");
+  }
+  return payload;
+}
+
+function timestamp() {
+  return new Date().toISOString().replace(/[:.]/g, "-");
+}
+
+const children = new Set();
+const herdrCommandChildren = new Set();
+
+function stopChildren(signal) {
+  for (const child of children) {
+    try {
+      process.kill(-child.pid, signal);
+    } catch {}
+  }
+  for (const child of herdrCommandChildren) {
+    try {
+      child.kill(signal);
+    } catch {}
+  }
+}
+
+function herdrCommandLabel(args) {
+  return args.slice(0, 2).join(" ");
+}
+
+function herdrErrorMessage(output) {
+  const text = output.trim();
+  if (!text) return "Herdr не вернул описание ошибки";
+
+  try {
+    const payload = JSON.parse(text);
+    return payload.error?.message || payload.error?.code || text;
+  } catch {
+    return text;
+  }
+}
+
+export function parseHerdrOutput(output, commandLabel) {
+  let payload;
+
+  try {
+    payload = JSON.parse(output);
+  } catch {
+    throw new Error(`${commandLabel}: Herdr вернул некорректный JSON`);
+  }
+
+  if (payload?.error) {
+    throw new Error(`${commandLabel}: ${payload.error.message || payload.error.code}`);
+  }
+  if (!payload?.result) {
+    throw new Error(`${commandLabel}: в ответе Herdr отсутствует result`);
+  }
+
+  return payload;
+}
+
+export function runHerdrCommand(args, options = {}) {
+  const command = options.herdrBin || process.env.HERDR_BIN_PATH || "herdr";
+  const commandLabel = herdrCommandLabel(args);
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      env: options.env || process.env,
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    herdrCommandChildren.add(child);
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.once("error", (error) => {
+      herdrCommandChildren.delete(child);
+      reject(new Error(`${commandLabel}: ${error.message}`));
+    });
+    child.once("close", (code) => {
+      herdrCommandChildren.delete(child);
+      if (code !== 0) {
+        reject(new Error(`${commandLabel}: ${herdrErrorMessage(stderr || stdout)}`));
+        return;
+      }
+
+      try {
+        resolve(parseHerdrOutput(stdout, commandLabel));
+      } catch (error) {
+        reject(error);
+      }
+    });
+  });
+}
+
+export function herdrAgentName(taskId, batchId) {
+  const taskPart = taskId.toLocaleLowerCase("en-US").replace(/[^a-z0-9]+/g, "-");
+  const batchPart = batchId.toLocaleLowerCase("en-US").replace(/[^a-z0-9]+/g, "").slice(-8);
+  const suffix = `-${batchPart || "batch"}`;
+  return `${taskPart.slice(0, 32 - suffix.length)}${suffix}`;
+}
+
+export function herdrWorkspaceLabel(date = new Date()) {
+  return `EUTP analyses ${date.toISOString().slice(0, 16).replace("T", " ")}`;
+}
+
+export function buildAnalyzePrompt(task) {
+  return `$analyze-eutp Проведи первичный анализ задачи:
+${task.url}
+
+Изучи текущую кодовую базу, найди затронутые места и похожие реализации, оцени риски и составь предварительный план. Файлы не изменяй.`;
+}
+
+async function launchHeadlessAnalysis(task, token, options) {
+  const prompt = buildAnalyzePrompt(task);
+  if (options.dryRun) {
+    console.log(`[${task.id}] ${prompt.replace(/\n/g, " ")}`);
+    return { task, code: 0, status: "analyzed", logPath: null };
+  }
+
+  fs.mkdirSync(options.logRoot, { recursive: true, mode: 0o700 });
+  fs.chmodSync(options.logRoot, 0o700);
+  const logPath = path.join(options.logRoot, `${timestamp()}-${task.id}.log`);
+  const logFd = fs.openSync(logPath, "wx", 0o600);
+  console.log(`[${task.id}] запускаю анализ; лог: ${logPath}`);
+
+  const child = spawn("pi", ["-p", "--name", `URS analysis ${task.id}`, prompt], {
+    cwd: options.cwd,
+    env: { ...process.env, PORA_SESSION: token },
+    detached: true,
+    stdio: ["ignore", logFd, logFd],
+  });
+  children.add(child);
+
+  return new Promise((resolve, reject) => {
+    let spawnError = null;
+    child.once("error", (error) => {
+      spawnError = error;
+    });
+    child.once("close", (code, signal) => {
+      children.delete(child);
+      fs.closeSync(logFd);
+      if (spawnError) {
+        reject(spawnError);
+        return;
+      }
+      const output = fs.readFileSync(logPath, "utf8");
+      const exitCode = analysisExitCode(code ?? 1, output);
+      console.log(`[${task.id}] ${exitCode === 0 ? "готово" : `ошибка (code=${exitCode}, signal=${signal ?? "—"})`}; лог: ${logPath}`);
+      resolve({ task, code: exitCode, status: "analyzed", logPath });
+    });
+  });
+}
+
+export async function prepareHerdrWorkspace(tasks, options) {
+  if (tasks.length === 0) return null;
+
+  const runHerdr = options.runHerdr || runHerdrCommand;
+  const workspaceResponse = await runHerdr([
+    "workspace",
+    "create",
+    "--cwd",
+    options.cwd,
+    "--label",
+    options.workspaceLabel,
+    "--env",
+    `PORA_SESSION=${options.token}`,
+    "--focus"
+  ], options);
+  const workspaceId = workspaceResponse.result.workspace?.workspace_id;
+  const firstTabId = workspaceResponse.result.tab?.tab_id;
+  const firstPaneId = workspaceResponse.result.root_pane?.pane_id;
+
+  if (!workspaceId || !firstTabId || !firstPaneId) {
+    throw new Error("workspace create: Herdr не вернул идентификаторы workspace, tab и pane");
+  }
+
+  await runHerdr(["tab", "rename", firstTabId, tasks[0].id], options);
+
+  const locations = [{
+    task: tasks[0],
+    workspaceId,
+    tabId: firstTabId,
+    paneId: firstPaneId
+  }];
+
+  for (const task of tasks.slice(1)) {
+    const tabResponse = await runHerdr([
+      "tab",
+      "create",
+      "--workspace",
+      workspaceId,
+      "--cwd",
+      options.cwd,
+      "--label",
+      task.id,
+      "--env",
+      `PORA_SESSION=${options.token}`,
+      "--no-focus"
+    ], options);
+    const tabId = tabResponse.result.tab?.tab_id;
+    const paneId = tabResponse.result.root_pane?.pane_id;
+
+    if (!tabId || !paneId) {
+      throw new Error(`tab create ${task.id}: Herdr не вернул идентификаторы tab и pane`);
+    }
+
+    locations.push({ task, workspaceId, tabId, paneId });
+  }
+
+  return { workspaceId, locations };
+}
+
+export async function launchHerdrAnalysis(location, options) {
+  const runHerdr = options.runHerdr || runHerdrCommand;
+  const agentName = herdrAgentName(location.task.id, options.batchId);
+  const prompt = buildAnalyzePrompt(location.task);
+
+  console.log(`[${location.task.id}] запускаю Pi TUI в tab ${location.tabId}`);
+  await runHerdr([
+    "agent",
+    "start",
+    agentName,
+    "--kind",
+    "pi",
+    "--pane",
+    location.paneId,
+    "--timeout",
+    HERDR_AGENT_START_TIMEOUT,
+    "--",
+    "--name",
+    `URS analysis ${location.task.id}`
+  ], options);
+  const promptResponse = await runHerdr([
+    "agent",
+    "prompt",
+    agentName,
+    prompt,
+    "--wait",
+    "--until",
+    "idle",
+    "--until",
+    "done",
+    "--until",
+    "blocked"
+  ], options);
+  const agentStatus = promptResponse.result.agent?.agent_status;
+
+  if (agentStatus === "idle" || agentStatus === "done") {
+    console.log(`[${location.task.id}] анализ завершён; tab: ${location.tabId}`);
+    return { task: location.task, code: 0, status: "analyzed", tabId: location.tabId };
+  }
+  if (agentStatus === "blocked") {
+    console.error(`[${location.task.id}] Pi ожидает ввода; tab: ${location.tabId}`);
+    return { task: location.task, code: 1, status: "blocked", tabId: location.tabId };
+  }
+
+  throw new Error(`неожиданный статус Pi: ${agentStatus || "отсутствует"}; tab: ${location.tabId}`);
+}
+
+async function classifyTask(task, options) {
+  console.log(`[${task.id}] загружаю задачу ${task.url}`);
+  const data = await fetchTask(task.id, options.token);
+  if (hasReadyMr(data)) {
+    console.log(`[${task.id}] пропущено: в блоке «Что было сделано?» уже есть GitLab MR`);
+    return { task, code: 0, status: "skipped", logPath: null };
+  }
+  return { task, code: 0, status: "pending" };
+}
+
+async function runPool(items, concurrency, operation) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  async function worker() {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      try {
+        results[index] = await operation(items[index]);
+      } catch (error) {
+        const task = items[index].task || items[index];
+        results[index] = { task, code: 1, status: "failed", error };
+        console.error(`[${task.id}] ошибка: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker));
+  return results;
+}
+
+function printHelp() {
+  console.log(`Использование:
+  runanalyses [--herdr|--headless] [--concurrency N] [--dry-run] <pora-token|''> <urs-task-url>...
+
+Скрипт пропускает задачи, где блок «Что было сделано?» содержит ссылку на GitLab MR.
+
+Режимы:
+  --herdr      создаёт один Herdr Space и отдельный Pi TUI tab для каждой задачи
+  --headless   запускает невидимые pi -p процессы с логами, используется по умолчанию
+
+Переменные окружения:
+  PORA_SESSION               используется, если token передан как ''
+  RUNANALYSES_CONCURRENCY    число параллельных pi-процессов, по умолчанию 4
+  RUNANALYSES_CWD            рабочая директория дочерних pi
+  RUNANALYSES_LOG_ROOT       директория логов анализа`);
+}
+
+export async function main(argv = process.argv.slice(2), env = process.env) {
+  const parsed = parseArguments(argv, env);
+  if (parsed.help) {
+    printHelp();
+    return 0;
+  }
+
+  const cwd = env.RUNANALYSES_CWD ?? DEFAULT_CWD;
+  const logRoot = env.RUNANALYSES_LOG_ROOT ?? DEFAULT_LOG_ROOT;
+  if (!parsed.dryRun && !fs.existsSync(cwd)) throw new Error(`Рабочая директория не найдена: ${cwd}`);
+
+  const classified = await runPool(parsed.tasks, parsed.concurrency, (task) => classifyTask(task, { ...parsed, cwd, logRoot }));
+  const pendingTasks = classified
+    .filter((result) => result.status === "pending")
+    .map((result) => result.task);
+  let launched = [];
+
+  if (parsed.dryRun) {
+    launched = await runPool(pendingTasks, parsed.concurrency, (task) => launchHeadlessAnalysis(task, parsed.token, { ...parsed, cwd, logRoot }));
+  } else if (parsed.mode === "herdr" && pendingTasks.length > 0) {
+    const now = new Date();
+    const batchId = `${Date.now().toString(36)}${process.pid.toString(36)}`;
+    const herdrOptions = {
+      ...parsed,
+      cwd,
+      batchId,
+      workspaceLabel: herdrWorkspaceLabel(now),
+      herdrBin: env.HERDR_BIN_PATH,
+      env
+    };
+    const prepared = await prepareHerdrWorkspace(pendingTasks, herdrOptions);
+    console.log(`Herdr Space создан: ${prepared.workspaceId}; задач: ${prepared.locations.length}`);
+    launched = await runPool(prepared.locations, parsed.concurrency, (location) => launchHerdrAnalysis(location, herdrOptions));
+  } else if (parsed.mode === "headless") {
+    launched = await runPool(pendingTasks, parsed.concurrency, (task) => launchHeadlessAnalysis(task, parsed.token, { ...parsed, cwd, logRoot }));
+  }
+
+  const results = [
+    ...classified.filter((result) => result.status !== "pending"),
+    ...launched
+  ];
+  const failed = results.filter((result) => result.code !== 0);
+  const skipped = results.filter((result) => result.status === "skipped");
+  const analyzed = results.length - failed.length - skipped.length;
+  const blocked = results.filter((result) => result.status === "blocked");
+  console.log(`Завершено анализов: ${analyzed}; пропущено с готовым MR: ${skipped.length}; ожидают ввода: ${blocked.length}; ошибок: ${failed.length - blocked.length}.`);
+  return failed.length === 0 ? 0 : 1;
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  process.once("SIGINT", () => { stopChildren("SIGTERM"); process.exit(130); });
+  process.once("SIGTERM", () => { stopChildren("SIGTERM"); process.exit(143); });
+  process.once("SIGHUP", () => { stopChildren("SIGTERM"); process.exit(129); });
+  main().then((code) => { process.exitCode ||= code; }).catch((error) => {
+    console.error(`runanalyses: ${error instanceof Error ? error.message : String(error)}`);
+    process.exitCode = 1;
+  });
+}
