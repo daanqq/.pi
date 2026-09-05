@@ -38,4 +38,5 @@ Persistent management settings are read from `~/.pi/agent/secrets/cliproxy-manag
 with string fields `managementUrl` and `managementKey`. Keep this file mode `0600`.
 When present, this file takes precedence over the environment. Without the file,
 the extension uses `CLIPROXY_MANAGEMENT_URL` and `CLIPROXY_MANAGEMENT_KEY`.
-The local persistent SSH tunnel exposes the remote server on port `8319`.
+Both a local CLIProxyAPI service and an SSH tunnel to a remote service must
+expose the API on `127.0.0.1:8317`. Enable only one of them on a machine.

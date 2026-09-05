@@ -10,12 +10,59 @@ Personal configuration for the `pi` coding agent.
 - Theme: `alabaster`
 - Packages: `pi-web-access`, `pi-system-prompt`, `@ff-labs/pi-fff`, `@plannotator/pi-extension`, `pi-mcp-adapter`, `pi-openai-server-compaction`
 
+## CLIProxyAPI
+
+Pi always connects to CLIProxyAPI at `http://127.0.0.1:8317`. On a server that
+runs CLIProxyAPI, use the local service. On a client machine, disable the local
+service and enable the SSH tunnel from `agent/systemd/cliproxy-tunnel.service`.
+Do not run both because they use the same port.
+
+The tunnel expects an SSH host alias named `cliproxy-server`. Install it on a
+client machine with:
+
+```sh
+systemctl --user disable --now cliproxyapi.service
+install -Dm644 ~/.pi/agent/systemd/cliproxy-tunnel.service \
+  ~/.config/systemd/user/cliproxy-tunnel.service
+systemctl --user daemon-reload
+systemctl --user enable --now cliproxy-tunnel.service
+```
+
+On the server, keep `cliproxy-tunnel.service` disabled and run CLIProxyAPI
+itself on `127.0.0.1:8317`.
+
+Store the shared API key in this ignored file on every machine:
+
+```text
+~/.pi/agent/secrets/cliproxy-api-key
+```
+
+The model config reads it through `~`, so the same repository works for users
+with different home directories. The quota extension optionally reads its
+Management API URL and plaintext key from:
+
+```text
+~/.pi/agent/secrets/cliproxy-management.json
+```
+
+Use this shape on both local and remote installations:
+
+```json
+{
+  "managementUrl": "http://127.0.0.1:8317",
+  "managementKey": "plaintext-management-key"
+}
+```
+
+Keep both secret files at mode `0600`.
+
 ## Repository
 
 - `agent/settings.json` — Pi settings.
 - `agent/extensions/` — local extensions.
 - `agent/skills/` — local skills.
 - `agent/themes/` — local themes.
+- `agent/systemd/` — optional user services for client machines.
 - `agent/zshrc` — shell setup.
 - `agent/extensions/package.json` — npm deps for local extensions (currently `undici`, used by `balance.ts` to route balance checks through the env HTTP proxy).
 
