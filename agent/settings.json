@@ -28,9 +28,9 @@
     "enabled": false
   },
   "enabledModels": [
+    "cliproxy/astra",
     "cliproxy/sol",
     "cliproxy/luna",
-    "deepseek/deepseek-v4-flash-vision-exp",
     "openrouter/z-ai/glm-5.3-flash"
   ],
   "externalEditor": "code --wait",
