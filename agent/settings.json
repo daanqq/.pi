@@ -2,7 +2,7 @@
   "lastChangelogVersion": "0.85.0",
   "defaultThinkingLevel": "medium",
   "defaultProvider": "cliproxy",
-  "defaultModel": "cliproxy/gpt-5.6-sol",
+  "defaultModel": "cliproxy/sol",
   "packages": [
     {
       "source": "npm:pi-web-access",
@@ -28,8 +28,8 @@
     "enabled": false
   },
   "enabledModels": [
-    "cliproxy/gpt-5.6-sol",
-    "cliproxy/gpt-5.6-luna",
+    "cliproxy/sol",
+    "cliproxy/luna",
     "deepseek/deepseek-v4-flash-vision-exp",
     "openrouter/z-ai/glm-5.3-flash"
   ],

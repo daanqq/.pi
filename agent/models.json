@@ -6,7 +6,7 @@
       "apiKey": "!cat ~/.pi/agent/secrets/cliproxy-api-key",
       "models": [
         {
-          "id": "gpt-5.6-sol",
+          "id": "sol",
           "reasoning": true,
           "thinkingLevelMap": {
             "minimal": null,
@@ -34,7 +34,7 @@
           }
         },
         {
-          "id": "gpt-5.6-luna",
+          "id": "luna",
           "reasoning": true,
           "thinkingLevelMap": {
             "minimal": null,
@@ -74,7 +74,22 @@
           },
           "input": ["text", "image"],
           "contextWindow": 272000,
-          "maxTokens": 128000
+          "maxTokens": 128000,
+          "cost": {
+            "input": 10,
+            "output": 50,
+            "cacheRead": 1,
+            "cacheWrite": 12.5,
+            "tiers": [
+              {
+                "inputTokensAbove": 272000,
+                "input": 20,
+                "output": 75,
+                "cacheRead": 2,
+                "cacheWrite": 25
+              }
+            ]
+          }
         }
       ]
     }

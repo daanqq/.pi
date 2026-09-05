@@ -48,7 +48,7 @@ function createHarness() {
       getSessionName: () => name,
     },
     modelRegistry: {
-      find: () => ({ provider: "cliproxy", id: "gpt-5.6-luna" }),
+      find: () => ({ provider: "cliproxy", id: "luna" }),
       complete: (...args: any[]) => {
         completionCalls += 1;
         completionRequest = args;
@@ -122,7 +122,7 @@ test("names a new session once after the first settled response", async () => {
   assert.equal(harness.getName(), "Исправление обновления токена");
   assert.equal(harness.getCompletionCalls(), 1);
   const [model, context, options] = harness.getCompletionRequest();
-  assert.deepEqual(model, { provider: "cliproxy", id: "gpt-5.6-luna" });
+  assert.deepEqual(model, { provider: "cliproxy", id: "luna" });
   assert.match(context.messages[0].content[0].text, /Исправь обновление токена авторизации/);
   assert.match(context.messages[0].content[0].text, /Нашёл гонку и исправил обновление токена/);
   assert.equal(options.reasoningEffort, "low");

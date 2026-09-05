@@ -31,7 +31,7 @@ test("applies default thinking levels on model select", () => {
   pi.selectModel({ source: "user", model: { provider: "deepseek", id: "deepseek-v4-flash", reasoning: true } });
   assert.equal(pi.getThinkingLevel(), "max");
 
-  pi.selectModel({ source: "user", model: { provider: "cliproxy", id: "gpt-5.6-luna", reasoning: true } });
+  pi.selectModel({ source: "user", model: { provider: "cliproxy", id: "luna", reasoning: true } });
   assert.equal(pi.getThinkingLevel(), "low");
 });
 

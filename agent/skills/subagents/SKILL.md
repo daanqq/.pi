@@ -20,7 +20,7 @@ Pi can use any model shown by `pi --list-models`. Prefer `provider/model-id`; a 
 | Model                            | Recommended effort |
 | -------------------------------- | ------------------ |
 | inherited parent model (default) | inherited          |
-| `cliproxy/gpt-5.6-sol`           | `high`             |
+| `cliproxy/sol`                   | `high`             |
 | `cliproxy/gpt-5.6-terra`         | `high`             |
 | `opencode/claude-fable-5`        | `medium`           |
 

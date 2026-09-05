@@ -2,7 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { existsSync } from "node:fs";
 
 const MODEL_PROVIDER = "cliproxy";
-const MODEL_ID = "gpt-5.6-luna";
+const MODEL_ID = "luna";
 const MAX_CONTEXT_CHARS = 4_000;
 const MAX_TITLE_CHARS = 60;
 const REQUEST_TIMEOUT_MS = 15_000;

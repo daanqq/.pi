@@ -62,7 +62,7 @@
 выполняющих анализ, ревью или изменение кода, используй:
 
 - `harness: "pi"`
-- `model: "cliproxy/gpt-5.6-luna"`
+- `model: "cliproxy/luna"`
 - `reasoning_effort: "high"`
 
 Ограничивайся одним циклом ревью. Повторяй связку

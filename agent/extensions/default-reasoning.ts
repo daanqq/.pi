@@ -10,7 +10,8 @@ function getDefaultThinkingLevel(provider: string, modelId: string): ThinkingLev
     return "max";
   }
 
-  if (normalizedModelId.includes("gpt")) {
+  if (normalizedModelId.includes("gpt")
+    || (normalizedProvider === "cliproxy" && ["sol", "luna"].includes(normalizedModelId))) {
     return "low";
   }
 

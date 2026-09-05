@@ -6,7 +6,7 @@ Personal configuration for the `pi` coding agent.
 
 ## Setup
 
-- Default model: `cliproxy/gpt-5.6-sol`, thinking `high`
+- Default model: `cliproxy/sol`, thinking `high`
 - Theme: `alabaster`
 - Packages: `pi-web-access`, `pi-system-prompt`, `@ff-labs/pi-fff`, `@plannotator/pi-extension`, `pi-mcp-adapter`, `pi-openai-server-compaction`
 
