@@ -1,7 +1,7 @@
 {
-  "lastChangelogVersion": "0.84.4",
+  "lastChangelogVersion": "0.85.0",
   "defaultThinkingLevel": "medium",
-  "defaultProvider": "openrouter",
+  "defaultProvider": "cliproxy",
   "defaultModel": "cliproxy/gpt-5.6-sol",
   "packages": [
     {
