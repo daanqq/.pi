@@ -33,3 +33,9 @@ export CLIPROXY_MANAGEMENT_KEY=""
 
 `CLIPROXY_MANAGEMENT_KEY` must contain the original plaintext management key,
 not the bcrypt hash stored in CLIProxyAPI's `config.yaml`.
+
+Persistent management settings are read from `~/.pi/agent/secrets/cliproxy-management.json`
+with string fields `managementUrl` and `managementKey`. Keep this file mode `0600`.
+When present, this file takes precedence over the environment. Without the file,
+the extension uses `CLIPROXY_MANAGEMENT_URL` and `CLIPROXY_MANAGEMENT_KEY`.
+The local persistent SSH tunnel exposes the remote server on port `8319`.

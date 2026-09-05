@@ -1,3 +1,6 @@
+import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { parseCodexWindows, resetText } from "../codex-usage/quota.ts";
 
 const MANAGEMENT_URL = process.env.CLIPROXY_MANAGEMENT_URL ?? "http://127.0.0.1:8317";
@@ -223,7 +226,26 @@ export async function fetchPoolQuotaFromManagement(options: ManagementQuotaOptio
 }
 
 export async function fetchPoolQuota(): Promise<PoolQuota> {
-	return fetchPoolQuotaFromManagement();
+	const path = join(homedir(), ".pi", "agent", "secrets", "cliproxy-management.json");
+	let content: string;
+	try {
+		content = await readFile(path, "utf8");
+	} catch (error) {
+		if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+			return fetchPoolQuotaFromManagement();
+		}
+		throw error;
+	}
+	const settings: unknown = JSON.parse(content);
+	if (!settings || typeof settings !== "object"
+		|| !("managementUrl" in settings) || typeof settings.managementUrl !== "string"
+		|| !("managementKey" in settings) || typeof settings.managementKey !== "string") {
+		throw new Error("Invalid CLIProxyAPI management settings");
+	}
+	return fetchPoolQuotaFromManagement({
+		managementUrl: settings.managementUrl,
+		managementKey: settings.managementKey,
+	});
 }
 
 export function formatPoolFooter(pool: PoolQuota): string {

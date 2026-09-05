@@ -1,7 +1,7 @@
 {
   "providers": {
     "cliproxy": {
-      "baseUrl": "http://127.0.0.1:8317/v1",
+      "baseUrl": "http://127.0.0.1:8319/v1",
       "api": "openai-responses",
       "apiKey": "!cat /home/user/.pi/agent/secrets/cliproxy-api-key",
       "models": [
@@ -60,6 +60,21 @@
               }
             ]
           }
+        },
+        {
+          "id": "astra",
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "minimal": null,
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max"
+          },
+          "input": ["text", "image"],
+          "contextWindow": 272000,
+          "maxTokens": 128000
         }
       ]
     }
