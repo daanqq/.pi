@@ -158,3 +158,4 @@ focused checks, not an end-to-end Pi startup or live-provider resume test.
 | Command | Purpose |
 | --- | --- |
 | `agent/bin/runanalyses` | Runs parallel EUTP analyses in separate Pi TUI tabs inside one Herdr Space and skips tasks whose `Что было сделано?` section already contains a GitLab MR. |
+| `make dep` | Installs all dependencies for the local extension packages. |
