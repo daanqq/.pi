@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import autoSessionNameExtension, { fallbackSessionName, sanitizeSessionName } from "./index.ts";
+import { setImmediate } from "node:timers/promises";
+import autoSessionNameExtension, { sanitizeSessionName } from "./index.ts";
 
 type Handler = (event: any, ctx: any) => unknown;
 
@@ -104,25 +105,19 @@ test("sanitizes and limits generated names", () => {
   assert.ok(sanitizeSessionName("Очень длинное название ".repeat(10)).length <= 60);
 });
 
-test("builds a deterministic fallback from the first meaningful line", () => {
-  assert.equal(
-    fallbackSessionName('<skill name="test">\nСлужебные инструкции навыка\n</skill>\nИсправь авторизацию в API'),
-    "Исправь авторизацию в API",
-  );
-  assert.equal(fallbackSessionName("\n```\n"), "Новая сессия");
-});
-
-test("names a new session once after the first settled response", async () => {
+test("requests an English name for a Russian conversation once after the first settled response", async () => {
   const harness = createHarness();
   await startNaming(harness);
 
-  harness.completion.resolve({ content: [{ type: "text", text: "Исправление обновления токена" }] });
-  await harness.emit("session_shutdown", { reason: "quit" });
+  harness.completion.resolve({ content: [{ type: "text", text: "Authentication token refresh" }] });
+  await setImmediate();
 
-  assert.equal(harness.getName(), "Исправление обновления токена");
+  assert.equal(harness.getName(), "Authentication token refresh");
   assert.equal(harness.getCompletionCalls(), 1);
   const [model, context, options] = harness.getCompletionRequest();
   assert.deepEqual(model, { provider: "cliproxy", id: "luna" });
+  assert.match(context.systemPrompt, /Always use English, regardless of the language of the user's request/);
+  assert.doesNotMatch(context.systemPrompt, /Use the same language/);
   assert.match(context.messages[0].content[0].text, /Исправь обновление токена авторизации/);
   assert.match(context.messages[0].content[0].text, /Нашёл гонку и исправил обновление токена/);
   assert.equal(options.reasoningEffort, "low");
@@ -131,23 +126,23 @@ test("names a new session once after the first settled response", async () => {
   assert.equal(options.timeoutMs, 15_000);
   assert.equal(options.maxRetries, 0);
   assert.ok(options.signal instanceof AbortSignal);
-  assert.deepEqual(harness.notifications, [{ message: "Session name: Исправление обновления токена", type: "info" }]);
+  assert.deepEqual(harness.notifications, [{ message: "Session name: Authentication token refresh", type: "info" }]);
 
   harness.emit("agent_settled");
   assert.equal(harness.getCompletionCalls(), 1);
 });
 
-test("uses fallback when generation fails", async () => {
+test("uses an English fallback for a Russian request when generation fails", async () => {
   const harness = createHarness();
   await startNaming(harness);
 
   harness.completion.reject(new Error("provider unavailable"));
-  await harness.emit("session_shutdown", { reason: "quit" });
+  await setImmediate();
 
-  assert.equal(harness.getName(), "Исправь обновление токена авторизации");
+  assert.equal(harness.getName(), "New session");
   assert.deepEqual(harness.notifications, [
     { message: "Session naming failed; using fallback.", type: "warning" },
-    { message: "Session name: Исправь обновление токена авторизации", type: "info" },
+    { message: "Session name: New session", type: "info" },
   ]);
 });
 
@@ -157,7 +152,7 @@ test("preserves a manual name set while generation is pending", async () => {
 
   harness.setName("Ручное имя");
   harness.completion.resolve({ content: [{ type: "text", text: "Автоматическое имя" }] });
-  await harness.emit("session_shutdown", { reason: "quit" });
+  await setImmediate();
 
   assert.equal(harness.getName(), "Ручное имя");
   assert.deepEqual(harness.notifications, []);
@@ -169,7 +164,7 @@ test("does not show a fallback warning after a manual rename", async () => {
 
   harness.setName("Ручное имя");
   harness.completion.reject(new Error("provider unavailable"));
-  await harness.emit("session_shutdown", { reason: "quit" });
+  await setImmediate();
 
   assert.equal(harness.getName(), "Ручное имя");
   assert.deepEqual(harness.notifications, []);
@@ -182,7 +177,7 @@ test("does not restore an automatic name after the user clears a manual name", a
   harness.emitNameChange("Ручное имя");
   harness.emitNameChange(undefined);
   harness.completion.resolve({ content: [{ type: "text", text: "Автоматическое имя" }] });
-  await harness.emit("session_shutdown", { reason: "quit" });
+  await setImmediate();
 
   assert.equal(harness.getName(), undefined);
   assert.deepEqual(harness.notifications, []);
@@ -194,8 +189,48 @@ test("does not write a generated name after the session changes", async () => {
 
   harness.setSession("session-2", "/tmp/session-2.jsonl");
   harness.completion.resolve({ content: [{ type: "text", text: "Устаревшее имя" }] });
-  await harness.emit("session_shutdown", { reason: "resume" });
+  await setImmediate();
 
+  assert.equal(harness.getName(), undefined);
+  assert.deepEqual(harness.notifications, []);
+});
+
+for (const reason of ["quit", "reload", "new", "resume", "fork"]) {
+  test(`cancels naming without waiting on provider during ${reason}`, async () => {
+    const harness = createHarness();
+    await startNaming(harness);
+    const signal: AbortSignal = harness.getCompletionRequest()[2].signal;
+    assert.equal(signal.aborted, false);
+
+    // The provider deliberately ignores abort and stays pending.
+    assert.equal(harness.emit("session_shutdown", { reason }), undefined);
+    assert.equal(signal.aborted, true);
+    harness.completion.resolve({ content: [{ type: "text", text: "Late name" }] });
+    await setImmediate();
+    assert.equal(harness.getName(), undefined);
+    assert.deepEqual(harness.notifications, []);
+  });
+}
+
+test("a naming deadline still uses fallback while the session stays open", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const harness = createHarness();
+  await startNaming(harness);
+  const signal: AbortSignal = harness.getCompletionRequest()[2].signal;
+  signal.addEventListener("abort", () => harness.completion.reject(new Error("timeout")), { once: true });
+  t.mock.timers.tick(15_000);
+  await setImmediate();
+  assert.equal(harness.getName(), "New session");
+  assert.equal(harness.notifications.length, 2);
+});
+
+test("a cancelled request cannot name a replacement session", async () => {
+  const harness = createHarness();
+  await startNaming(harness);
+  harness.emit("session_shutdown", { reason: "new" });
+  harness.emit("session_start", { reason: "new" });
+  harness.completion.reject(new Error("aborted"));
+  await setImmediate();
   assert.equal(harness.getName(), undefined);
   assert.deepEqual(harness.notifications, []);
 });

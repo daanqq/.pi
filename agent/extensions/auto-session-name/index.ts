@@ -11,7 +11,7 @@ const SYSTEM_PROMPT = `Create a concise name for this coding-agent session, in E
 
 Rules:
 - Output exactly one line and nothing else.
-- Use the same language as the user's request.
+- Always use English, regardless of the language of the user's request.
 - Describe the topic or task as a noun phrase, not as a completed result.
 - Use at most 60 characters.
 - Do not use quotes, Markdown, labels, prefixes, or trailing punctuation.
@@ -28,6 +28,7 @@ type NamingState = {
   firstPrompt: string;
   lastAssistantResponse: string;
   pending?: Promise<void>;
+  controller?: AbortController;
 };
 
 function firstNonEmptyLine(text: string): string {
@@ -81,17 +82,6 @@ export function sanitizeSessionName(text: string): string {
     .trim();
 
   return truncateAtWordBoundary(title, MAX_TITLE_CHARS);
-}
-
-export function fallbackSessionName(prompt: string): string {
-  // Skill expansion is implementation context, not the user's task, so it makes a misleading fallback title.
-  const withoutExpandedSkills = prompt.replace(/<skill\b[^>]*>[\s\S]*?<\/skill>\s*/gi, "");
-  const meaningfulLine = withoutExpandedSkills
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .find((line) => line && !/^<\/?[\w-]+(?:\s[^>]*)?>$/.test(line) && line !== "```");
-
-  return sanitizeSessionName(meaningfulLine ?? "") || "Новая сессия";
 }
 
 function contentText(content: unknown): string {
@@ -164,12 +154,13 @@ function buildPrompt(firstPrompt: string, assistantResponse: string): string {
   ].join("\n");
 }
 
-async function generateSessionName(ctx: ExtensionContext, firstPrompt: string, assistantResponse: string): Promise<string> {
+async function generateSessionName(ctx: ExtensionContext, firstPrompt: string, assistantResponse: string, controller: AbortController): Promise<string> {
   const model = ctx.modelRegistry.find(MODEL_PROVIDER, MODEL_ID);
   if (!model) throw new Error("model unavailable");
 
-  const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const clearDeadline = () => clearTimeout(timeout);
+  controller.signal.addEventListener("abort", clearDeadline, { once: true });
 
   try {
     const response = await ctx.modelRegistry.complete(
@@ -196,7 +187,8 @@ async function generateSessionName(ctx: ExtensionContext, firstPrompt: string, a
     if (!title) throw new Error("empty response");
     return title;
   } finally {
-    clearTimeout(timeout);
+    clearDeadline();
+    controller.signal.removeEventListener("abort", clearDeadline);
   }
 }
 
@@ -249,31 +241,40 @@ export default function autoSessionNameExtension(pi: ExtensionAPI) {
     state.attempted = true;
     const prompt = state.firstPrompt;
     const assistantResponse = state.lastAssistantResponse;
+    const controller = new AbortController();
+    state.controller = controller;
 
     let pending: Promise<void>;
     pending = (async () => {
       let title: string;
       let usedFallback = false;
       try {
-        title = await generateSessionName(ctx, prompt, assistantResponse);
+        title = await generateSessionName(ctx, prompt, assistantResponse, controller);
       } catch {
-        title = fallbackSessionName(prompt);
+        if (!state.eligible) return;
+        // Copying the request would make the fallback depend on the user's language.
+        title = "New session";
         usedFallback = true;
       }
 
       // The model call runs in the background, so the user may rename or replace the session meanwhile.
-      if (!state.eligible || !isCurrentSession(ctx, snapshot) || ctx.sessionManager.getSessionName()) return;
+      if (state.controller !== controller || !state.eligible || !isCurrentSession(ctx, snapshot) || ctx.sessionManager.getSessionName()) return;
 
       pi.setSessionName(title);
       if (usedFallback) ctx.ui.notify("Session naming failed; using fallback.", "warning");
       ctx.ui.notify(`Session name: ${title}`, "info");
     })().finally(() => {
-      if (state.pending === pending) state.pending = undefined;
+      if (state.pending === pending) {
+        state.pending = undefined;
+        state.controller = undefined;
+      }
     });
     state.pending = pending;
   });
 
-  pi.on("session_shutdown", async () => {
-    await state.pending;
+  pi.on("session_shutdown", () => {
+    // Naming is cosmetic: a slow provider must not delay session replacement or exit.
+    state.eligible = false;
+    state.controller?.abort();
   });
 }
