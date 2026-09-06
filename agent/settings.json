@@ -12,7 +12,12 @@
     },
     "npm:pi-system-prompt",
     "npm:@ff-labs/pi-fff",
-    "npm:@plannotator/pi-extension",
+    {
+      "source": "npm:@plannotator/pi-extension",
+      "skills": [
+        "-skills/plannotator/SKILL.md"
+      ]
+    },
     {
       "source": "npm:pi-mcp-adapter",
       "extensions": [
