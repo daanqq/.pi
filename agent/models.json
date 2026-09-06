@@ -3,7 +3,7 @@
     "cliproxy": {
       "baseUrl": "http://127.0.0.1:8317/v1",
       "api": "openai-responses",
-      "apiKey": "!node -e \"const fs=require('node:fs');const path=require('node:path');const os=require('node:os');process.stdout.write(fs.readFileSync(path.join(os.homedir(),'.pi','agent','secrets','cliproxy-api-key'),'utf8').trim())\"",
+      "apiKey": "$CLIPROXY_API_KEY",
       "models": [
         {
           "id": "sol",
