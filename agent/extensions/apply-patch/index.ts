@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -8,6 +8,8 @@ import { Box, Container, Spacer, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { buildReplacementPreview, buildUpdatePreview, formatNumberedDiffLines, formatPatchSummaryCounts, numberUpdateDiffLines, visualizeIndentationOnlyChanges } from "./diff-lines.ts";
 import { normalizePatchPath, parsePatchActionHeaders, parsePatchActions, type ParsedPatchAction } from "./patch-actions.ts";
+
+import { MAX_PREVIEW_BYTES, PreviewBudget, PreviewLimitError } from "./preview-budget.ts";
 
 const APPLY_PATCH_PARAMETERS = Type.Object({
 	input: Type.String({
@@ -51,13 +53,6 @@ interface ApplyPatchPartialFailureDetails {
 
 type ApplyPatchToolDetails = ApplyPatchSuccessDetails | ApplyPatchPartialFailureDetails;
 
-interface RenderState {
-	cwd: string;
-	patchText: string;
-	status: "pending" | "partial_failure" | "failed";
-	failedTargets?: string[] | undefined;
-}
-
 type PatchPreview = { summary: string; diff: string } | { error: string };
 
 type ApplyPatchCallRenderComponent = Box & {
@@ -75,7 +70,6 @@ interface ModelLike {
 	name?: string | undefined;
 }
 
-const renderStates = new Map<string, RenderState>();
 const EMPTY_RESULT: ExecutePatchResult = { changedFiles: [], createdFiles: [], deletedFiles: [], movedFiles: [], fuzz: 0 };
 const COLLAPSED_PREVIEW_LINE_LIMIT = 40;
 
@@ -165,10 +159,9 @@ export default function (pi: ExtensionAPI) {
 			}
 			return args as { input: string };
 		},
-		async execute(toolCallId, params, signal, _onUpdate, ctx) {
+		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			if (signal?.aborted) throw new Error("apply_patch aborted");
 			const patchText = parseApplyPatchParams(params);
-			renderStates.set(toolCallId, { cwd: ctx.cwd, patchText, status: "pending" });
 
 			try {
 				const result = await withPatchMutationQueues(ctx.cwd, patchText, () => executePatchWithBinary({ cwd: ctx.cwd, patchText, signal }));
@@ -181,7 +174,6 @@ export default function (pi: ExtensionAPI) {
 					const partial = hasPartialSuccess(error.result);
 					const failedTargets = failedTargetsForError(ctx.cwd, patchText, error.message, error.result);
 					if (partial) {
-						renderStates.set(toolCallId, { cwd: ctx.cwd, patchText, status: "partial_failure", failedTargets });
 						const failedFiles = failedFilesForError(ctx.cwd, patchText, error.message, error.result);
 						const appliedFiles = appliedFilesFromResult(error.result, failedFiles);
 						const message = buildPartialFailureMessage(error.message, error.result, failedTargets, failedFiles, appliedFiles);
@@ -198,11 +190,9 @@ export default function (pi: ExtensionAPI) {
 							} satisfies ApplyPatchPartialFailureDetails,
 						};
 					}
-					renderStates.set(toolCallId, { cwd: ctx.cwd, patchText, status: "failed", failedTargets });
 					const target = failedTargets.length > 0 ? ` while patching ${failedTargets.join(", ")}` : "";
 					throw new Error(`apply_patch failed${target}: ${error.message}`);
 				}
-				renderStates.set(toolCallId, { cwd: ctx.cwd, patchText, status: "failed" });
 				throw error;
 			}
 		},
@@ -220,23 +210,23 @@ export default function (pi: ExtensionAPI) {
 			if (context.argsComplete && patchText.trim().length > 0 && !component.preview) {
 				component.preview = previewPatch(patchText, context.cwd);
 			}
-			const cached = context.toolCallId ? renderStates.get(context.toolCallId) : undefined;
-			if (cached?.status === "partial_failure" || cached?.status === "failed") {
-				component.settledStatus = cached.status;
-				component.failedTargets = cached.failedTargets;
-			}
 			if (!context.isPartial && !component.settledStatus) component.settledStatus = context.isError ? "failed" : "success";
 			return buildApplyPatchCallComponent(component, args as { input?: unknown }, theme, context);
 		},
 		renderResult(result, { isPartial }, theme, context) {
 			const callComponent = context.state.callComponent as ApplyPatchCallRenderComponent | undefined;
-			if (isPartial) return new Container();
-			if (!isApplyPatchToolDetails(result.details)) return new Container();
-			if (callComponent) {
+			if (isPartial || !callComponent) return new Container();
+			if (isApplyPatchToolDetails(result.details)) {
 				callComponent.settledStatus = result.details.status;
 				if (result.details.status === "partial_failure") callComponent.failedTargets = result.details.failedTargets;
-				buildApplyPatchCallComponent(callComponent, context.args as { input?: unknown }, theme, context);
+			} else if (context.isError) {
+				callComponent.settledStatus = "failed";
+				const args = context.args as { input?: unknown };
+				const patchText = typeof args.input === "string" ? args.input : "";
+				const error = result.content.filter((part) => part.type === "text").map((part) => part.text).join("\n");
+				callComponent.failedTargets = failedTargetsForError(context.cwd, patchText, error, EMPTY_RESULT);
 			}
+			buildApplyPatchCallComponent(callComponent, context.args as { input?: unknown }, theme, context);
 			return new Container();
 		},
 	});
@@ -254,6 +244,8 @@ function isGptLikeModel(model: ModelLike | undefined): boolean {
 	const provider = (model.provider ?? "").toLowerCase();
 	const id = (model.id ?? "").toLowerCase();
 	const name = (model.name ?? "").toLowerCase();
+	// CLIProxy aliases hide the upstream GPT model name.
+	if (provider === "cliproxy" && ["astra", "luna", "sol"].includes(id)) return true;
 	return provider.includes("openai") || provider.includes("codex") || id.includes("gpt") || id.includes("codex") || name.includes("gpt") || name.includes("codex");
 }
 
@@ -350,7 +342,7 @@ function formatApplyPatchHeader(
 		const summary = preview.summary.replace(/^•\s*/, "");
 		return `${title} ${formatApplyPatchHeaderSummary(summary, theme)}`;
 	}
-	const fallback = formatApplyPatchSummary(patchText, cwd).replace(/^•\s*/, "");
+	const fallback = formatInProgressApplyPatchSummary(parsePatchActionHeaders(patchText.slice(0, MAX_PREVIEW_BYTES)), cwd);
 	if (fallback) title += ` ${formatApplyPatchHeaderSummary(fallback, theme)}`;
 	return title;
 }
@@ -375,7 +367,7 @@ function formatInProgressApplyPatchBody(actions: Array<{ path: string; movePath?
 	return actions.map((action) => `  └ ${formatPatchTarget(action.path, action.movePath, cwd)}`).join("\n");
 }
 
-function previewPatch(patchText: string, cwd: string): PatchPreview {
+export function previewPatch(patchText: string, cwd: string): PatchPreview {
 	try {
 		const files = buildFilePreviews(patchText, cwd);
 		if (files.length === 0) throw new Error("No files were modified.");
@@ -383,6 +375,12 @@ function previewPatch(patchText: string, cwd: string): PatchPreview {
 		const diff = formatApplyPatchDiffFromFiles(files, cwd);
 		return { summary, diff };
 	} catch (error) {
+		if (error instanceof PreviewLimitError) {
+			return {
+				summary: "Large patch",
+				diff: `Preview omitted: ${error.message}. Patch execution is unchanged.`,
+			};
+		}
 		return { error: error instanceof Error ? error.message : String(error) };
 	}
 }
@@ -580,40 +578,6 @@ function summarizePatchCounts(result: ExecutePatchResult): string {
 	].join(", ");
 }
 
-function renderApplyPatchCall(args: { input?: unknown }, theme: { fg(role: string, text: string): string; bold(text: string): string }, context?: { toolCallId?: string; cwd?: string; expanded?: boolean; argsComplete?: boolean }): string {
-	if (context?.argsComplete === false) return theme.bold("Patching");
-	const patchText = typeof args.input === "string" ? args.input : "";
-	if (patchText.trim().length === 0) return theme.bold("Patching");
-	const cached = context?.toolCallId ? renderStates.get(context.toolCallId) : undefined;
-	const cwd = context?.cwd ?? cached?.cwd ?? process.cwd();
-	const base = context?.expanded ? formatApplyPatchPreview(cached?.patchText ?? patchText, cwd) : formatApplyPatchSummary(cached?.patchText ?? patchText, cwd);
-	if (!base) {
-		if (cached?.status === "failed") return theme.fg("error", "Edit failed");
-		return theme.bold("Patching");
-	}
-	if (cached?.status === "partial_failure") return renderFailureCall(base, theme, "warning", "Edit partially failed", cached.failedTargets);
-	if (cached?.status === "failed") return renderFailureCall(base, theme, "error", "Edit failed", cached.failedTargets);
-	return base;
-}
-
-function renderFailureCall(base: string, theme: { fg(role: string, text: string): string }, role: "warning" | "error", title: string, failedTargets?: string[]): string {
-	const lines = base.split("\n");
-	const firstLineWithoutVerb = lines[0]!.replace(/^(?:•\s*)?(Added|Deleted|Moved)\b\s*/, "");
-	lines[0] = `${title} ${firstLineWithoutVerb}`.trimEnd();
-	return lines
-		.map((line, index) => {
-			const isFailed = failedTargets?.some((target) => line.includes(target));
-			if (index === 0 || isFailed) return theme.fg(role, line);
-			return line;
-		})
-		.join("\n");
-}
-
-function formatApplyPatchSummary(patchText: string, cwd: string): string {
-	const files = buildFilePreviews(patchText, cwd);
-	return formatApplyPatchSummaryFromFiles(files, cwd);
-}
-
 type FilePreview = { verb: "Added" | "Deleted" | "update" | "Moved"; path: string; movePath?: string; added: number; removed: number; lines: string[] };
 
 function formatApplyPatchSummaryFromFiles(files: FilePreview[], cwd: string): string {
@@ -625,24 +589,6 @@ function formatApplyPatchSummaryFromFiles(files: FilePreview[], cwd: string): st
 		return withCounts(bulletHeader(file.verb, formatPatchTarget(file.path, file.movePath, cwd)), file.added, file.removed);
 	}
 	return [withCounts(`${files.length} files`, totals.added, totals.removed), ...files.map((file) => `  └ ${withCounts(formatPatchTarget(file.path, file.movePath, cwd), file.added, file.removed)}`)].join("\n");
-}
-
-function formatApplyPatchPreview(patchText: string, cwd: string): string {
-	const files = buildFilePreviews(patchText, cwd);
-	if (files.length === 0) return "";
-	const summary = formatApplyPatchSummary(patchText, cwd).split("\n");
-	const lines = [...summary];
-	for (const file of files) {
-		if (files.length > 1) lines.push("");
-		for (const line of file.lines.slice(0, 80)) lines.push(`    ${line}`);
-		if (file.lines.length > 80) lines.push(`    ... (${file.lines.length - 80} more lines)`);
-	}
-	return lines.join("\n");
-}
-
-function formatApplyPatchDiff(patchText: string, cwd: string): string {
-	const files = buildFilePreviews(patchText, cwd);
-	return formatApplyPatchDiffFromFiles(files, cwd);
 }
 
 function formatApplyPatchDiffFromFiles(files: FilePreview[], cwd: string): string {
@@ -658,13 +604,15 @@ function formatApplyPatchDiffFromFiles(files: FilePreview[], cwd: string): strin
 }
 
 function buildFilePreviews(patchText: string, cwd: string): FilePreview[] {
+	const budget = new PreviewBudget();
+	budget.consumeText(patchText);
 	const actions = parsePatchActions(patchText);
 	const files: FilePreview[] = [];
 	for (let index = 0; index < actions.length; index += 1) {
 		const action = actions[index]!;
 		const nextAction = actions[index + 1];
 		if (action.type === "delete" && nextAction?.type === "add" && action.path === nextAction.path) {
-			const removedLines = readFileLines(cwd, action.path);
+			const removedLines = readFileLines(cwd, action.path, budget);
 			const addedLines = splitFileLines(nextAction.newFile ?? "");
 			files.push({
 				verb: "update",
@@ -680,22 +628,23 @@ function buildFilePreviews(patchText: string, cwd: string): FilePreview[] {
 			continue;
 		}
 		if (action.type === "delete") {
-			const lines = readFileLines(cwd, action.path);
+			const lines = readFileLines(cwd, action.path, budget);
 			files.push({ verb: "Deleted", path: action.path, added: 0, removed: lines.length, lines: formatNumberedDiffLines(lines.map((text, index) => ({ marker: "-", lineNumber: index + 1, text }))) });
 			continue;
 		}
 		const body = action.lines ?? [];
-		const numbered = numberUpdateDiffLines(readFileLines(cwd, action.path), body);
+		const numbered = numberUpdateDiffLines(readFileLines(cwd, action.path, budget), body, budget);
 		const updatePreview = buildUpdatePreview(numbered, Boolean(action.movePath));
 		files.push({ verb: updatePreview.pureMove ? "Moved" : "update", path: action.path, movePath: action.movePath, ...updatePreview });
 	}
 	return files;
 }
 
-function readFileLines(cwd: string, path: string): string[] {
+function readFileLines(cwd: string, path: string, budget: PreviewBudget): string[] {
 	try {
-		return splitFileLines(readFileSync(resolvePatchPath(cwd, path), "utf8"));
-	} catch {
+		return splitFileLines(budget.readFile(resolvePatchPath(cwd, path)));
+	} catch (error) {
+		if (error instanceof PreviewLimitError) throw error;
 		return [];
 	}
 }

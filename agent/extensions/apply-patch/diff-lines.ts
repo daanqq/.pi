@@ -1,3 +1,5 @@
+import { PreviewBudget } from "./preview-budget.ts";
+
 export interface NumberedDiffLine {
 	marker: "+" | "-" | " ";
 	lineNumber?: number;
@@ -21,7 +23,7 @@ export function formatPatchSummaryCounts(
 }
 
 export function formatNumberedDiffLines(lines: NumberedDiffLine[]): string[] {
-	const width = Math.max(1, ...lines.map(({ lineNumber }) => lineNumber === undefined ? 0 : String(lineNumber).length));
+	const width = lines.reduce((width, { lineNumber }) => Math.max(width, lineNumber === undefined ? 0 : String(lineNumber).length), 1);
 	return lines.map(({ marker, lineNumber, text }) => {
 		const gutter = lineNumber === undefined ? "".padStart(width) : String(lineNumber).padStart(width);
 		return `${marker}${gutter} ${text}`;
@@ -120,7 +122,7 @@ export function buildReplacementPreview(original: string[], replacement: string[
 	};
 }
 
-export function numberUpdateDiffLines(original: string[], body: string[]): NumberedDiffLine[] {
+export function numberUpdateDiffLines(original: string[], body: string[], budget = new PreviewBudget()): NumberedDiffLine[] {
 	const result: NumberedDiffLine[] = [];
 	let searchFrom = 0;
 	let lineDelta = 0;
@@ -130,7 +132,9 @@ export function numberUpdateDiffLines(original: string[], body: string[]): Numbe
 			.filter((line) => line[0] === " " || line[0] === "-")
 			.map((line) => line.slice(1));
 		const anchorFrom = findAnchor(original, hunk.header, searchFrom);
-		const oldStart = findSequence(original, oldPattern, anchorFrom) ?? findSequence(original, oldPattern, searchFrom) ?? searchFrom;
+		const oldStart = findSequence(original, oldPattern, anchorFrom, budget)
+			?? (anchorFrom !== searchFrom ? findSequence(original, oldPattern, searchFrom, budget) : undefined)
+			?? searchFrom;
 		if (result.length > 0 && oldStart > searchFrom) {
 			result.push({ marker: " ", text: "⋮" });
 		}
@@ -188,13 +192,20 @@ function findAnchor(lines: string[], header: string | undefined, from: number): 
 	return fuzzy === -1 ? from : fuzzy + 1;
 }
 
-function findSequence(lines: string[], sequence: string[], from: number): number | undefined {
+function findSequence(lines: string[], sequence: string[], from: number, budget: PreviewBudget): number | undefined {
 	if (sequence.length === 0) return from;
 	for (let index = from; index <= lines.length - sequence.length; index += 1) {
-		if (sequence.every((line, offset) => lines[index + offset] === line)) return index;
+		if (sequence.every((line, offset) => {
+			budget.compare();
+			return lines[index + offset] === line;
+		})) return index;
 	}
+	const trimmedSequence = sequence.map((line) => line.trim());
 	for (let index = from; index <= lines.length - sequence.length; index += 1) {
-		if (sequence.every((line, offset) => lines[index + offset]!.trim() === line.trim())) return index;
+		if (trimmedSequence.every((line, offset) => {
+			budget.compare();
+			return lines[index + offset]!.trim() === line;
+		})) return index;
 	}
 	return undefined;
 }
