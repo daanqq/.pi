@@ -12,6 +12,7 @@
  *   the child session_shutdown hook and disposes the session.
  */
 
+import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { AssistantMessage, Message, Model } from "@earendil-works/pi-ai";
 import type {
@@ -28,7 +29,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { Cause, Scope } from "effect";
 import { Effect, Queue, Stream } from "effect";
-import type { SubagentBackend, SubagentSession } from "../backend.ts";
+import type { SessionCheckpoint, SubagentBackend, SubagentSession } from "../backend.ts";
 import type {
   SpawnTask,
   SubagentEvent,
@@ -263,6 +264,7 @@ function boundedError(error: unknown) {
 
 const makePiSession = (
   task: SpawnTask,
+  checkpoint?: SessionCheckpoint,
 ): Effect.Effect<SubagentSession, SpawnError, Scope.Scope> =>
   Effect.gen(function* () {
     const registry = task.parent.modelRegistry;
@@ -274,25 +276,41 @@ const makePiSession = (
 
     const model = yield* Effect.try({
       try: () =>
-        resolvePiModel(registry, task.model, task.parent.inheritedModel),
+        checkpoint ? undefined : resolvePiModel(registry, task.model, task.parent.inheritedModel),
       catch: (error) => new SpawnError({ message: boundedError(error) }),
     });
     // pi's thinking levels ARE the shared reasoning-effort scale.
-    const thinkingLevel = (task.reasoningEffort ??
+    const thinkingLevel = (checkpoint ? undefined : task.reasoningEffort ??
       task.parent.inheritedThinkingLevel) as ThinkingLevel | undefined;
 
     const session = yield* Effect.tryPromise({
-      try: async () => {
+      try: async (signal) => {
+        const sessionDir = join(getAgentDir(), "subagent-sessions");
+        let sessionManager: SessionManager;
+        if (checkpoint) {
+          const file = checkpoint.sessionFilePath;
+          // SessionManager.open creates a new session for a missing/empty file.
+          // Resume must instead fail without replacing the saved conversation.
+          if (!file || !existsSync(file) || statSync(file).size === 0) {
+            throw new Error("Persisted pi session is missing or empty; cannot resume.");
+          }
+          sessionManager = SessionManager.open(file, sessionDir);
+          if (sessionManager.getSessionId() !== checkpoint.nativeSessionId ||
+              sessionManager.getCwd() !== task.cwd) {
+            throw new Error("Persisted pi session identity/cwd changed; cannot resume.");
+          }
+        } else {
+          sessionManager = SessionManager.create(task.cwd, sessionDir);
+        }
         const { loader, settingsManager } = await createChildResources(
           task.cwd,
           task.parent.projectTrusted,
         );
+        signal.throwIfAborted();
         const { session } = await createAgentSession({
           cwd: task.cwd,
-          sessionManager: SessionManager.create(
-            task.cwd,
-            join(getAgentDir(), "subagent-sessions"),
-          ),
+          sessionManager,
+          ...(checkpoint ? { sessionStartEvent: { type: "session_start" as const, reason: "resume" as const } } : {}),
           settingsManager,
           resourceLoader: loader,
           model,
@@ -303,7 +321,11 @@ const makePiSession = (
         // A rejection here would otherwise leak the freshly created session:
         // the scope finalizer that owns cleanup is only registered later.
         try {
+          // SDK creation/binding are not cancellable. A late acquisition must
+          // dispose itself rather than escape a scope already closed by cancel.
+          signal.throwIfAborted();
           await session.bindExtensions({ mode: "print" });
+          signal.throwIfAborted();
         } catch (error) {
           await shutdownAndDisposeChildSession(session);
           throw error;
@@ -319,7 +341,7 @@ const makePiSession = (
       runError: undefined as string | undefined,
       /** One terminal event per run: lifecycle, prompt-rejection, and abort
        * fallbacks can all race to settle; the first wins. */
-      settled: false,
+      settled: checkpoint !== undefined,
     };
 
     const events = yield* Queue.make<SubagentEvent, Cause.Done>();
@@ -355,6 +377,7 @@ const makePiSession = (
         modelLabel: m ? `${m.provider}/${m.id}` : undefined,
         contextWindow: m?.contextWindow,
         sessionFilePath: session.sessionFile,
+        nativeSessionId: session.sessionId,
       };
     };
 
@@ -518,17 +541,25 @@ const makePiSession = (
     };
 
     // Session naming is best-effort.
-    yield* Effect.try(() =>
+    if (!checkpoint) yield* Effect.try(() =>
       session.sessionManager.appendSessionInfo(
         `${task.origin === "btw" ? "btw" : "subagent"}: ${task.title}`,
       ),
     ).pipe(Effect.ignore);
 
     emit({ _tag: "MetaChanged", meta: currentMeta() });
-    startRun(task.prompt);
+    if (!checkpoint) startRun(task.prompt);
 
     return {
       meta: Effect.sync(currentMeta),
+      checkpoint: () => {
+        const file = session.sessionFile;
+        // Pi writes synchronously, but delays the first file until an assistant
+        // message exists. Preflight-only history must remain in memory.
+        if (!state.settled || !session.isIdle || session.getSteeringMessages().length ||
+            session.getFollowUpMessages().length || !file || !existsSync(file)) return undefined;
+        return { nativeSessionId: session.sessionId, sessionFilePath: file };
+      },
       events: Stream.fromQueue(events),
       send: (text) =>
         Effect.suspend((): Effect.Effect<void, SendError> => {
@@ -577,4 +608,5 @@ export const piBackend: SubagentBackend = {
   // In-process SDK: always available.
   available: Effect.succeed(true),
   spawn: makePiSession,
+  resume: makePiSession,
 };

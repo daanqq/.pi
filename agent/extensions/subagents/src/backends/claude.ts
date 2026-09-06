@@ -22,7 +22,7 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 import type { Cause, Scope } from "effect";
 import { Effect, Queue, Stream } from "effect";
-import type { SubagentBackend, SubagentSession } from "../backend.ts";
+import type { SessionCheckpoint, SubagentBackend, SubagentSession } from "../backend.ts";
 import type {
   QueuedMessage,
   ReasoningEffort,
@@ -286,6 +286,7 @@ interface NativeQueuedMessage extends QueuedMessage {
 
 const makeClaudeSession = (
   task: SpawnTask,
+  checkpoint?: SessionCheckpoint,
 ): Effect.Effect<SubagentSession, SpawnError, Scope.Scope> =>
   Effect.gen(function* () {
     const input = new ClaudeInput();
@@ -310,7 +311,9 @@ const makeClaudeSession = (
       settleWaiters: new Set<() => void>(),
       meta: {
         backend: "claude",
-        modelLabel: task.model,
+        modelLabel: checkpoint?.model ?? task.model,
+        nativeSessionId: checkpoint?.nativeSessionId,
+        sessionFilePath: checkpoint?.sessionFilePath,
         // Claude models used by this backend currently expose 200k context;
         // result.modelUsage replaces this fallback when the CLI knows better.
         contextWindow: CLAUDE_CONTEXT_WINDOW,
@@ -327,6 +330,8 @@ const makeClaudeSession = (
           prompt: input,
           options: {
             cwd: task.cwd,
+            persistSession: true,
+            ...(checkpoint ? { resume: checkpoint.nativeSessionId } : {}),
             // Headless children cannot answer approval prompts. The caller
             // already chose to launch an autonomous subagent, so let it use
             // its tools without interactive permission checks.
@@ -345,7 +350,8 @@ const makeClaudeSession = (
             ...(claudeBinary
               ? { pathToClaudeCodeExecutable: claudeBinary }
               : {}),
-            ...(task.model ? { model: task.model } : {}),
+            ...((checkpoint?.model ?? task.model)
+              ? { model: checkpoint?.model ?? task.model } : {}),
             ...(thinkingBudget !== undefined
               ? { maxThinkingTokens: thinkingBudget }
               : {}),
@@ -507,6 +513,9 @@ const makeClaudeSession = (
         beginQueuedRunIfNeeded();
       }
       if (message.type === "system" && message.subtype === "init") {
+        if (checkpoint && message.session_id !== checkpoint.nativeSessionId) {
+          throw new Error("Claude resumed a different session; refusing to lose history.");
+        }
         beginQueuedRunIfNeeded();
         updateMeta({
           modelLabel: message.model,
@@ -632,10 +641,15 @@ const makeClaudeSession = (
     };
 
     emit({ _tag: "MetaChanged", meta: state.meta });
-    submit(task.prompt);
+    if (!checkpoint) submit(task.prompt);
 
     return {
       meta: Effect.sync(() => state.meta),
+      checkpoint: () => {
+        const nativeSessionId = state.meta.nativeSessionId;
+        if (state.activeRun || state.queued.length || !nativeSessionId) return undefined;
+        return { nativeSessionId, sessionFilePath: state.meta.sessionFilePath, model: state.meta.modelLabel };
+      },
       events: Stream.fromQueue(events),
       send: (text) =>
         Effect.suspend((): Effect.Effect<void, SendError> => {
@@ -698,4 +712,5 @@ export const claudeBackend: SubagentBackend = {
   capabilities: { steering: true, modelSelection: true, reasoningEffort: true },
   available: Effect.sync(() => resolveClaudeBinary() !== undefined),
   spawn: makeClaudeSession,
+  resume: makeClaudeSession,
 };

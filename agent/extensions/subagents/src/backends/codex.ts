@@ -14,7 +14,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { Cause, Scope } from "effect";
 import { Effect, Queue, Stream } from "effect";
-import type { SubagentBackend, SubagentSession } from "../backend.ts";
+import type { SessionCheckpoint, SubagentBackend, SubagentSession } from "../backend.ts";
 import type {
   ReasoningEffort,
   RunOutcome,
@@ -303,6 +303,7 @@ function toolFailed(item: JsonRecord) {
 
 const makeCodexSession = (
   task: SpawnTask,
+  checkpoint?: SessionCheckpoint,
 ): Effect.Effect<SubagentSession, SpawnError, Scope.Scope> =>
   Effect.gen(function* () {
     const binary = resolveCodexBinary();
@@ -889,12 +890,13 @@ const makeCodexSession = (
         // Headless children cannot answer approval prompts. The caller
         // already chose to launch an autonomous subagent, so give the thread
         // full workspace access without interactive approval requests.
-        return request("thread/start", {
+        return request(checkpoint ? "thread/resume" : "thread/start", {
           cwd: task.cwd,
           approvalPolicy: "never",
           sandbox: "danger-full-access",
-          ephemeral: false,
-          ...(task.model ? { model: task.model } : {}),
+          ...(checkpoint
+            ? { threadId: checkpoint.nativeSessionId }
+            : { ephemeral: false, ...(task.model ? { model: task.model } : {}) }),
         });
       },
       catch: (error) => new SpawnError({ message: boundedError(error) }),
@@ -902,9 +904,9 @@ const makeCodexSession = (
 
     const thread = record(threadResult.thread);
     const nativeSessionId = stringValue(thread?.id);
-    if (!nativeSessionId) {
+    if (!nativeSessionId || (checkpoint && nativeSessionId !== checkpoint.nativeSessionId)) {
       return yield* new SpawnError({
-        message: "Codex thread/start returned no thread id.",
+        message: "Codex returned a missing or mismatched thread id.",
       });
     }
     state.meta = {
@@ -927,10 +929,16 @@ const makeCodexSession = (
       );
     }
     emit({ _tag: "MetaChanged", meta: state.meta });
-    startRun(task.prompt);
+    if (!checkpoint) startRun(task.prompt);
 
     return {
       meta: Effect.sync(() => state.meta),
+      checkpoint: () => {
+        const nativeSessionId = state.meta.nativeSessionId;
+        if (state.activeRun || state.dispatching || state.pendingPrompts.length ||
+            !nativeSessionId) return undefined;
+        return { nativeSessionId, sessionFilePath: state.meta.sessionFilePath };
+      },
       events: Stream.fromQueue(events),
       send: (text) =>
         Effect.suspend((): Effect.Effect<void, SendError> => {
@@ -1057,4 +1065,5 @@ export const codexBackend: SubagentBackend = {
   },
   available: Effect.sync(() => resolveCodexBinary() !== undefined),
   spawn: makeCodexSession,
+  resume: makeCodexSession,
 };

@@ -112,24 +112,58 @@ function renderToolResultItem(
   );
 }
 
+function renderCompletedItem(item: TranscriptItem, width: number, theme: Theme): string[] {
+  const out: string[] = [];
+  if (item.kind === "user") renderUserText(theme, item.text, width, out);
+  else if (item.kind === "assistant") renderAssistantItem(theme, item, width, out);
+  else renderToolResultItem(theme, item, width, out);
+  return out;
+}
+
+/** One width/theme per view. Immutable items survive appends and head pruning;
+ * weak keys do not keep pruned history or closed views alive. */
+export class CompletedTranscriptCache {
+  private items = new WeakMap<TranscriptItem, string[]>();
+  private width?: number;
+  private theme?: Theme;
+
+  render(item: TranscriptItem, width: number, theme: Theme): readonly string[] {
+    if (this.width !== width || this.theme !== theme) {
+      this.invalidate();
+      this.width = width;
+      this.theme = theme;
+    }
+    let lines = this.items.get(item);
+    if (!lines) {
+      lines = renderCompletedItem(item, width, theme);
+      this.items.set(item, lines);
+    }
+    return lines;
+  }
+
+  invalidate(): void {
+    // The injected theme may be a stable proxy; identity alone is insufficient.
+    this.items = new WeakMap();
+  }
+}
+
 /** Render a subagent's conversation as plain lines, wrapped to `width`. */
 export function buildTranscriptLines(
   snap: SubagentSnapshot,
   width: number,
   theme: Theme,
+  cache?: CompletedTranscriptCache,
 ): string[] {
   const out: string[] = [];
 
   for (const item of snap.transcript) {
-    const before = out.length;
-    if (item.kind === "user") {
-      renderUserText(theme, item.text, width, out);
-    } else if (item.kind === "assistant") {
-      renderAssistantItem(theme, item, width, out);
-    } else {
-      renderToolResultItem(theme, item, width, out);
+    const lines = cache
+      ? cache.render(item, width, theme)
+      : renderCompletedItem(item, width, theme);
+    if (lines.length > 0) {
+      for (const line of lines) out.push(line);
+      out.push("");
     }
-    if (out.length > before) out.push("");
   }
   while (out.length > 0 && out[out.length - 1] === "") out.pop();
 

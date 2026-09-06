@@ -26,6 +26,13 @@ export interface BackendCapabilities {
   readonly reasoningEffort: boolean;
 }
 
+/** Plain native identity only: retaining this must not retain a live SDK/process. */
+export interface SessionCheckpoint {
+  readonly nativeSessionId: string;
+  readonly sessionFilePath?: string;
+  readonly model?: string;
+}
+
 /**
  * A live subagent session. The manager is the single consumer of `events`;
  * it folds them into the `SubagentSnapshot` everything else reads.
@@ -33,6 +40,9 @@ export interface BackendCapabilities {
 export interface SubagentSession {
   /** Current metadata snapshot. Updates also arrive as MetaChanged events. */
   readonly meta: Effect.Effect<SubagentMeta>;
+  /** Return a durable resume identity only when no run or queued work is active.
+   * Missing persistence must keep the session alive, never start a blank one. */
+  checkpoint?(): SessionCheckpoint | undefined;
   /**
    * All activity, normalized. Ends when the session's scope closes. Every
    * run started within the session terminates with a RunSettled event.
@@ -63,6 +73,11 @@ export interface SubagentBackend {
    */
   spawn(
     task: SpawnTask,
+  ): Effect.Effect<SubagentSession, SpawnError, Scope.Scope>;
+  /** Reopen idle, without replaying the initial prompt or old transcript events. */
+  resume?(
+    task: SpawnTask,
+    checkpoint: SessionCheckpoint,
   ): Effect.Effect<SubagentSession, SpawnError, Scope.Scope>;
 }
 

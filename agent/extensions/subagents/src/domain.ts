@@ -71,7 +71,7 @@ export interface SubagentMeta {
   readonly contextWindow?: number;
   /** pi session file / Claude projects JSONL / Codex rollout path. */
   readonly sessionFilePath?: string;
-  /** Claude session id / Codex conversation id. */
+  /** Pi JSONL session id / Claude session id / Codex conversation id. */
   readonly nativeSessionId?: string;
 }
 

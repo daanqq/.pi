@@ -19,9 +19,10 @@ import {
   Layer,
   Result,
   Scope,
+  Semaphore,
   Stream,
 } from "effect";
-import type { SubagentBackend, SubagentSession } from "./backend.ts";
+import type { SessionCheckpoint, SubagentBackend, SubagentSession } from "./backend.ts";
 import { BackendRegistry } from "./backend.ts";
 import type {
   BackendName,
@@ -44,6 +45,7 @@ import {
 
 export const MAX_RUNNING = 4;
 export const MAX_TRACKED = 64;
+export const MAX_IDLE_BACKENDS = 2;
 const STOP_TIMEOUT_MS = 5_000;
 const ERROR_TEXT_MAX_LENGTH = 4_096;
 const TRANSCRIPT_TEXT_MAX_LENGTH = 64 * 1_024;
@@ -93,15 +95,29 @@ interface MutableSnapshot {
   turns: number;
 }
 
+interface LiveBackend {
+  readonly kind: "live";
+  readonly session: SubagentSession;
+  readonly scope: Scope.Closeable;
+}
+
+interface DormantBackend {
+  readonly kind: "dormant";
+  readonly checkpoint?: SessionCheckpoint;
+  /** Resume must await actual teardown, not just eviction from the registry. */
+  readonly closing: Fiber.Fiber<void>;
+}
+
 interface Entry {
   snapshot: MutableSnapshot;
-  session: SubagentSession;
-  scope: Scope.Closeable;
-  pump?: Fiber.Fiber<void>;
+  readonly task: SpawnTask;
+  backend: LiveBackend | DormantBackend;
+  readonly commands: Semaphore.Semaphore;
+  lastUsed: number;
+  sending?: Fiber.Fiber<void, SendError>;
+  /** Cancel invalidates sends already waiting for the command permit. */
+  commandEpoch: number;
   liveToolMap: Map<string, LiveToolState>;
-  /** Idle restart dispatched but RunStarted not folded yet; counts as running
-   * so concurrent restarts cannot race past the cap. */
-  restarting?: boolean;
 }
 
 // --- Read model ----------------------------------------------------------------
@@ -111,9 +127,9 @@ export interface SubagentReadModel {
   list(): ReadonlyArray<SubagentSnapshot>;
   get(id: string): SubagentSnapshot | undefined;
   size(): number;
-  /** Any-change notification (footer status, dashboard). */
+  /** Registry/status changes only (footer, dashboard); never streaming deltas. */
   subscribe(listener: () => void): () => void;
-  /** Per-subagent notification (takeover view). */
+  /** All per-subagent changes, including streaming (takeover view). */
   subscribeTo(id: string, listener: () => void): () => void;
   /** Fire-and-forget: steer/continue a subagent (takeover input). */
   requestSend(id: string, text: string): void;
@@ -191,19 +207,22 @@ const makeManager = Effect.gen(function* () {
   let modelCounter = 0;
   let btwCounter = 0;
   let reserved = 0;
+  let useCounter = 0;
   let disposed = false;
   let onSettled:
     ((snap: SubagentSnapshot, consumed: boolean) => void) | undefined;
 
-  const notify = (id?: string) => {
-    const waiters = changeWaiters;
-    changeWaiters = [];
-    for (const waiter of waiters) waiter();
-    for (const listener of [...listeners]) {
-      try {
-        listener();
-      } catch {
-        // A failed status/render listener must not corrupt lifecycle state.
+  const notify = (id?: string, lifecycle = true) => {
+    if (lifecycle) {
+      const waiters = changeWaiters;
+      changeWaiters = [];
+      for (const waiter of waiters) waiter();
+      for (const listener of [...listeners]) {
+        try {
+          listener();
+        } catch {
+          // A failed status/render listener must not corrupt lifecycle state.
+        }
       }
     }
     if (id) {
@@ -229,7 +248,7 @@ const makeManager = Effect.gen(function* () {
 
   const runningCount = () =>
     [...entries.values()].filter(
-      (e) => e.snapshot.status === "running" || e.restarting === true,
+      (e) => e.snapshot.status === "running",
     ).length;
 
   const addInterest = (ids: ReadonlyArray<string>) => {
@@ -244,14 +263,74 @@ const makeManager = Effect.gen(function* () {
   };
 
   const closeEntryScope = (entry: Entry) =>
-    Scope.close(entry.scope, Exit.void).pipe(Effect.ignore);
+    entry.backend.kind === "live"
+      ? Scope.close(entry.backend.scope, Exit.void).pipe(Effect.ignore)
+      : Fiber.join(entry.backend.closing);
+
+  const trackCleanup = (effect: Effect.Effect<void>) => {
+    const fiber = runDetached(effect);
+    cleanups.add(fiber);
+    fiber.addObserver(() => cleanups.delete(fiber));
+    return fiber;
+  };
+
+  const retireBackend = (entry: Entry, live: LiveBackend, checkpoint?: SessionCheckpoint) => {
+    // Detach the pump before teardown can emit terminal events. The close must
+    // also run outside that pump's own finalizer (closing it there deadlocks).
+    const closing = trackCleanup(Effect.yieldNow.pipe(
+      Effect.andThen(Scope.close(live.scope, Exit.void)),
+      Effect.ignore,
+    ));
+    entry.backend = { kind: "dormant", checkpoint, closing };
+  };
+
+  const checkpointOf = (live: LiveBackend) => {
+    try {
+      return live.session.checkpoint?.();
+    } catch {
+      // A persistence failure must not discard the only in-memory history.
+      return undefined;
+    }
+  };
+
+  const trimIdleBackends = () => {
+    if (disposed) return;
+    const idle = [...entries.values()]
+      .filter((entry) => entry.backend.kind === "live" &&
+        entry.snapshot.status !== "running" && !entry.sending)
+      .sort((a, b) => a.lastUsed - b.lastUsed);
+    let excess = idle.length - MAX_IDLE_BACKENDS;
+    for (const entry of idle) {
+      if (excess <= 0) break;
+      const live = entry.backend;
+      if (live.kind !== "live" || !registry.get(entry.snapshot.backend)?.resume) continue;
+      const checkpoint = checkpointOf(live);
+      // A failed/pre-init session may not have native persistence yet. Keeping
+      // it hot is safer than discarding its only history to satisfy the cache cap.
+      if (!checkpoint) continue;
+      retireBackend(entry, live, checkpoint);
+      excess--;
+    }
+  };
+
+  // Let the native producer finish its settlement/queued-turn transition first.
+  let trimScheduled = false;
+  const scheduleTrim = () => {
+    if (trimScheduled || disposed) return;
+    trimScheduled = true;
+    queueMicrotask(() => {
+      trimScheduled = false;
+      trimIdleBackends();
+    });
+  };
 
   const pruneSettled = () => {
     if (entries.size <= MAX_TRACKED) return;
     const candidates = [...entries.values()]
       .filter(
         (e) =>
-          e.snapshot.status !== "running" && !waitInterest.has(e.snapshot.id),
+          e.snapshot.status !== "running" && !e.sending &&
+          !waitInterest.has(e.snapshot.id),
       )
       .sort(
         (a, b) =>
@@ -261,17 +340,15 @@ const makeManager = Effect.gen(function* () {
     for (const entry of candidates) {
       if (entries.size <= MAX_TRACKED) break;
       entries.delete(entry.snapshot.id);
-      const fiber = runDetached(closeEntryScope(entry));
-      cleanups.add(fiber);
-      fiber.addObserver(() => cleanups.delete(fiber));
+      trackCleanup(closeEntryScope(entry));
     }
   };
 
   const settle = (entry: Entry, outcome: RunOutcome) => {
     const s = entry.snapshot;
-    entry.restarting = false;
     if (s.status !== "running") return;
     s.settledAt = Date.now();
+    entry.lastUsed = ++useCounter;
     switch (outcome._tag) {
       case "Completed":
         s.status = "done";
@@ -309,13 +386,14 @@ const makeManager = Effect.gen(function* () {
       // The parent session may be unavailable; settlement stays final.
     }
     pruneSettled();
+    scheduleTrim();
   };
 
   const foldEvent = (entry: Entry, event: SubagentEvent) => {
     const s = entry.snapshot;
+    const previousStatus = s.status;
     switch (event._tag) {
       case "RunStarted":
-        entry.restarting = false;
         s.status = "running";
         s.settledAt = undefined;
         s.errorText = undefined;
@@ -416,7 +494,28 @@ const makeManager = Effect.gen(function* () {
         s.errorText = bounded(event.message);
         break;
     }
-    notify(s.id);
+    notify(s.id, s.status !== previousStatus);
+  };
+
+  const attachPump = (entry: Entry, live: LiveBackend) => {
+    const pump = Stream.runForEach(live.session.events, (event) =>
+      Effect.sync(() => {
+        if (entry.backend === live) foldEvent(entry, event);
+      }),
+    ).pipe(
+      Effect.ensuring(Effect.sync(() => {
+        if (entry.backend !== live) return;
+        if (entry.snapshot.status === "running") {
+          settle(entry, {
+            _tag: "Failed",
+            errorText: "Backend event stream ended unexpectedly",
+          });
+        }
+        // Dead transports are never reusable, even below the idle cache cap.
+        if (!disposed) retireBackend(entry, live, checkpointOf(live));
+      })),
+    );
+    return Scope.provide(Effect.forkScoped(pump), live.scope);
   };
 
   const spawn = (backendName: BackendName, task: SpawnTask) =>
@@ -487,30 +586,16 @@ const makeManager = Effect.gen(function* () {
             finalText: "",
             turns: 0,
           },
-          session,
-          scope,
+          task,
+          backend: { kind: "live", session, scope },
+          commands: Semaphore.makeUnsafe(1),
+          lastUsed: ++useCounter,
+          commandEpoch: 0,
           liveToolMap: new Map(),
         };
         entries.set(id, entry);
 
-        // Pump: fold the event stream into the snapshot. Tied to the entry
-        // scope, so closing the scope stops it. If the stream ends while the
-        // subagent still looks running, the backend died out from under us.
-        const pump = Stream.runForEach(session.events, (event) =>
-          Effect.sync(() => foldEvent(entry, event)),
-        ).pipe(
-          Effect.ensuring(
-            Effect.sync(() => {
-              if (entry.snapshot.status === "running") {
-                settle(entry, {
-                  _tag: "Failed",
-                  errorText: "Backend event stream ended unexpectedly",
-                });
-              }
-            }),
-          ),
-        );
-        entry.pump = yield* Scope.provide(Effect.forkScoped(pump), scope);
+        if (entry.backend.kind === "live") yield* attachPump(entry, entry.backend);
 
         notify(id);
         return entry.snapshot as SubagentSnapshot;
@@ -520,7 +605,6 @@ const makeManager = Effect.gen(function* () {
         Effect.ensuring(
           Effect.sync(() => {
             reserved--;
-            notify();
           }),
         ),
       );
@@ -534,12 +618,17 @@ const makeManager = Effect.gen(function* () {
       const unique = [...new Set(ids)];
       addInterest(unique);
       const loop = Effect.gen(function* () {
+        let previousPending: string[] | undefined;
         while (true) {
           const pending = unique.filter(
             (id) => entries.get(id)?.snapshot.status === "running",
           );
           if (pending.length === 0) return;
-          onPending?.(pending);
+          if (!previousPending || pending.length !== previousPending.length ||
+              pending.some((id, index) => id !== previousPending?.[index])) {
+            onPending?.(pending);
+            previousPending = pending;
+          }
           yield* nextChange;
         }
       });
@@ -556,8 +645,19 @@ const makeManager = Effect.gen(function* () {
   /** Interrupt one running entry, force-closing its scope after 5s. */
   const abortEntry = (entry: Entry) =>
     Effect.gen(function* () {
+      entry.commandEpoch++;
+      if (entry.sending) yield* Fiber.interrupt(entry.sending);
+      yield* abortLocked(entry);
+    });
+
+  const abortLocked = (entry: Entry) =>
+    Effect.gen(function* () {
       if (entry.snapshot.status !== "running") return;
-      const graceful = yield* entry.session.interrupt.pipe(
+      if (entry.backend.kind !== "live") {
+        settle(entry, { _tag: "Interrupted" });
+        return;
+      }
+      const graceful = yield* entry.backend.session.interrupt.pipe(
         Effect.timeout(STOP_TIMEOUT_MS),
         Effect.result,
       );
@@ -578,7 +678,7 @@ const makeManager = Effect.gen(function* () {
           Effect.ignore,
         );
       }
-    });
+    }).pipe(entry.commands.withPermit);
 
   const cancel = (ids: ReadonlyArray<string>) =>
     Effect.suspend(() => {
@@ -621,43 +721,103 @@ const makeManager = Effect.gen(function* () {
       );
     });
 
+  const reopen = (entry: Entry, dormant: DormantBackend) =>
+    Effect.gen(function* () {
+      // Never reopen a native session while its previous owner can still write.
+      yield* Fiber.join(dormant.closing).pipe(
+        Effect.timeout(STOP_TIMEOUT_MS),
+        Effect.mapError(() => new SendError({ message: "Previous backend is still closing; retry later." })),
+      );
+      const backend = registry.get(entry.snapshot.backend);
+      if (!backend?.resume || !dormant.checkpoint) {
+        return yield* new SendError({ message: "Backend has no durable session to resume." });
+      }
+      const resume = backend.resume;
+      const checkpoint = dormant.checkpoint;
+      // Acquisition is interruptible; ownership transfer to Entry is not.
+      // No successfully opened scope may fall between these two owners.
+      yield* Effect.uninterruptibleMask((restore) => Effect.gen(function* () {
+        const scope = yield* Scope.make();
+        yield* Effect.gen(function* () {
+          const session = yield* restore(Scope.provide(resume(entry.task, checkpoint), scope));
+          if (disposed || entries.get(entry.snapshot.id) !== entry) {
+            return yield* new SpawnError({ message: "Subagent manager is shutting down." });
+          }
+          const live: LiveBackend = { kind: "live", session, scope };
+          entry.backend = live;
+          yield* attachPump(entry, live);
+        }).pipe(
+          Effect.onError(() => Scope.close(scope, Exit.void)),
+          Effect.mapError((error) => new SendError({ message: error.message })),
+        );
+      }));
+    });
+
   const send = (id: string, text: string) =>
     Effect.suspend((): Effect.Effect<void, SendError> => {
       const entry = entries.get(id);
       if (!entry || disposed) {
-        return new SendError({
-          message: `Subagent "${id}" is no longer tracked.`,
-        });
+        return new SendError({ message: `Subagent "${id}" is no longer tracked.` });
       }
-      // Restarting a settled subagent occupies a running slot again, so it
-      // must respect the same cap as spawn. Steering an already-running one
-      // does not consume additional capacity.
-      if (entry.snapshot.status !== "running") {
-        if (runningCount() + reserved >= MAX_RUNNING) {
-          return new SendError({
-            message: `Max ${MAX_RUNNING} subagents can run concurrently; restarting "${id}" would exceed that.`,
-          });
+      const epoch = entry.commandEpoch;
+      return Effect.gen(function* () {
+        // Recheck under the permit: another command may have settled, failed,
+        // been cancelled, or been pruned while this send was waiting.
+        if (disposed || entries.get(id) !== entry) {
+          return yield* new SendError({ message: `Subagent "${id}" is no longer tracked.` });
         }
-        // Occupy the slot synchronously: the RunStarted that flips status
-        // arrives via the async pump, and two concurrent restarts must not
-        // both pass the check in that window. Cleared by RunStarted/settle,
-        // or here when the backend rejects the send.
-        entry.restarting = true;
-        return entry.session.send(text).pipe(
-          Effect.onError(() =>
-            Effect.sync(() => {
-              entry.restarting = false;
-            }),
-          ),
+        if (epoch !== entry.commandEpoch) {
+          return yield* new SendError({ message: "Send was cancelled." });
+        }
+        const restarting = entry.snapshot.status !== "running";
+        if (restarting) {
+          if (runningCount() + reserved >= MAX_RUNNING) {
+            return yield* new SendError({
+              message: `Max ${MAX_RUNNING} subagents can run concurrently; restarting "${id}" would exceed that.`,
+            });
+          }
+          // Reserve before opening: wait/cancel and concurrent spawns see busy.
+          entry.snapshot.status = "running";
+          entry.snapshot.settledAt = undefined;
+          entry.snapshot.errorText = undefined;
+          notify(id);
+        }
+        entry.lastUsed = ++useCounter;
+        const dispatch = Effect.gen(function* () {
+          if (entry.backend.kind === "dormant") yield* reopen(entry, entry.backend);
+          const live = entry.backend;
+          if (live.kind !== "live") {
+            return yield* new SendError({ message: "Backend ended while resuming." });
+          }
+          yield* live.session.send(text);
+        }).pipe(
+          Effect.catch((error) => {
+            if (restarting) settle(entry, {
+              _tag: "Failed",
+              errorText: `Could not continue subagent: ${error.message}`,
+            });
+            return Effect.fail(error);
+          }),
+          Effect.onInterrupt(() => Effect.sync(() => {
+            if (restarting) settle(entry, { _tag: "Interrupted" });
+          })),
         );
-      }
-      return entry.session.send(text);
+        const sending = yield* Effect.forkChild(dispatch);
+        entry.sending = sending;
+        yield* Fiber.join(sending).pipe(Effect.ensuring(Effect.sync(() => {
+          entry.sending = undefined;
+          pruneSettled();
+          scheduleTrim();
+        })));
+      }).pipe(entry.commands.withPermit);
     });
 
   const disposeAll = Effect.gen(function* () {
     disposed = true;
     const all = [...entries.values()];
     entries.clear();
+    yield* Effect.forEach(all, (entry) => entry.sending
+      ? Fiber.interrupt(entry.sending) : Effect.void, { concurrency: "unbounded" });
     yield* Effect.forEach(
       all,
       (entry) =>
@@ -687,6 +847,8 @@ const makeManager = Effect.gen(function* () {
       return () => listeners.delete(listener);
     },
     subscribeTo: (id, listener) => {
+      const entry = entries.get(id);
+      if (entry) entry.lastUsed = ++useCounter;
       let set = idListeners.get(id);
       if (!set) {
         set = new Set();
@@ -699,7 +861,13 @@ const makeManager = Effect.gen(function* () {
       };
     },
     requestSend: (id, text) => {
-      runDetached(send(id, text).pipe(Effect.ignore));
+      runDetached(send(id, text).pipe(Effect.catch((error) => Effect.sync(() => {
+        const entry = entries.get(id);
+        if (entry) {
+          entry.snapshot.errorText = bounded(error.message);
+          notify(id, false);
+        }
+      }))));
     },
     requestAbort: (id) => {
       const entry = entries.get(id);
