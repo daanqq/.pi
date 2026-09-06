@@ -121,14 +121,15 @@ class PiConfigEditor extends CustomEditor {
 
 export default function editorUiExtension(pi: ExtensionAPI) {
 	pi.on("session_start", (_event, ctx) => {
-		if (!ctx.hasUI) return;
+		if (ctx.mode !== "tui") return;
 
 		ctx.ui.setEditorComponent((tui, editorTheme, keybindings) =>
 			new PiConfigEditor(tui, editorTheme, keybindings),
 		);
 	});
 
-	pi.on("session_shutdown", () => {
+	pi.on("session_shutdown", (_event, ctx) => {
+		if (ctx.mode !== "tui") return;
 		globalThis.__piAgentPulseRequestRender = undefined;
 	});
 }

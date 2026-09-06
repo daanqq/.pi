@@ -160,11 +160,13 @@ export default function (pi: ExtensionAPI) {
     // currently selected thinking level.
     const headerThinkingLevel = pi.getThinkingLevel();
     ctx.ui.setHeader((tui, theme) => {
+      let cachedLines: string[] | undefined;
       return {
         render(width: number) {
-          return renderHeader(theme, width, 0, headerThinkingLevel);
+          return cachedLines ??= renderHeader(theme, width, 0, headerThinkingLevel);
         },
         invalidate() {
+          cachedLines = undefined;
           tui.requestRender();
         },
       };
@@ -172,11 +174,11 @@ export default function (pi: ExtensionAPI) {
   }
 
   pi.on("session_start", (_event, ctx) => {
-    if (!ctx.hasUI) return;
+    if (ctx.mode !== "tui") return;
     installHeader(ctx);
   });
 
   pi.on("session_shutdown", (_event, ctx) => {
-    if (ctx.hasUI) ctx.ui.setHeader(undefined);
+    if (ctx.mode === "tui") ctx.ui.setHeader(undefined);
   });
 }

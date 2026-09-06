@@ -150,6 +150,7 @@ function installFooter(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
   getUsageStats: () => UsageStats,
+  getContextUsage: () => ReturnType<ExtensionContext["getContextUsage"]>,
   setRequestRender: (requestRender: (() => void) | undefined) => void,
 ) {
   ctx.ui.setFooter((tui, theme, footerData) => {
@@ -196,7 +197,7 @@ function installFooter(
           statsParts.push(footerText(theme, thinkingLevel, `$${totalCost.toFixed(3)}`));
         }
 
-        const contextUsage = ctx.getContextUsage();
+        const contextUsage = getContextUsage();
         const contextWindow = contextUsage?.contextWindow ?? ctx.model?.contextWindow ?? 0;
         const contextPercentValue = contextUsage?.percent ?? 0;
         const contextTokens = contextUsage?.tokens ?? Math.round(contextWindow * contextPercentValue / 100);
@@ -227,28 +228,46 @@ function installFooter(
 export default function rightStatusFooterExtension(pi: ExtensionAPI) {
   let usageStats = emptyUsageStats();
   let requestRender: (() => void) | undefined;
+  let contextUsage: ReturnType<ExtensionContext["getContextUsage"]>;
+  let contextUsageDirty = true;
+
+  const invalidateContextUsage = () => {
+    contextUsageDirty = true;
+    requestRender?.();
+  };
 
   pi.on("session_start", (_event, ctx) => {
+    if (ctx.mode !== "tui") return;
     // Scan history once. New assistant messages update this aggregate incrementally.
     usageStats = collectUsageStats(ctx);
-    installFooter(pi, ctx, () => usageStats, (next) => { requestRender = next; });
+    contextUsageDirty = true;
+    installFooter(pi, ctx, () => usageStats, () => {
+      // Pulse frames do not change context. Recompute only after messages or
+      // session navigation, which can change the active compaction boundary.
+      if (contextUsageDirty) {
+        contextUsage = ctx.getContextUsage();
+        contextUsageDirty = false;
+      }
+      return contextUsage;
+    }, (next) => { requestRender = next; });
   });
 
-  pi.on("message_end", (event) => {
-    if (event.message.role !== "assistant") return;
-    addAssistantUsage(usageStats, event.message);
-    requestRender?.();
+  pi.on("message_end", (event, ctx) => {
+    if (ctx.mode !== "tui") return;
+    if (event.message.role === "assistant") addAssistantUsage(usageStats, event.message);
+    invalidateContextUsage();
   });
 
-  pi.on("model_select", () => {
-    requestRender?.();
-  });
+  pi.on("model_select", invalidateContextUsage);
+  pi.on("session_compact", invalidateContextUsage);
+  pi.on("session_tree", invalidateContextUsage);
 
   pi.on("thinking_level_select", () => {
     requestRender?.();
   });
 
   pi.on("session_shutdown", (_event, ctx) => {
+    if (ctx.mode !== "tui") return;
     requestRender = undefined;
     ctx.ui.setFooter(undefined);
   });

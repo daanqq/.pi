@@ -469,20 +469,24 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	pi.on("session_start", (_event, ctx) => {
+		if (ctx.mode !== "tui") return;
 		resetToIdle(ctx);
 	});
 
 	pi.on("session_info_changed", (_event, ctx) => {
+		if (ctx.mode !== "tui") return;
 		refreshContextLabel(ctx);
 		if (active) renderTitle(ctx);
 		else setIdleTitle(ctx);
 	});
 
 	pi.on("agent_start", (_event, ctx) => {
+		if (ctx.mode !== "tui") return;
 		start(ctx);
 	});
 
 	pi.on("tool_execution_start", (event, ctx) => {
+		if (ctx.mode !== "tui") return;
 		activeTools.set(event.toolCallId, event.toolName);
 		lastToolName = event.toolName;
 		activity = `running ${event.toolName}`;
@@ -494,6 +498,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("tool_execution_end", (event, ctx) => {
+		if (ctx.mode !== "tui") return;
 		activeTools.delete(event.toolCallId);
 		if (activeTools.size === 0) {
 			lastToolName = undefined;
@@ -510,6 +515,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("message_update", (event, ctx) => {
+		if (ctx.mode !== "tui") return;
 		if (event.message.role !== "assistant") return;
 		if (activity === "streaming response") return;
 		activity = "streaming response";
@@ -517,16 +523,19 @@ export default function (pi: ExtensionAPI) {
 		renderTitle(ctx);
 	});
 
-	pi.on("message_end", (event) => {
+	pi.on("message_end", (event, ctx) => {
+		if (ctx.mode !== "tui") return;
 		if (event.message.role !== "assistant") return;
 		totalOutputTokens += Math.max(0, event.message.usage.output);
 	});
 
 	pi.on("agent_end", (_event, ctx) => {
+		if (ctx.mode !== "tui") return;
 		finish(ctx);
 	});
 
 	pi.on("session_shutdown", (_event, ctx) => {
+		if (ctx.mode !== "tui") return;
 		resetToIdle(ctx);
 	});
 }
