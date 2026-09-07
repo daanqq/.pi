@@ -1,6 +1,6 @@
 {
   "lastChangelogVersion": "0.85.0",
-  "defaultThinkingLevel": "medium",
+  "defaultThinkingLevel": "low",
   "defaultProvider": "cliproxy",
   "defaultModel": "cliproxy/sol",
   "packages": [
