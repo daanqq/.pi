@@ -196,6 +196,23 @@ function supportedCodexEffort(
   return candidates[0]?.value ?? preferred;
 }
 
+function sharedCodexEffort(
+  effort: string | undefined,
+): ReasoningEffort | undefined {
+  switch (effort) {
+    case "none":
+      return "off";
+    case "minimal":
+    case "low":
+    case "medium":
+    case "high":
+    case "xhigh":
+      return effort;
+    default:
+      return undefined;
+  }
+}
+
 function textInput(text: string) {
   return { type: "text", text, text_elements: [] };
 }
@@ -352,6 +369,9 @@ const makeCodexSession = (
       meta: {
         backend: "codex",
         modelLabel: task.model,
+        reasoningEffort: sharedCodexEffort(
+          preferredCodexEffort(task.reasoningEffort),
+        ),
       } satisfies SubagentMeta as SubagentMeta,
       interruptTimer: undefined as ReturnType<typeof setTimeout> | undefined,
     };
@@ -912,6 +932,7 @@ const makeCodexSession = (
     state.meta = {
       backend: "codex",
       modelLabel: stringValue(threadResult.model) ?? task.model,
+      reasoningEffort: sharedCodexEffort(state.effort),
       sessionFilePath: stringValue(thread?.path),
       nativeSessionId,
     };
@@ -927,6 +948,10 @@ const makeCodexSession = (
         state.meta.modelLabel,
         modelList,
       );
+      state.meta = {
+        ...state.meta,
+        reasoningEffort: sharedCodexEffort(state.effort),
+      };
     }
     emit({ _tag: "MetaChanged", meta: state.meta });
     if (!checkpoint) startRun(task.prompt);

@@ -51,6 +51,7 @@ import {
 import {
   formatActivityStatus,
   formatContextUtilization,
+  formatReasoningEffort,
 } from "./src/format.ts";
 import { SubagentManager, type SubagentManagerShape } from "./src/manager.ts";
 import {
@@ -93,6 +94,7 @@ interface BtwResultData {
 function describeSubagent(snap: SubagentSnapshot) {
   const details = [
     `${snap.backend}: ${snap.meta.modelLabel ?? "?"}`,
+    formatReasoningEffort(snap.meta.reasoningEffort),
     formatContextUtilization(snap.usage),
     formatElapsed(snap),
     snap.cwd,
@@ -340,6 +342,7 @@ export default function (pi: ExtensionAPI) {
               title: snap.title,
               harness,
               modelLabel: snap.meta.modelLabel ?? "?",
+              reasoningEffort: snap.meta.reasoningEffort,
               cwd,
             }),
           },
@@ -350,6 +353,7 @@ export default function (pi: ExtensionAPI) {
           cwd,
           harness,
           model: snap.meta.modelLabel,
+          reasoningEffort: snap.meta.reasoningEffort,
         },
       };
     },

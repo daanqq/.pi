@@ -375,6 +375,7 @@ const makePiSession = (
       return {
         backend: "pi",
         modelLabel: m ? `${m.provider}/${m.id}` : undefined,
+        reasoningEffort: session.thinkingLevel,
         contextWindow: m?.contextWindow,
         sessionFilePath: session.sessionFile,
         nativeSessionId: session.sessionId,

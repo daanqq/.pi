@@ -81,10 +81,14 @@ test("stub subagent completes and delivers a final result", async () => {
 
     const snap = await runTool(
       runtime,
-      manager.spawn("claude", task("Say hello to the tests")),
+      manager.spawn("claude", {
+        ...task("Say hello to the tests"),
+        reasoningEffort: "high",
+      }),
     );
     assert.equal(snap.status, "running");
     assert.equal(snap.backend, "claude");
+    assert.equal(snap.meta.reasoningEffort, "high");
     assert.ok(snap.meta.sessionFilePath);
 
     await runTool(runtime, manager.waitFor([snap.id]));

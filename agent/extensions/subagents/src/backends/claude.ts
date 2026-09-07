@@ -312,6 +312,7 @@ const makeClaudeSession = (
       meta: {
         backend: "claude",
         modelLabel: checkpoint?.model ?? task.model,
+        reasoningEffort: task.reasoningEffort,
         nativeSessionId: checkpoint?.nativeSessionId,
         sessionFilePath: checkpoint?.sessionFilePath,
         // Claude models used by this backend currently expose 200k context;

@@ -1,5 +1,8 @@
 /** All model-facing strings for the subagents tools. */
 
+import type { ReasoningEffort } from "./domain.ts";
+import { formatReasoningEffort } from "./format.ts";
+
 /** Describes subagent_spawn, including harnesses and the fixed concurrency cap. */
 export const SUBAGENT_SPAWN_TOOL_DESCRIPTION =
   "Spawn a background subagent: a fully autonomous, headless agent with its own context window and the selected harness's normal host permissions. You choose the harness it runs on: pi (in-process pi session, inherits this environment's tools and config), claude (Claude Code), or codex (Codex CLI). Fire-and-forget: this returns immediately with an id. The subagent's final output is queued back to you as a message when it settles, or collect it explicitly with subagent_wait. Children cannot orchestrate more agents/workflows or ask the user, and cannot see this conversation, so the prompt must be self-contained. Only use trusted working directories. Max 4 subagents can be running at once across all harnesses.";
@@ -36,10 +39,11 @@ export function buildSubagentSpawnResult(options: {
   title: string;
   harness: string;
   modelLabel: string;
+  reasoningEffort?: ReasoningEffort;
   cwd: string;
 }) {
   return (
-    `Spawned subagent ${options.id} "${options.title}" (${options.harness}: ${options.modelLabel}, ${options.cwd}).\n` +
+    `Spawned subagent ${options.id} "${options.title}" (${options.harness}: ${options.modelLabel}, ${formatReasoningEffort(options.reasoningEffort)}, ${options.cwd}).\n` +
     `It runs in the background. Its result will be delivered to you when it finishes, ` +
     `or use subagent_wait(ids: ["${options.id}"]) to block for it, subagent_cancel to stop it, subagent_check to peek, subagent_list to see all.`
   );

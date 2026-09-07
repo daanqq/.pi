@@ -1,9 +1,10 @@
 /**
- * Formatting helpers (self-contained copies of the v1 shared helpers:
- * context-utilization + activity-status).
+ * Formatting helpers for subagent metadata, context utilization, and
+ * aggregate activity status.
  */
 
 import type { Theme } from "@earendil-works/pi-coding-agent";
+import type { ReasoningEffort } from "./domain.ts";
 
 export interface ContextUtilization {
   /** Current conversation context occupancy; undefined while unknown. */
@@ -47,6 +48,10 @@ export function formatContextUtilization(usage: ContextUtilization) {
   if (capacity === undefined) return "";
   const percent = contextPercent(usage);
   return `${percent === undefined ? "?" : percent}%/${formatCompactTokens(capacity)}`;
+}
+
+export function formatReasoningEffort(effort: ReasoningEffort | undefined) {
+  return `reasoning: ${effort ?? "default"}`;
 }
 
 interface ActivityCounts {
