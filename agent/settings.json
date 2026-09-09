@@ -24,13 +24,13 @@
         "-index.ts"
       ]
     },
-    "git:github.com/algal/pi-openai-server-compaction"
+    "git:github.com/daanqq/pi-openai-server-compaction-cliproxy"
   ],
   "hideThinkingBlock": false,
   "theme": "alabaster",
   "quietStartup": false,
   "compaction": {
-    "enabled": false
+    "enabled": true
   },
   "enabledModels": [
     "cliproxy/astra",

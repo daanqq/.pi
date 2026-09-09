@@ -8,7 +8,7 @@ Personal configuration for the `pi` coding agent.
 
 - Default model: `cliproxy/sol`, thinking `medium` (Pi's configured default; no per-model reasoning override).
 - Theme: `alabaster`
-- Packages: `pi-web-access`, `pi-system-prompt`, `@ff-labs/pi-fff`, `@plannotator/pi-extension`, `pi-mcp-adapter`, `pi-openai-server-compaction`
+- Packages: `pi-web-access`, `pi-system-prompt`, `@ff-labs/pi-fff`, `@plannotator/pi-extension`, `pi-mcp-adapter`, `pi-openai-server-compaction-cliproxy`
 
 ## CLIProxyAPI
 
