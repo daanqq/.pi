@@ -41,7 +41,8 @@
             "low": "low",
             "medium": "medium",
             "high": "high",
-            "xhigh": "xhigh"
+            "xhigh": "xhigh",
+            "max": "max"
           },
           "input": ["text", "image"],
           "contextWindow": 272000,

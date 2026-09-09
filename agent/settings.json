@@ -1,6 +1,6 @@
 {
-  "lastChangelogVersion": "0.85.0",
-  "defaultThinkingLevel": "low",
+  "lastChangelogVersion": "0.85.1",
+  "defaultThinkingLevel": "medium",
   "defaultProvider": "cliproxy",
   "defaultModel": "cliproxy/sol",
   "packages": [
@@ -33,7 +33,6 @@
     "enabled": true
   },
   "enabledModels": [
-    "cliproxy/astra",
     "cliproxy/sol",
     "cliproxy/luna",
     "openrouter/z-ai/glm-5.3-flash"
@@ -65,6 +64,6 @@
   "defaultProjectTrust": "always",
   "outputPad": 0,
   "fullscreenScrollbar": "auto",
-  "tuiMode": "regular",
+  "tuiMode": "fullscreen",
   "showCacheMissNotices": true
 }
