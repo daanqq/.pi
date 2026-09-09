@@ -33,6 +33,7 @@ import type {
   TranscriptPart,
 } from "../domain.ts";
 import { SendError, SpawnError } from "../domain.ts";
+import { contextOccupancyTokens } from "./claude-usage.ts";
 
 const CLAUDE_CONTEXT_WINDOW = 200_000;
 const INTERRUPT_TIMEOUT_MS = 2_000;
@@ -222,37 +223,6 @@ function sessionFilePath(cwd: string, sessionId: string) {
     "projects",
     projectDirectory,
     `${sessionId}.jsonl`,
-  );
-}
-
-/**
- * Context occupancy after one API request. An assistant message's `usage`
- * describes only that request: the full prompt (fresh + cache-read +
- * cache-written input) plus this response's output — exactly what now sits
- * in the context window. The result message's `usage` instead sums these
- * per-request counts across the whole run, so a multi-request turn
- * re-counts cached context once per request and quickly exceeds the real
- * window; it must never be treated as occupancy.
- */
-export function contextOccupancyTokens(
-  usage:
-    | {
-        input_tokens?: number | null;
-        cache_read_input_tokens?: number | null;
-        cache_creation_input_tokens?: number | null;
-        output_tokens?: number | null;
-      }
-    | null
-    | undefined,
-) {
-  if (!usage || typeof usage.input_tokens !== "number") return undefined;
-  const count = (value: number | null | undefined) =>
-    typeof value === "number" && Number.isFinite(value) ? value : 0;
-  return (
-    count(usage.input_tokens) +
-    count(usage.cache_read_input_tokens) +
-    count(usage.cache_creation_input_tokens) +
-    count(usage.output_tokens)
   );
 }
 

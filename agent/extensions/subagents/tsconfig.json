@@ -3,5 +3,6 @@
   "compilerOptions": {
     "plugins": [{ "name": "@effect/language-service" }]
   },
-  "include": ["index.ts", "src/**/*.ts", "*.test.ts"]
+  "include": ["index.ts", "src/**/*.ts", "*.test.ts"],
+  "exclude": ["src/backends/claude.ts", "claude.test.ts"]
 }

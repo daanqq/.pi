@@ -13,6 +13,11 @@ import { Data } from "effect";
 export const BACKEND_NAMES = ["pi", "claude", "codex"] as const;
 export type BackendName = (typeof BACKEND_NAMES)[number];
 
+/** Backends shipped in the active runtime; Claude remains available as dormant source. */
+export const ENABLED_BACKEND_NAMES = ["pi", "codex"] as const satisfies ReadonlyArray<
+  BackendName
+>;
+
 /** Who initiated the session. User asides stay out of model-facing tooling. */
 export type SubagentOrigin = "model" | "btw";
 

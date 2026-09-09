@@ -117,8 +117,8 @@ in `agent/AGENTS.md`.
   are refreshed after messages, compaction, model changes, and tree navigation,
   not on every animation frame.
 - Subagents keep up to two resumable idle backends hot by LRU while retaining up
-  to 64 tracked results. Colder backends are closed and reopened from native Pi,
-  Claude, or Codex history when continued. A backend without a durable checkpoint
+  to 64 tracked results. Colder backends are closed and reopened from native Pi
+  or Codex history when continued. A backend without a durable checkpoint
   stays alive rather than losing its only history. The four-running-agent limit
   also includes resumes. Streaming updates do not refresh unchanged footer/wait
   status, and takeover caches completed transcript items by width and theme.
