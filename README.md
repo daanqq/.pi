@@ -102,6 +102,7 @@ in `agent/AGENTS.md`.
 | `balance.ts` | Shows DeepSeek and OpenRouter balances. | `/deepseek:balance`, `/openrouter:balance` |
 | `cliproxy-quota/` | Shows combined and per-account Codex quotas through CLIProxyAPI. | `/cliproxy:quota`, `/statuses` |
 | `context-limit-warning.ts` | Warns when context exceeds 128k tokens. | — |
+| `fullscreen-scroll-speed.ts` | Makes fullscreen wheel scrolling five times faster; Alt keeps Pi's additional five-times multiplier. | — |
 | `mr-echat.ts` | Commits, pushes, and creates EChat merge requests. | `/mr-echat` |
 | `session-delete.ts` | Deletes the current session safely. | `/delete` |
 | `shake.ts` | Removes bulky content from session context. | `/shake` |
