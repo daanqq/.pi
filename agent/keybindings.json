@@ -1,3 +1,4 @@
 {
-  "app.message.dequeue": ["alt+up", "alt+q"]
+  "app.message.dequeue": ["alt+up", "alt+q"],
+  "tui.altScreen.bottom": "delete"
 }
