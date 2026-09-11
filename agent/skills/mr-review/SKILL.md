@@ -1,5 +1,5 @@
 ---
-name: echat-mr-review
+name: mr-review
 description: Prepare and review EChat GitLab merge requests or local Git changes with isolated worktrees, exact merge-base scope, status, untracked files, and optional PORA/YouTrack context. Use when an agent in any harness must perform an MR or pre-push local review without relying on the Pi Extension API.
 compatibility: Requires Python 3.10+ and Git. MR metadata can use HTTPS plus a GitLab token or the optional glab CLI. Network access is optional when metadata fixtures or offline mode are used.
 metadata:
