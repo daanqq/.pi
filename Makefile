@@ -2,3 +2,6 @@
 
 dep:
 	node agent/scripts/install-dependencies.mjs
+
+update:
+	pi update --all
