@@ -1,11 +1,3 @@
 {
-  "mcpServers": {
-    "pond": {
-      "command": "/home/user/.local/bin/pond",
-      "args": [
-        "mcp"
-      ],
-      "directTools": false
-    }
-  }
+  "mcpServers": {}
 }

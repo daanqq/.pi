@@ -1,11 +1,3 @@
 {
-  "packages": [
-    {
-      "source": "npm:pi-mcp-adapter",
-      "autoload": false,
-      "extensions": [
-        "+index.ts"
-      ]
-    }
-  ]
+  "packages": []
 }
