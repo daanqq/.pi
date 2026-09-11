@@ -65,5 +65,11 @@
   "outputPad": 0,
   "fullscreenScrollbar": "auto",
   "tuiMode": "fullscreen",
-  "showCacheMissNotices": true
+  "showCacheMissNotices": true,
+  "skills": [
+    "-skills/coding-discipline/SKILL.md"
+  ],
+  "themes": [
+    "-themes/poimandres.json"
+  ]
 }
