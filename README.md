@@ -103,7 +103,7 @@ in `agent/AGENTS.md`.
 | `cliproxy-quota/` | Shows combined and per-account Codex quotas through CLIProxyAPI. | `/cliproxy:quota`, `/statuses` |
 | `context-limit-warning.ts` | Warns when context exceeds 128k tokens. | — |
 | `fullscreen-scroll-speed.ts` | Makes fullscreen wheel scrolling five times faster; Alt keeps Pi's additional five-times multiplier. | — |
-| `mr-echat.ts` | Commits, pushes, and creates EChat merge requests. | `/mr-echat` |
+| `mr-echat.ts` | Commits, pushes, and creates EChat merge requests; `--name=<ветка>` selects an existing branch or creates one from `master`. | `/mr-echat [--name=<ветка>]` |
 | `session-delete.ts` | Deletes the current session safely. | `/delete` |
 | `shake.ts` | Removes bulky content from session context. | `/shake` |
 | `skill-dollar.ts` | Expands `$skill-name` references. | `$<skill-name>` |

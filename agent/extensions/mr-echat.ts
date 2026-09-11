@@ -9,11 +9,13 @@
  * её модель, system prompt, tools и provider cache affinity.
  *
  * Использование:
- *   /mr-echat [task-branch] [--cwd <repo-path>]
+ *   /mr-echat [task-branch] [--name=<task-branch>] [--cwd <repo-path>]
  *
  *   task-branch — опционально: название ветки задачи. Если команда запущена
  *   на базовой ветке, перед началом работы будет создана ветка с этим названием.
  *   --cwd — опционально: git-репозиторий, относительно cwd сессии, абсолютный или через ~/.
+ *   --name — опционально: существующая ветка, на которую нужно переключиться,
+ *   или имя новой ветки. Новая ветка создаётся от локальной master.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -117,6 +119,7 @@ type LogFn = (event: string, details?: Record<string, unknown>) => void;
 
 type CommandArgs = {
   taskBranch?: string;
+  name?: string;
   cwd?: string;
 };
 
@@ -137,10 +140,11 @@ function assistantMessageText(message: any): string {
     .trim();
 }
 
-/** Разобрать позиционную ветку и опциональную рабочую директорию. */
+/** Разобрать позиционную ветку, --name и опциональную рабочую директорию. */
 function parseCommandArgs(raw: string): CommandArgs {
   const parts = raw.trim().split(/\s+/).filter(Boolean);
   let taskBranch: string | undefined;
+  let name: string | undefined;
   let cwd: string | undefined;
 
   for (let index = 0; index < parts.length; index++) {
@@ -151,6 +155,12 @@ function parseCommandArgs(raw: string): CommandArgs {
     } else if (part.startsWith("--cwd=")) {
       cwd = part.slice("--cwd=".length);
       if (!cwd) throw new Error("После --cwd= нужно указать путь к репозиторию");
+    } else if (part === "--name") {
+      name = parts[++index];
+      if (!name) throw new Error("После --name нужно указать название ветки");
+    } else if (part.startsWith("--name=")) {
+      name = part.slice("--name=".length);
+      if (!name) throw new Error("После --name= нужно указать название ветки");
     } else if (part.startsWith("-")) {
       throw new Error(`Неизвестный аргумент: ${part}`);
     } else if (!taskBranch) {
@@ -160,7 +170,11 @@ function parseCommandArgs(raw: string): CommandArgs {
     }
   }
 
-  return { taskBranch, cwd };
+  if (taskBranch && name) {
+    throw new Error("Нельзя одновременно указывать позиционную ветку и --name");
+  }
+
+  return { taskBranch, name, cwd };
 }
 
 /** Не писать содержимое MR в лог вместе с аргументами glab. */
@@ -703,7 +717,7 @@ export default function (pi: ExtensionAPI) {
   };
 
   pi.registerCommand("mr-echat", {
-    description: "Commit + push + создать MR через glab; [ветка] [--cwd путь]",
+    description: "Commit + push + создать MR через glab; [ветка] [--name=ветка] [--cwd путь]",
     handler: async (args, ctx) => {
       const log: LogFn = () => {};
       log("run:start", { cwd: ctx.cwd || process.cwd(), args: args.trim() });
@@ -714,7 +728,7 @@ export default function (pi: ExtensionAPI) {
         }
         await ctx.waitForIdle();
 
-        const { taskBranch, cwd: requestedCwd } = parseCommandArgs(args);
+        const { taskBranch, name, cwd: requestedCwd } = parseCommandArgs(args);
         const lastAgentResponse = getLastAgentResponse(ctx);
 
         // 0. Определить рабочую директорию (git-репозиторий)
@@ -749,14 +763,53 @@ export default function (pi: ExtensionAPI) {
           }
         };
 
-        // 1. На базовой ветке создать переданную ветку задачи
+        // 1. Обработать выбранную ветку. --name умеет переключиться на локальную
+        // или удалённую ветку, а если её нет — создать новую от master.
         let branchResult = await exec("git", ["branch", "--show-current"]);
         if (branchResult.code !== 0 || !branchResult.stdout.trim()) {
           ctx.ui.notify("Не удалось определить текущую ветку", "error");
           return;
         }
         let branch = branchResult.stdout.trim();
-        if (taskBranch && BASE_BRANCHES.has(branch)) {
+        if (name) {
+          const validBranch = await exec("git", ["check-ref-format", "--branch", name]);
+          if (validBranch.code !== 0) {
+            ctx.ui.notify(`Некорректное название ветки: ${name}`, "error");
+            return;
+          }
+
+          const localBranch = await exec("git", ["show-ref", "--verify", "--quiet", `refs/heads/${name}`]);
+          const remoteBranch = localBranch.code === 0
+            ? null
+            : await exec("git", ["show-ref", "--verify", "--quiet", `refs/remotes/origin/${name}`]);
+
+          let switchArgs: string[];
+          if (localBranch.code === 0) {
+            switchArgs = ["switch", name];
+          } else if (remoteBranch?.code === 0) {
+            switchArgs = ["switch", "--track", "-c", name, `origin/${name}`];
+          } else {
+            const master = await exec("git", ["show-ref", "--verify", "--quiet", "refs/heads/master"]);
+            if (master.code !== 0) {
+              ctx.ui.notify("Не найдена локальная ветка master — не могу создать новую ветку", "error");
+              return;
+            }
+            switchArgs = ["switch", "-c", name, "master"];
+          }
+
+          const switchResult = await exec("git", switchArgs);
+          if (switchResult.code !== 0) {
+            ctx.ui.notify(`Не удалось выбрать ветку ${name}: ${switchResult.stderr || switchResult.stdout}`, "error");
+            return;
+          }
+          branch = name;
+          ctx.ui.notify(
+            localBranch.code === 0 || remoteBranch?.code === 0
+              ? `Выбрана ветка ${branch}`
+              : `Создана ветка ${branch} от master`,
+            "info",
+          );
+        } else if (taskBranch && BASE_BRANCHES.has(branch)) {
           const validBranch = await exec("git", ["check-ref-format", "--branch", taskBranch]);
           if (validBranch.code !== 0) {
             ctx.ui.notify(`Некорректное название ветки: ${taskBranch}`, "error");
