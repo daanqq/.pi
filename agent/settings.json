@@ -40,7 +40,7 @@
   "externalEditor": "code --wait",
   "transport": "auto",
   "collapseChangelog": true,
-  "treeFilterMode": "default",
+  "treeFilterMode": "no-tools",
   "steeringMode": "all",
   "terminal": {
     "showTerminalProgress": true,
@@ -53,7 +53,7 @@
     "blockImages": false
   },
   "enableSkillCommands": false,
-  "autocompleteMaxVisible": 10,
+  "autocompleteMaxVisible": 5,
   "followUpMode": "all",
   "enableInstallTelemetry": true,
   "doubleEscapeAction": "tree",
@@ -71,5 +71,17 @@
   ],
   "themes": [
     "-themes/poimandres.json"
-  ]
+  ],
+  "fullscreenExitOutput": "transcript",
+  "modelThinkingLevels": {
+    "cliproxy/sol": "medium",
+    "cliproxy/luna": "high",
+    "openrouter/z-ai/glm-5.3-flash": "high"
+  },
+  "warnings": {
+    "anthropicExtraUsage": false
+  },
+  "markdown": {
+    "mermaid": "final"
+  }
 }
