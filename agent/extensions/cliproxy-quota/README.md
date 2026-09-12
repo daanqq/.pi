@@ -21,8 +21,12 @@ The extension does not track which subscription served an individual request.
 This avoids running journal queries after provider responses when routing is
 not session-affine.
 
-The footer includes `next`, the time until the nearest future quota reset among
-all available subscriptions and windows.
+The footer pairs each window percentage with its nearest reset time and the
+expected increase when that reset restores the affected subscription quota,
+for example `89%/1h3m+4% 98%/6d20h+2%`. When every configured subscription is
+available, the subscription count is omitted. Partial availability is shown as
+`2/3` before the quota values. The increase assumes no additional usage before
+the reset and equal subscription capacity.
 
 Configuration:
 

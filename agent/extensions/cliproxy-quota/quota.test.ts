@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { aggregatePoolQuota, fetchPoolQuotaFromManagement, formatPoolDetails, formatPoolFooter, nearestPoolReset, type AccountQuota } from "./quota.ts";
+import { aggregatePoolQuota, fetchPoolQuotaFromManagement, formatPoolDetails, formatPoolFooter, nearestPoolReset, nearestPoolWindowReset, poolWindowResetIncrease, type AccountQuota } from "./quota.ts";
 import { isCLIProxyProvider } from "./index.ts";
 
 function account(name: string, fiveHour: number, weekly: number): AccountQuota {
@@ -14,15 +14,23 @@ function account(name: string, fiveHour: number, weekly: number): AccountQuota {
 }
 
 test("averages equal subscription capacity across two accounts", () => {
-	const pool = aggregatePoolQuota(2, [account("one", 80, 40), account("two", 20, 60)]);
+	const now = Date.now();
+	const one = account("one", 80, 40);
+	const two = account("two", 20, 60);
+	for (const item of [one, two]) {
+		item.windows["5h"]!.resetsAt = now + 3 * 60 * 60_000;
+		item.windows["7d"]!.resetsAt = now + (6 * 24 + 4) * 60 * 60_000;
+	}
+	const pool = aggregatePoolQuota(2, [one, two]);
 	assert.equal(pool.windows["5h"]?.remaining, 50);
 	assert.equal(pool.windows["7d"]?.remaining, 50);
-	assert.equal(formatPoolFooter(pool), "2subs 5h:50% 7d:50% next:1m");
+	assert.equal(formatPoolFooter(pool, now), "50%/3h+50% 50%/6d4h+50%");
 });
 
 test("shows partial account availability instead of pretending the whole pool was measured", () => {
+	const now = Date.now();
 	const pool = aggregatePoolQuota(2, [account("one", 80, 40)], ["two: HTTP 401"]);
-	assert.equal(formatPoolFooter(pool), "1/2 5h:80% 7d:40% next:1m");
+	assert.equal(formatPoolFooter(pool, now), "1/2 80%/1m+20% 40%/1m+60%");
 });
 
 test("uses the newly selected provider instead of stale context state", () => {
@@ -56,6 +64,10 @@ test("uses the earliest future reset across subscriptions", () => {
 	second.windows["5h"]!.resetsAt = now + 2 * 60 * 60_000;
 	second.windows["7d"]!.resetsAt = now + 8 * 60 * 60_000;
 	assert.equal(nearestPoolReset([first, second], now), now + 2 * 60 * 60_000);
+	assert.equal(nearestPoolWindowReset([first, second], "5h", now), now + 2 * 60 * 60_000);
+	assert.equal(nearestPoolWindowReset([first, second], "7d", now), now + 6 * 60 * 60_000);
+	assert.equal(poolWindowResetIncrease([first, second], "5h", now + 2 * 60 * 60_000), 40);
+	assert.equal(poolWindowResetIncrease([first, second], "7d", now + 6 * 60 * 60_000), 30);
 });
 
 test("loads Codex quota through the CLIProxyAPI management API", async () => {

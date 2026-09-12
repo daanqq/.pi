@@ -97,8 +97,8 @@ export function parseCodexWindows(data: any): QuotaWindow[] {
   return windows;
 }
 
-export function resetText(date: Date): string {
-  const diffMs = date.getTime() - Date.now();
+export function resetText(date: Date, now = Date.now()): string {
+  const diffMs = date.getTime() - now;
   if (!Number.isFinite(diffMs) || date.getTime() <= 0) return "unknown";
   if (diffMs <= 0) return "now";
   const minutes = Math.ceil(diffMs / 60_000);

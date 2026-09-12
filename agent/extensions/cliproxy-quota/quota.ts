@@ -54,6 +54,34 @@ export function nearestPoolReset(accounts: AccountQuota[], now = Date.now()): nu
 	return resets.length > 0 ? Math.min(...resets) : undefined;
 }
 
+export function nearestPoolWindowReset(
+	accounts: AccountQuota[],
+	label: WindowLabel,
+	now = Date.now(),
+): number | undefined {
+	const resets = accounts.flatMap((account) => {
+		const reset = account.windows[label]?.resetsAt;
+		return reset !== undefined && reset > now ? [reset] : [];
+	});
+	return resets.length > 0 ? Math.min(...resets) : undefined;
+}
+
+export function poolWindowResetIncrease(
+	accounts: AccountQuota[],
+	label: WindowLabel,
+	resetsAt: number,
+): number | undefined {
+	const windows = accounts.flatMap((account) => {
+		const window = account.windows[label];
+		return window === undefined ? [] : [window];
+	});
+	if (windows.length === 0) return undefined;
+	const restored = windows
+		.filter((window) => window.resetsAt === resetsAt)
+		.reduce((sum, window) => sum + (100 - window.remaining), 0);
+	return clampPercent(restored / windows.length);
+}
+
 function clampPercent(value: number): number {
 	return Math.max(0, Math.min(100, value));
 }
@@ -248,16 +276,21 @@ export async function fetchPoolQuota(): Promise<PoolQuota> {
 	});
 }
 
-export function formatPoolFooter(pool: PoolQuota): string {
-	const accountCount = pool.availableAccounts === pool.totalAccounts
-		? `${pool.totalAccounts}subs`
-		: `${pool.availableAccounts}/${pool.totalAccounts}`;
-	const parts = [accountCount];
-	if (pool.windows["5h"]) parts.push(`5h:${Math.round(pool.windows["5h"].remaining)}%`);
-	if (pool.windows["7d"]) parts.push(`7d:${Math.round(pool.windows["7d"].remaining)}%`);
-	if (pool.windows["30d"]) parts.push(`30d:${Math.round(pool.windows["30d"].remaining)}%`);
-	const nearestReset = nearestPoolReset(pool.accounts);
-	if (nearestReset !== undefined) parts.push(`next:${resetText(new Date(nearestReset))}`);
+export function formatPoolFooter(pool: PoolQuota, now = Date.now()): string {
+	const labels = (["5h", "7d", "30d"] as const).filter((label) => pool.windows[label] !== undefined);
+	const parts: string[] = [];
+	if (pool.availableAccounts !== pool.totalAccounts) {
+		parts.push(`${pool.availableAccounts}/${pool.totalAccounts}`);
+	}
+	if (labels.length > 0) {
+		parts.push(...labels.map((label) => {
+			const reset = nearestPoolWindowReset(pool.accounts, label, now);
+			const resetIn = reset === undefined ? "unknown" : resetText(new Date(reset), now);
+			const increase = reset === undefined ? undefined : poolWindowResetIncrease(pool.accounts, label, reset);
+			const increaseText = increase === undefined ? "" : `+${Math.round(increase)}%`;
+			return `${Math.round(pool.windows[label]!.remaining)}%/${resetIn}${increaseText}`;
+		}));
+	}
 	return parts.join(" ");
 }
 
