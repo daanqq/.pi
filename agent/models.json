@@ -15,7 +15,10 @@
             "high": "high",
             "xhigh": "xhigh"
           },
-          "input": ["text", "image"],
+          "input": [
+            "text",
+            "image"
+          ],
           "contextWindow": 272000,
           "cost": {
             "input": 5,
@@ -44,7 +47,10 @@
             "xhigh": "xhigh",
             "max": "max"
           },
-          "input": ["text", "image"],
+          "input": [
+            "text",
+            "image"
+          ],
           "contextWindow": 272000,
           "cost": {
             "input": 0.2,
@@ -72,7 +78,10 @@
             "high": "high",
             "xhigh": "xhigh"
           },
-          "input": ["text", "image"],
+          "input": [
+            "text",
+            "image"
+          ],
           "contextWindow": 272000,
           "cost": {
             "input": 10,
