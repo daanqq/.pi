@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { fetchPoolQuota, formatPoolDetails, formatPoolFooter, type PoolQuota } from "./quota.ts";
+import { fetchSharedPoolQuota, formatPoolDetails, formatPoolFooter, type PoolQuota } from "./quota.ts";
 
 const EXTENSION_ID = "cliproxy-quota";
 const PROVIDER_ID = "cliproxy";
@@ -34,7 +34,7 @@ export default function cliproxyQuotaExtension(pi: ExtensionAPI) {
 
 	async function load(): Promise<PoolQuota> {
 		if (refreshInFlight) return refreshInFlight;
-		refreshInFlight = fetchPoolQuota().finally(() => {
+		refreshInFlight = fetchSharedPoolQuota().finally(() => {
 			refreshInFlight = undefined;
 		});
 		return refreshInFlight;

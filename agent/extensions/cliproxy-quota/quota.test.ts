@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
 import test from "node:test";
-import { aggregatePoolQuota, fetchPoolQuotaFromManagement, formatPoolDetails, formatPoolFooter, nearestPoolReset, nearestPoolWindowReset, poolWindowResetIncrease, type AccountQuota } from "./quota.ts";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { aggregatePoolQuota, fetchPoolQuotaFromManagement, fetchSharedPoolQuota, formatPoolDetails, formatPoolFooter, nearestPoolReset, nearestPoolWindowReset, poolWindowResetIncrease, type AccountQuota, type PoolQuota } from "./quota.ts";
 import { isCLIProxyProvider } from "./index.ts";
 
 function account(name: string, fiveHour: number, weekly: number): AccountQuota {
@@ -126,4 +129,24 @@ test("requires a plaintext CLIProxyAPI management key", async () => {
 		}),
 		/CLIPROXY_MANAGEMENT_KEY/,
 	);
+});
+
+test("deduplicates concurrent quota refreshes across processes through the shared cache", async () => {
+	const cacheDir = await mkdtemp(join(tmpdir(), "cliproxy-quota-test-"));
+	const pool: PoolQuota = aggregatePoolQuota(1, [account("one", 80, 40)]);
+	let refreshes = 0;
+	const fetchQuota = async (): Promise<PoolQuota> => {
+		refreshes++;
+		await new Promise((resolve) => setTimeout(resolve, 25));
+		return pool;
+	};
+
+	try {
+		const results = await Promise.all(Array.from({ length: 10 }, () => fetchSharedPoolQuota({ cacheDir, fetchQuota })));
+		assert.equal(refreshes, 1);
+		assert.equal(results.length, 10);
+		assert.ok(results.every((result) => result === pool || result.accounts[0]?.name === "one"));
+	} finally {
+		await rm(cacheDir, { recursive: true, force: true });
+	}
 });

@@ -1,4 +1,5 @@
-import { readFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseCodexWindows, resetText } from "./windows.ts";
@@ -7,6 +8,12 @@ const MANAGEMENT_URL = process.env.CLIPROXY_MANAGEMENT_URL ?? "http://127.0.0.1:
 const MANAGEMENT_KEY = process.env.CLIPROXY_MANAGEMENT_KEY ?? "";
 const USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
 const FETCH_TIMEOUT_MS = 15_000;
+const SHARED_CACHE_DIR = join(homedir(), ".cache", "pi", "cliproxy-quota");
+const SHARED_CACHE_FILE = "quota.json";
+const SHARED_LOCK_DIR = "refresh.lock";
+const SHARED_CACHE_TTL_MS = 60_000;
+const SHARED_LOCK_TTL_MS = 120_000;
+const SHARED_LOCK_WAIT_MS = 20_000;
 
 type WindowLabel = "5h" | "7d" | "30d";
 
@@ -45,6 +52,19 @@ export type PoolQuota = {
 	accounts: AccountQuota[];
 	windows: Partial<Record<WindowLabel, { remaining: number }>>;
 	errors: string[];
+};
+
+type SharedQuotaCache = {
+	updatedAt: number;
+	pool: PoolQuota;
+};
+
+export type SharedQuotaOptions = {
+	cacheDir?: string;
+	cacheTtlMs?: number;
+	lockTtlMs?: number;
+	now?: () => number;
+	fetchQuota?: () => Promise<PoolQuota>;
 };
 
 export function nearestPoolReset(accounts: AccountQuota[], now = Date.now()): number | undefined {
@@ -274,6 +294,114 @@ export async function fetchPoolQuota(): Promise<PoolQuota> {
 		managementUrl: settings.managementUrl,
 		managementKey: settings.managementKey,
 	});
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseCachedPoolQuota(value: unknown): PoolQuota | undefined {
+	if (!isRecord(value)
+		|| typeof value.totalAccounts !== "number"
+		|| typeof value.availableAccounts !== "number"
+		|| !Array.isArray(value.accounts)
+		|| !isRecord(value.windows)
+		|| !Array.isArray(value.errors)
+		|| !value.accounts.every((account) => {
+			if (!isRecord(account) || typeof account.name !== "string" || !isRecord(account.windows)) return false;
+			return Object.values(account.windows).every((window) =>
+				isRecord(window) && typeof window.remaining === "number" && typeof window.resetsAt === "number",
+			);
+		})
+		|| !Object.values(value.windows).every((window) =>
+			isRecord(window) && typeof window.remaining === "number",
+		)
+		|| !value.errors.every((error) => typeof error === "string")) {
+		return undefined;
+	}
+	return value as unknown as PoolQuota;
+}
+
+async function readSharedQuotaCache(cachePath: string): Promise<SharedQuotaCache | undefined> {
+	try {
+		const parsed: unknown = JSON.parse(await readFile(cachePath, "utf8"));
+		if (!isRecord(parsed) || typeof parsed.updatedAt !== "number" || !Number.isFinite(parsed.updatedAt)) {
+			return undefined;
+		}
+		const pool = parseCachedPoolQuota(parsed.pool);
+		return pool ? { updatedAt: parsed.updatedAt, pool } : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+async function acquireSharedQuotaLock(cacheDir: string, lockPath: string, lockTtlMs: number, now: () => number): Promise<boolean> {
+	await mkdir(cacheDir, { recursive: true, mode: 0o700 });
+	for (let attempt = 0; attempt < 2; attempt++) {
+		try {
+			await mkdir(lockPath, { mode: 0o700 });
+			await writeFile(join(lockPath, "owner"), `${process.pid}\n`, { mode: 0o600 });
+			return true;
+		} catch (error) {
+			if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
+			try {
+				const lockAge = now() - (await stat(lockPath)).mtimeMs;
+				if (lockAge >= lockTtlMs) await rm(lockPath, { recursive: true, force: true });
+			} catch {
+				// Another process may be creating or removing the lock. It owns the retry.
+			}
+		}
+	}
+	return false;
+}
+
+async function writeSharedQuotaCache(cachePath: string, cache: SharedQuotaCache): Promise<void> {
+	const temporaryPath = `${cachePath}.${process.pid}.${randomUUID()}.tmp`;
+	try {
+		await writeFile(temporaryPath, JSON.stringify(cache), { mode: 0o600 });
+		await rename(temporaryPath, cachePath);
+	} finally {
+		await rm(temporaryPath, { force: true });
+	}
+}
+
+export async function fetchSharedPoolQuota(options: SharedQuotaOptions = {}): Promise<PoolQuota> {
+	const cacheDir = options.cacheDir ?? SHARED_CACHE_DIR;
+	const cachePath = join(cacheDir, SHARED_CACHE_FILE);
+	const lockPath = join(cacheDir, SHARED_LOCK_DIR);
+	const cacheTtlMs = options.cacheTtlMs ?? SHARED_CACHE_TTL_MS;
+	const lockTtlMs = options.lockTtlMs ?? SHARED_LOCK_TTL_MS;
+	const now = options.now ?? Date.now;
+	const fetchQuota = options.fetchQuota ?? fetchPoolQuota;
+
+	// The cache and lock are shared by every Pi process using this home directory.
+	// Only the process that acquires the lock contacts CLIProxyAPI.
+	const cached = await readSharedQuotaCache(cachePath);
+	if (cached && now() - cached.updatedAt < cacheTtlMs) return cached.pool;
+
+	const acquired = await acquireSharedQuotaLock(cacheDir, lockPath, lockTtlMs, now);
+	if (!acquired) {
+		if (cached) return cached.pool;
+		const deadline = Date.now() + SHARED_LOCK_WAIT_MS;
+		while (Date.now() < deadline) {
+			await new Promise((resolve) => setTimeout(resolve, 100));
+			const completed = await readSharedQuotaCache(cachePath);
+			if (completed && now() - completed.updatedAt < cacheTtlMs) return completed.pool;
+		}
+		throw new Error("Quota refresh is already running");
+	}
+
+	try {
+		// A different process may have completed the refresh while this process waited.
+		const latest = await readSharedQuotaCache(cachePath);
+		if (latest && now() - latest.updatedAt < cacheTtlMs) return latest.pool;
+
+		const pool = await fetchQuota();
+		await writeSharedQuotaCache(cachePath, { updatedAt: now(), pool });
+		return pool;
+	} finally {
+		await rm(lockPath, { recursive: true, force: true });
+	}
 }
 
 export function formatPoolFooter(pool: PoolQuota, now = Date.now()): string {

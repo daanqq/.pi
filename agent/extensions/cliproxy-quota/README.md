@@ -15,7 +15,13 @@ reset times are available through:
 ```
 
 The footer is cleared immediately when another provider is selected. Quota is
-refreshed once per minute only while a `cliproxy` model is active.
+refreshed once per minute only while a `cliproxy` model is active. Refreshes are
+deduplicated across Pi processes through a shared cache at
+`~/.cache/pi/cliproxy-quota/quota.json` and an atomic lock. Thus ten Pi sessions
+sharing a home directory issue one refresh, not ten. The cache contains quota
+results only and never contains the management key. If the lock is busy,
+sessions use the last cached result; during the first refresh they wait briefly
+for the cache instead of starting duplicate requests.
 
 The extension does not track which subscription served an individual request.
 This avoids running journal queries after provider responses when routing is
