@@ -10,7 +10,6 @@
         "-skills/librarian/SKILL.md"
       ]
     },
-    "npm:pi-system-prompt",
     "npm:@ff-labs/pi-fff",
     {
       "source": "npm:@plannotator/pi-extension",
