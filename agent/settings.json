@@ -61,7 +61,10 @@
   "enableInstallTelemetry": true,
   "doubleEscapeAction": "tree",
   "extensions": [
-    "+extensions/balance.ts"
+    "+extensions/balance.ts",
+    "+extensions/00-ui-footer.ts",
+    "+extensions/00-ui-header.ts",
+    "+extensions/00-ui-editor.ts"
   ],
   "httpIdleTimeoutMs": 120000,
   "defaultProjectTrust": "always",
