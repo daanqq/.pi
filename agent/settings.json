@@ -72,9 +72,7 @@
   "fullscreenScrollbar": "auto",
   "tuiMode": "fullscreen",
   "showCacheMissNotices": true,
-  "skills": [
-    "-skills/coding-discipline/SKILL.md"
-  ],
+  "skills": [],
   "themes": [
     "-themes/poimandres.json"
   ],
