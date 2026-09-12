@@ -2,7 +2,8 @@
 
 Shows the combined remaining Codex quota for enabled accounts exposed by the
 CLIProxyAPI Management API while the selected Pi model uses provider
-`cliproxy`. The extension obtains each account's current token through
+`cliproxy` or `openai-codex`. The latter can be configured as an override that
+routes through CLIProxyAPI. The extension obtains each account's current token through
 `/v0/management/api-call`; it does not read OAuth files directly.
 
 The two subscriptions are assumed to have equal capacity, so the pool
@@ -15,7 +16,7 @@ reset times are available through:
 ```
 
 The footer is cleared immediately when another provider is selected. Quota is
-refreshed once per minute only while a `cliproxy` model is active. Refreshes are
+refreshed once per minute only while a CLIProxyAPI-backed model is active. Refreshes are
 deduplicated across Pi processes through a shared cache at
 `~/.cache/pi/cliproxy-quota/quota.json` and an atomic lock. Thus ten Pi sessions
 sharing a home directory issue one refresh, not ten. The cache contains quota

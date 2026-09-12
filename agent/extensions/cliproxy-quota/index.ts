@@ -2,11 +2,11 @@ import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@e
 import { fetchSharedPoolQuota, formatPoolDetails, formatPoolFooter, type PoolQuota } from "./quota.ts";
 
 const EXTENSION_ID = "cliproxy-quota";
-const PROVIDER_ID = "cliproxy";
+const CLI_PROXY_PROVIDERS = new Set(["cliproxy", "openai-codex"]);
 const REFRESH_MS = 60_000;
 
 export function isCLIProxyProvider(provider: string | undefined): boolean {
-	return provider === PROVIDER_ID;
+	return provider !== undefined && CLI_PROXY_PROVIDERS.has(provider);
 }
 
 function isCLIProxyModel(ctx: ExtensionContext | ExtensionCommandContext): boolean {

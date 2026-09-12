@@ -36,11 +36,10 @@ test("shows partial account availability instead of pretending the whole pool wa
 	assert.equal(formatPoolFooter(pool, now), "1/2 80%/1m+20% 40%/1m+60%");
 });
 
-test("uses the newly selected provider instead of stale context state", () => {
-	const staleContextProvider = "openai-codex";
-	const selectedEventProvider = "cliproxy";
-	assert.equal(isCLIProxyProvider(staleContextProvider), false);
-	assert.equal(isCLIProxyProvider(selectedEventProvider), true);
+test("recognizes both CLIProxy provider ids", () => {
+	assert.equal(isCLIProxyProvider("openai-codex"), true);
+	assert.equal(isCLIProxyProvider("cliproxy"), true);
+	assert.equal(isCLIProxyProvider("openrouter"), false);
 });
 
 test("formats per-subscription status like the Codex quota command", () => {
