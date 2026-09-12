@@ -14,10 +14,10 @@ test("spawn result shows reasoning effort beside the model", () => {
       id: "sa-1",
       title: "test",
       harness: "pi",
-      modelLabel: "cliproxy/luna",
+      modelLabel: "openai-codex/gpt-5.6-luna",
       reasoningEffort: "high",
       cwd: "/tmp/project",
     }),
-    /\(pi: cliproxy\/luna, reasoning: high, \/tmp\/project\)/,
+    /\(pi: openai-codex\/gpt-5\.6-luna, reasoning: high, \/tmp\/project\)/,
   );
 });
