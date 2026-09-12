@@ -27,7 +27,8 @@
         "-skills/mcp-scripting/SKILL.md"
       ]
     },
-    "git:github.com/daanqq/pi-openai-server-compaction-cliproxy"
+    "git:github.com/daanqq/pi-openai-server-compaction-cliproxy",
+    "npm:pi-context-view"
   ],
   "hideThinkingBlock": false,
   "theme": "alabaster",
