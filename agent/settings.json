@@ -1,8 +1,8 @@
 {
   "lastChangelogVersion": "0.85.1",
   "defaultThinkingLevel": "medium",
-  "defaultProvider": "cliproxy",
-  "defaultModel": "cliproxy/sol",
+  "defaultProvider": "openai-codex",
+  "defaultModel": "openai-codex/gpt-5.6-sol",
   "packages": [
     {
       "source": "npm:pi-web-access",
@@ -36,12 +36,14 @@
     "enabled": false
   },
   "enabledModels": [
+    "openai-codex/gpt-5.6-sol",
+    "openai-codex/gpt-5.6-luna",
     "cliproxy/sol",
     "cliproxy/luna",
     "openrouter/z-ai/glm-5.3-flash"
   ],
   "externalEditor": "code --wait",
-  "transport": "auto",
+  "transport": "websocket-cached",
   "collapseChangelog": true,
   "treeFilterMode": "no-tools",
   "steeringMode": "all",
@@ -80,6 +82,8 @@
   ],
   "fullscreenExitOutput": "transcript",
   "modelThinkingLevels": {
+    "openai-codex/gpt-5.6-sol": "medium",
+    "openai-codex/gpt-5.6-luna": "high",
     "cliproxy/sol": "medium",
     "cliproxy/luna": "high",
     "openrouter/z-ai/glm-5.3-flash": "high"
