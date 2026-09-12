@@ -269,6 +269,5 @@ export default function rightStatusFooterExtension(pi: ExtensionAPI) {
   pi.on("session_shutdown", (_event, ctx) => {
     if (ctx.mode !== "tui") return;
     requestRender = undefined;
-    ctx.ui.setFooter(undefined);
   });
 }

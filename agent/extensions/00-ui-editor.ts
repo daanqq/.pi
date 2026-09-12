@@ -36,7 +36,9 @@ class PiConfigEditor extends CustomEditor {
 		private readonly editorTheme: EditorTheme,
 		keybindings: KeybindingsManager,
 	) {
-		super(tui, editorTheme, keybindings);
+		// Match Pi's default editor. Without the embedded working status Pi uses a
+		// standalone two-line status row and leaves it blank after the run ends.
+		super(tui, editorTheme, keybindings, { embedWorkingStatus: true });
 		globalThis.__piAgentPulseRequestRender = () => tui.requestRender();
 		delete (this as { onSubmit?: (text: string) => void }).onSubmit;
 		this.pulseBorderColor = editorTheme.borderColor;
