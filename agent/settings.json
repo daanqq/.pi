@@ -33,7 +33,7 @@
   "theme": "alabaster",
   "quietStartup": false,
   "compaction": {
-    "enabled": true
+    "enabled": false
   },
   "enabledModels": [
     "cliproxy/sol",
