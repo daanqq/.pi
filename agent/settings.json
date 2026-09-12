@@ -76,7 +76,7 @@
   "themes": [
     "-themes/poimandres.json"
   ],
-  "fullscreenExitOutput": "transcript",
+  "fullscreenExitOutput": "resume-hint",
   "modelThinkingLevels": {
     "openai-codex/gpt-5.6-sol": "medium",
     "openai-codex/gpt-5.6-luna": "high",
