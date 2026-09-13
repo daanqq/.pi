@@ -96,7 +96,7 @@ function beginSynchronizedOutput(): void {
   if (!state.active && !writeSequence(BEGIN_SYNCHRONIZED_OUTPUT)) return;
   state.active = true;
 
-  // If replacement fails before the next session_start, do not leave the
+  // If replacement fails before resource discovery, do not leave the
   // terminal indefinitely holding buffered frames.
   state.fallbackTimer = setTimeout(endSynchronizedOutput, FALLBACK_TIMEOUT_MS);
   state.fallbackTimer.unref();
@@ -107,8 +107,9 @@ function scheduleSynchronizedOutputRelease(): void {
   if (!state.active) return;
 
   state.releaseTimer = clearTimer(state.releaseTimer);
-  // Editor/footer session_start handlers request their renders synchronously.
-  // Give the TUI one frame to paint them before exposing buffered output.
+  // Resource discovery starts only after every session_start handler has
+  // settled. Give the TUI one frame to paint the fully rebound session before
+  // exposing buffered output.
   state.releaseTimer = setTimeout(endSynchronizedOutput, RELEASE_DELAY_MS);
   state.releaseTimer.unref();
 }
@@ -128,10 +129,8 @@ export default function synchronizedUiTransitionExtension(pi: ExtensionAPI) {
     }
   });
 
-  pi.on("session_start", (event, ctx) => {
+  pi.on("resources_discover", (_event, ctx) => {
     if (ctx.mode !== "tui") return;
-    if (event.reason === "new" || event.reason === "resume" || event.reason === "fork") {
-      scheduleSynchronizedOutputRelease();
-    }
+    scheduleSynchronizedOutputRelease();
   });
 }
