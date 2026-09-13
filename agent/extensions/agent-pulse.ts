@@ -14,6 +14,10 @@
 import path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
+import {
+	calculateTextStreamMetrics,
+	type TextStreamMetrics,
+} from "./shared/text-stream-metrics.ts";
 
 const SPINNER_VERBS = [
 	"Accomplishing",
@@ -233,8 +237,15 @@ function formatElapsed(ms: number): string {
 	return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
 }
 
-function formatFinalDuration(ms: number, tps: number): string {
-	return `Worked for ${formatElapsed(ms)}${tps > 0 ? ` / ${tps}tps` : ""}`;
+function formatTtft(ms: number): string {
+	return `${(ms / 1000).toFixed(1)}ttft`;
+}
+
+function formatFinalDuration(ms: number, metrics?: TextStreamMetrics): string {
+	const parts = [`Worked for ${formatElapsed(ms)}`];
+	if (metrics?.ttftMs !== undefined) parts.push(formatTtft(metrics.ttftMs));
+	if (metrics?.tps !== undefined) parts.push(`${metrics.tps}tps`);
+	return parts.join(" / ");
 }
 
 function renderShimmeredMessage(message: string, elapsedMs: number, base: ColorFn, bright: ColorFn): string {
@@ -286,7 +297,10 @@ export default function (pi: ExtensionAPI) {
 	let active = false;
 	let lastFrame = "✻";
 	let lastToolName: string | undefined;
-	let totalOutputTokens = 0;
+	let providerRequestStartedAt: number | undefined;
+	let firstTextDeltaAt: number | undefined;
+	let lastTextDeltaAt: number | undefined;
+	let latestTextStreamMetrics: TextStreamMetrics | undefined;
 	let frozenPulseColor: ColorFn | null = null;
 	let contextLabelCache = "";
 	let pulseMode: "hidden" | "active" | "final" = "hidden";
@@ -351,9 +365,7 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	function renderFinalWidget(finalElapsedMs: number) {
-		const seconds = finalElapsedMs / 1000;
-		const tps = totalOutputTokens > 0 && seconds > 0 ? Math.round(totalOutputTokens / seconds) : 0;
-		finalPulseText = formatFinalDuration(finalElapsedMs, tps);
+		finalPulseText = formatFinalDuration(finalElapsedMs, latestTextStreamMetrics);
 		pulseMode = "final";
 		requestPulseRender();
 	}
@@ -427,7 +439,10 @@ export default function (pi: ExtensionAPI) {
 		clearRenderTimer();
 		clearTitleDoneTimer();
 		resetRuntimeState();
-		totalOutputTokens = 0;
+		providerRequestStartedAt = undefined;
+		firstTextDeltaAt = undefined;
+		lastTextDeltaAt = undefined;
+		latestTextStreamMetrics = undefined;
 		verb = sampleVerb();
 		activity = "waiting for provider";
 		startTime = Date.now();
@@ -485,6 +500,18 @@ export default function (pi: ExtensionAPI) {
 		start(ctx);
 	});
 
+	pi.on("before_provider_request", (_event, ctx) => {
+		if (ctx.mode !== "tui") return;
+		providerRequestStartedAt = performance.now();
+	});
+
+	pi.on("message_start", (event, ctx) => {
+		if (ctx.mode !== "tui") return;
+		if (event.message.role !== "assistant") return;
+		firstTextDeltaAt = undefined;
+		lastTextDeltaAt = undefined;
+	});
+
 	pi.on("tool_execution_start", (event, ctx) => {
 		if (ctx.mode !== "tui") return;
 		activeTools.set(event.toolCallId, event.toolName);
@@ -517,6 +544,11 @@ export default function (pi: ExtensionAPI) {
 	pi.on("message_update", (event, ctx) => {
 		if (ctx.mode !== "tui") return;
 		if (event.message.role !== "assistant") return;
+		if (event.assistantMessageEvent.type === "text_delta" && event.assistantMessageEvent.delta.length > 0) {
+			const now = performance.now();
+			firstTextDeltaAt ??= now;
+			lastTextDeltaAt = now;
+		}
 		if (activity === "streaming response") return;
 		activity = "streaming response";
 		// The interval owns pulse rendering; update the title only on this transition.
@@ -526,7 +558,15 @@ export default function (pi: ExtensionAPI) {
 	pi.on("message_end", (event, ctx) => {
 		if (ctx.mode !== "tui") return;
 		if (event.message.role !== "assistant") return;
-		totalOutputTokens += Math.max(0, event.message.usage.output);
+		latestTextStreamMetrics = calculateTextStreamMetrics({
+			outputTokens: event.message.usage.output,
+			reasoningTokens: event.message.usage.reasoning,
+			requestStartedAt: providerRequestStartedAt,
+			firstTextDeltaAt,
+			lastTextDeltaAt,
+			hasToolCalls: event.message.content.some((content) => content.type === "toolCall"),
+		});
+		providerRequestStartedAt = undefined;
 	});
 
 	pi.on("agent_end", (_event, ctx) => {
