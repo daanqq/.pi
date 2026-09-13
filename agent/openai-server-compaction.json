@@ -1,6 +1,0 @@
-{
-  "enabled": true,
-  "compatibleProviders": ["cliproxy"],
-  "notify": true,
-  "usePreviousResponseId": false
-}
