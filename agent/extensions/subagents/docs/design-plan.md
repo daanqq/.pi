@@ -79,9 +79,9 @@ the concurrency cap, and that children can't orchestrate/see the parent conversa
 
 ### 1.4 UI (carried over into v2 essentially as-is)
 
-1. **Footer status** (`ctx.ui.setStatus("subagents", ...)`): `subagents: ■ 2 running ·
-   ■ 1 done · ■ 1 failed` (warning/success/error colored squares;
-   cleared when no subagents). Driven by manager change listener.
+1. **Footer status** (`ctx.ui.setStatus("subagents", ...)`): `subagents: 2~ 1+ 1!`
+   (running/done/failed counts; cleared when no subagents). Driven by manager
+   change listener.
 2. **`subagent-result` message renderer**: status icon (`■`/`x`) + bold accent header
    `subagent sa-N · title · finished/failed`; collapsed = first 8 body lines +
    `... (ctrl+o to expand)`; expanded = header + `Markdown` component render of the body.
