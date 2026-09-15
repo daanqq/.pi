@@ -1,5 +1,4 @@
-![pi-config screenshot](https://iili.io/C2mIO2n.png)
-
+![pi-config screenshot](https://iili.io/nnqm374.png)
 # pi-config
 
 Personal configuration for the `pi` coding agent.
