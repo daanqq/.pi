@@ -1,0 +1,258 @@
+{
+  "schema_version": 1,
+  "repositories": {
+    "atman-workspace": {
+      "url": "https://github.com/atman-33/atman-workspace.git",
+      "cache": "github.com/atman-33/atman-workspace",
+      "revision": "b94e2306f54ccbf7678e9b2b3f90040a1718e84f"
+    },
+    "cursor-plugins": {
+      "url": "https://github.com/cursor/plugins.git",
+      "cache": "github.com/cursor/plugins",
+      "revision": "c1c0a32802223f4be824112dd83d33ad29a8b26c"
+    },
+    "humanlayer-skills": {
+      "url": "https://github.com/humanlayer/skills.git",
+      "cache": "github.com/humanlayer/skills",
+      "revision": "3c2629142c5d437428269b1b722b08c0b87f574d"
+    },
+    "mattpocock-skills": {
+      "url": "https://github.com/mattpocock/skills.git",
+      "cache": "github.com/mattpocock/skills",
+      "revision": "959a8e9f1edc3adbe2f7e3054bb6fbefa6696260"
+    },
+    "react-doctor": {
+      "url": "https://github.com/aidenybai/react-doctor.git",
+      "cache": "github.com/aidenybai/react-doctor",
+      "revision": "922616f08db7d48463b1495e4dbdb699fc3d7c34"
+    },
+    "vercel-agent-skills": {
+      "url": "https://github.com/vercel-labs/agent-skills.git",
+      "cache": "github.com/vercel-labs/agent-skills",
+      "revision": "063bee94c3f4df8453406c830b0a7df0f2860278"
+    }
+  },
+  "skills": {
+    "analyze-eutp": {
+      "tracking": "local",
+      "installed_hash": "ef6ba84b42c57f3273f7ebc3d1a15051011a31626f03a0f9316fc161d44b7004"
+    },
+    "blast-radius": {
+      "tracking": "overlay",
+      "repository": "cursor-plugins",
+      "path": "pstack/skills/blast-radius",
+      "overlay": "overlays/blast-radius.md",
+      "installed_hash": "f337cc4bcf1343aa1d895ae6049fe20bd380a0fbef86be85a751fcf3f53cc15f"
+    },
+    "bro": {
+      "tracking": "exact",
+      "repository": "cursor-plugins",
+      "path": "pstack/skills/bro",
+      "installed_hash": "005c7221a36bef868ed51b67c9a79199a81761e0f09a2f8349079a609e78bff0"
+    },
+    "codebase-design": {
+      "tracking": "exact",
+      "repository": "mattpocock-skills",
+      "path": "skills/engineering/codebase-design",
+      "installed_hash": "a387b92c0e6d1680048a158a8d450dd8aa586e16293a2ed4a7ef99e5613493f3"
+    },
+    "code-review": {
+      "tracking": "overlay",
+      "repository": "mattpocock-skills",
+      "path": "skills/engineering/code-review",
+      "overlay": "overlays/code-review.md",
+      "installed_hash": "1a6ad38a4f32dc85501fc844fc113787eace2d9b17a6e442f2e3a8624496de72"
+    },
+    "coding-discipline": {
+      "tracking": "local",
+      "installed_hash": "b1cddb99ac453f69f81fc55607b105b6ca677fb6f6ea99b3c4fa8c88f7edda65"
+    },
+    "diagnosing-bugs": {
+      "tracking": "overlay",
+      "repository": "mattpocock-skills",
+      "path": "skills/engineering/diagnosing-bugs",
+      "overlay": "overlays/diagnosing-bugs.md",
+      "installed_hash": "995f53369ee0e73d463a3de0c3a45baeacb9a575a37d812bc2987de0428274d5"
+    },
+    "dnd-kit-implementation": {
+      "tracking": "exact",
+      "repository": "atman-workspace",
+      "path": "skills/dnd-kit-implementation",
+      "installed_hash": "036e6b50275c5af16fd6ee4745f5a3dbd35afe2413bc3496f378986359124a0d"
+    },
+    "eutp-worktree": {
+      "tracking": "local",
+      "installed_hash": "53c73284afa335cc13bdce8fa62a253e26111d1ffa4ea9491a86009f788c821d"
+    },
+    "eutp-worktree-transfer": {
+      "tracking": "local",
+      "installed_hash": "3c7095fe91a616d5fcade9cb8a853d62406461326d481565247a7e49864d86ea"
+    },
+    "fix-gitlab-mr-conflicts": {
+      "tracking": "local",
+      "installed_hash": "aeceefd9049e1a481d38636f64a98ec6fb798baf258b768fb0ffcfe85bfb5b27"
+    },
+    "fix-gitlab-mr-review": {
+      "tracking": "local",
+      "installed_hash": "5161703d2021669507d4c074faab5f7c4f9c4b54b6c69c097a9dbea909ccaff3"
+    },
+    "fix-merge-conflicts": {
+      "tracking": "overlay",
+      "repository": "cursor-plugins",
+      "path": "cursor-team-kit/skills/fix-merge-conflicts",
+      "overlay": "overlays/fix-merge-conflicts.md",
+      "installed_hash": "2c40e2a386849ef107833f9d36eb5b8ff089a6c61d7e3881ede2da7a9a9431d4"
+    },
+    "grill-me": {
+      "tracking": "overlay",
+      "repository": "mattpocock-skills",
+      "path": "skills/productivity/grill-me",
+      "overlay": "overlays/grill-me.md",
+      "installed_hash": "a1542a50ef173e750d8cc21d4871d59f6ef941fd2062658575d57db3101effb7"
+    },
+    "grilling": {
+      "tracking": "overlay",
+      "repository": "mattpocock-skills",
+      "path": "skills/productivity/grilling",
+      "overlay": "overlays/grilling.md",
+      "installed_hash": "3ae71dbdde9a8248b192b62c5cfde694076706c777cec19e81ed6f8c64cb0db6"
+    },
+    "handoff": {
+      "tracking": "overlay",
+      "repository": "mattpocock-skills",
+      "path": "skills/productivity/handoff",
+      "overlay": "overlays/handoff.md",
+      "installed_hash": "f44191a608ac6b69d45a098d2568a33f16bc33bafc381a44b1f45c2d53d86dff"
+    },
+    "herdr-build": {
+      "tracking": "local",
+      "installed_hash": "788d773f0d686ea3fa3df45841974add15840772162741328e8be32dec7481d7"
+    },
+    "how": {
+      "tracking": "overlay",
+      "repository": "cursor-plugins",
+      "path": "pstack/skills/how",
+      "overlay": "overlays/how.md",
+      "installed_hash": "acca39c26c3f95e3ceab7c7d48b395f6e272c27872f95d934e338529dd8f5675"
+    },
+    "improve-codebase-architecture": {
+      "tracking": "overlay",
+      "repository": "mattpocock-skills",
+      "path": "skills/engineering/improve-codebase-architecture",
+      "overlay": "overlays/improve-codebase-architecture.md",
+      "installed_hash": "ccb352abbe7acf8246bf0f2bb798a9583d38b2016f879410726826f2e7dadbb7"
+    },
+    "improve-react": {
+      "tracking": "overlay",
+      "repository": "react-doctor",
+      "path": "skills/improve-react",
+      "overlay": "overlays/improve-react.md",
+      "installed_hash": "b817219b84d9c79857e2c917e6de24d675148af83ad247aeefd418be58b219a6"
+    },
+    "librarian": {
+      "tracking": "local",
+      "installed_hash": "7b36f4834f04f21a0a1fb29610066c36f8e9d7824818abac040559195b5325c0"
+    },
+    "mr-review": {
+      "tracking": "local",
+      "installed_hash": "8f354bc2b9b816495aea50c3bf16fcec730c77e48347f8506e73786d50f66818"
+    },
+    "optimize-images": {
+      "tracking": "local",
+      "installed_hash": "deb0df73e92f87e969607eac44c189e83c1a4825b3235c6e9c2f49e5c992235e"
+    },
+    "prove-it-works": {
+      "tracking": "overlay",
+      "repository": "cursor-plugins",
+      "path": "pstack/skills/principle-prove-it-works",
+      "overlay": "overlays/prove-it-works.md",
+      "installed_hash": "c14690447b49265c6e63c0ed77288923196781cc96b4b44475830717bf4ea60a"
+    },
+    "prototype": {
+      "tracking": "exact",
+      "repository": "mattpocock-skills",
+      "path": "skills/engineering/prototype",
+      "installed_hash": "5b236e92966f84fca2297f707338c596d7e1c99f36ee6b9cb0e970b56d4be1ea"
+    },
+    "retro": {
+      "tracking": "overlay",
+      "repository": "mattpocock-skills",
+      "path": "skills/in-progress/retro",
+      "overlay": "overlays/retro.md",
+      "installed_hash": "783ab894501588405ac2a8f8ea456f239eda1b198e8275a42a6b07f163f0b433"
+    },
+    "show-me": {
+      "tracking": "overlay",
+      "repository": "humanlayer-skills",
+      "path": "plugins/show-me/skills/show-me",
+      "overlay": "overlays/show-me.md",
+      "installed_hash": "e8029f26b4fd7a25826158bf96b015d44f436d6ce1f94b7586c01950af98d982"
+    },
+    "show-me-your-work": {
+      "tracking": "overlay",
+      "repository": "cursor-plugins",
+      "path": "pstack/skills/show-me-your-work",
+      "overlay": "overlays/show-me-your-work.md",
+      "installed_hash": "1b02f0972854400de141fac3547be7bbc994593e5688e43d287457163ced5c3b"
+    },
+    "subagents": {
+      "tracking": "local",
+      "installed_hash": "57dd92e7c04292cea20594591a63b7382ca5801ef87395e6637f3675ad79f9ac"
+    },
+    "tdd": {
+      "tracking": "overlay",
+      "repository": "mattpocock-skills",
+      "path": "skills/engineering/tdd",
+      "overlay": "overlays/tdd.md",
+      "installed_hash": "b6c84791a5fe3af05a4519cb57a5875fb99e7a4fc417fdfd01066930f2cdc7c1"
+    },
+    "teach": {
+      "tracking": "exact",
+      "repository": "mattpocock-skills",
+      "path": "skills/productivity/teach",
+      "installed_hash": "5df582235e105ad873b69e26636aff90a3ff05aaf8b5da107933f5a481bc63bd"
+    },
+    "thermo-nuclear-code-quality-review": {
+      "tracking": "exact",
+      "repository": "cursor-plugins",
+      "path": "cursor-team-kit/skills/thermo-nuclear-code-quality-review",
+      "installed_hash": "80bd9ca27ad5ea6958ca04e8de99ca99757fbfb20f8101daf4c4a20b4fd75c0c"
+    },
+    "typescript-best-practices": {
+      "tracking": "overlay",
+      "repository": "cursor-plugins",
+      "path": "pstack/skills/typescript-best-practices",
+      "overlay": "overlays/typescript-best-practices.md",
+      "installed_hash": "133d01ce054404c9977208bd96da79af56851b99466c364b08fd4b5f224d4ba4"
+    },
+    "update-skills": {
+      "tracking": "local",
+      "installed_hash": "cdb2e40407e6f626e22a6ff28a0c6d16e0e859d88b13601e3a2b2beb1b66bef8"
+    },
+    "vercel-react-best-practices": {
+      "tracking": "overlay",
+      "repository": "vercel-agent-skills",
+      "path": "skills/react-best-practices",
+      "overlay": "overlays/vercel-react-best-practices.md",
+      "installed_hash": "0ed8f65177710c0940629bba378ae8eecdf2c17c84fbe3377d753235bda811a6"
+    },
+    "web-search": {
+      "tracking": "local",
+      "installed_hash": "2c773e67ad1aac596878d0bf2bc5d5c9c93a2027c1bfb83ee61a4d636d56b351"
+    },
+    "why": {
+      "tracking": "overlay",
+      "repository": "cursor-plugins",
+      "path": "pstack/skills/why",
+      "overlay": "overlays/why.md",
+      "installed_hash": "b0bbefc280c157d0b8efc80bee0c235ebdce11f4213be7ca6347a46c8630ec28"
+    },
+    "writing-for-agents": {
+      "tracking": "overlay",
+      "repository": "mattpocock-skills",
+      "path": "skills/productivity/writing-for-agents",
+      "overlay": "overlays/writing-for-agents.md",
+      "installed_hash": "0d788c6f57720148c5f5561b2485aab5b47ed9bdd1a3dcb66a9997e038f2bb82"
+    }
+  }
+}

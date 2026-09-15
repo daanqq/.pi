@@ -3,7 +3,7 @@ name: show-me-your-work
 description: Keeps a compact, reviewable TSV decision trail for long-running, multi-phase, delegated, or unattended work. Use when the user will review the work after a pause, when hypotheses or pivots must remain auditable, or when another skill needs a canonical evidence log.
 license: LICENSE
 metadata:
-  source: https://github.com/cursor/plugins/tree/60c641e4fad674784b30abcf9f8915dea39df38d/pstack/skills/show-me-your-work
+  source: https://github.com/cursor/plugins/tree/c1c0a32802223f4be824112dd83d33ad29a8b26c/pstack/skills/show-me-your-work
   adapted-for: pi
 ---
 

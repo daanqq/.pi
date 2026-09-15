@@ -3,7 +3,7 @@ name: how
 description: Explains how a subsystem, feature flow, or function works and where its logic belongs. Use for code walkthroughs, runtime traces, ownership and layering questions, onboarding mental models, or architectural critique before changing code. Use historical investigation separately when the question is why the design exists.
 license: LICENSE
 metadata:
-  source: https://github.com/cursor/plugins/tree/60c641e4fad674784b30abcf9f8915dea39df38d/pstack/skills/how
+  source: https://github.com/cursor/plugins/tree/c1c0a32802223f4be824112dd83d33ad29a8b26c/pstack/skills/how
   adapted-for: pi
 ---
 

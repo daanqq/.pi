@@ -3,7 +3,7 @@ name: why
 description: Investigates why code, a threshold, guard, workflow, or design decision exists. Use for historical rationale, regressions, postmortems, legacy removal, rejected alternatives, and product or operational constraints. Separates direct evidence from inference and reports unavailable sources. Use how for runtime mechanics.
 license: LICENSE
 metadata:
-  source: https://github.com/cursor/plugins/tree/60c641e4fad674784b30abcf9f8915dea39df38d/pstack/skills/why
+  source: https://github.com/cursor/plugins/tree/c1c0a32802223f4be824112dd83d33ad29a8b26c/pstack/skills/why
   adapted-for: pi
 ---
 

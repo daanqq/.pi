@@ -3,7 +3,7 @@ name: blast-radius
 description: Finds behavior outside a diff that a change could break and proves the load-bearing safety fact with the cheapest executable check. Use when asked what a change could break, when reviewing a deceptively small high-risk diff, or before shipping changes to shared state, protocols, lifecycle code, or external boundaries.
 license: LICENSE
 metadata:
-  source: https://github.com/cursor/plugins/tree/60c641e4fad674784b30abcf9f8915dea39df38d/pstack/skills/blast-radius
+  source: https://github.com/cursor/plugins/tree/c1c0a32802223f4be824112dd83d33ad29a8b26c/pstack/skills/blast-radius
   adapted-for: pi
 ---
 

@@ -3,7 +3,7 @@ name: typescript-best-practices
 description: Applies concrete TypeScript type, boundary, API, and test rules when reading, writing, reviewing, or refactoring .ts and .tsx files. Use to model state honestly, remove unchecked casts, derive types from authoritative schemas, and keep external validation at boundaries.
 license: LICENSE
 metadata:
-  source: https://github.com/cursor/plugins/tree/60c641e4fad674784b30abcf9f8915dea39df38d/pstack/skills/typescript-best-practices
+  source: https://github.com/cursor/plugins/tree/c1c0a32802223f4be824112dd83d33ad29a8b26c/pstack/skills/typescript-best-practices
   adapted-for: pi
 ---
 
