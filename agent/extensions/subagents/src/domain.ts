@@ -2,30 +2,23 @@
  * Domain model for subagents.
  *
  * Everything downstream of a backend (manager, tools, UI) speaks only these
- * types. Backends translate their native streams (pi session events, Claude
- * Agent SDK messages, Codex app-server JSON-RPC notifications) into the
- * normalized `SubagentEvent` union.
+ * types. Backends translate their native streams (pi session events and Codex
+ * app-server JSON-RPC notifications) into the normalized `SubagentEvent` union.
  */
 
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { Data } from "effect";
 
-export const BACKEND_NAMES = ["pi", "claude", "codex"] as const;
+export const BACKEND_NAMES = ["pi", "codex"] as const;
 export type BackendName = (typeof BACKEND_NAMES)[number];
-
-/** Backends shipped in the active runtime; Claude remains available as dormant source. */
-export const ENABLED_BACKEND_NAMES = ["pi", "codex"] as const satisfies ReadonlyArray<
-  BackendName
->;
 
 /** Who initiated the session. User asides stay out of model-facing tooling. */
 export type SubagentOrigin = "model" | "btw";
 
 /**
- * Shared reasoning-effort scale (pi's thinking levels). Each backend maps a
- * value to its nearest native equivalent: pi uses it directly, codex
- * translates to its reasoning-effort slugs, claude translates to thinking
- * budgets. Omitted = backend default (pi inherits the parent level).
+ * Shared reasoning-effort scale (pi's thinking levels). Pi uses it directly,
+ * while Codex translates it to its reasoning-effort slugs. Omitted means the
+ * backend default (pi inherits the parent level).
  */
 export const REASONING_EFFORTS = [
   "off",
@@ -58,9 +51,9 @@ export interface SpawnTask {
   readonly title: string;
   readonly cwd: string;
   /**
-   * Generic model hint, interpreted per backend:
-   * pi: "provider/model-id" or bare model id; claude: model alias;
-   * codex: model slug. Omitted = backend default / inherit.
+   * Generic model hint, interpreted per backend: pi accepts
+   * "provider/model-id" or a bare model id; Codex accepts a model slug.
+   * Omitted means backend default / inherit.
    */
   readonly model?: string;
   /** Shared effort scale; each backend maps it to its native equivalent. */
@@ -70,15 +63,15 @@ export interface SpawnTask {
 
 export interface SubagentMeta {
   readonly backend: BackendName;
-  /** Display label, e.g. "anthropic/claude-opus-4-5" or "gpt-5-codex". */
+  /** Display label, e.g. "openai-codex/gpt-5.6-sol" or "gpt-5-codex". */
   readonly modelLabel?: string;
   /** Effective shared reasoning level; omitted when the backend default is unknown. */
   readonly reasoningEffort?: ReasoningEffort;
   /** Context window capacity for utilization display, when known. */
   readonly contextWindow?: number;
-  /** pi session file / Claude projects JSONL / Codex rollout path. */
+  /** Pi session file or Codex rollout path. */
   readonly sessionFilePath?: string;
-  /** Pi JSONL session id / Claude session id / Codex conversation id. */
+  /** Pi JSONL session id or Codex conversation id. */
   readonly nativeSessionId?: string;
 }
 

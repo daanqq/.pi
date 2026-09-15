@@ -232,8 +232,9 @@ const c = Effect.tryPromise({
 })
 ```
 
-Both forms receive an `AbortSignal` that fires on fiber interruption — pass it to SDKs
-(claude SDK, fetch, etc.) so interrupting a subagent fiber cancels the underlying call.
+Both forms receive an `AbortSignal` that fires on fiber interruption — pass it to SDKs,
+`fetch`, and other abort-aware clients so interrupting a subagent fiber cancels the
+underlying call.
 
 Callback APIs — `Effect.async` is now **`Effect.callback`**:
 

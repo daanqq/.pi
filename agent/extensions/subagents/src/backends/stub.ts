@@ -1,5 +1,5 @@
 /**
- * Scripted stub sessions shared by all three backend implementations while
+ * Scripted stub sessions shared by both backend implementations while
  * the real integrations are pending. A stub session:
  *
  * - streams a plausible turn (thinking deltas, one fake tool cycle, text

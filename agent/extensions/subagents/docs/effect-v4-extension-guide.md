@@ -305,8 +305,8 @@ These are the "leave it mostly plain" cases.
   models the one async thing. Effect adds nothing; if you want uniformity, wrap the final
   await in `Effect.tryPromise` at the boundary and stop there. Do **not** build a service.
 - `ui-customization` and `model-info` are renderers / event bookkeepers driven by
-  `pi.on(...)` and cross-extension channels (`shared/dashboard-state.ts`). Channels are a
-  pi-native mechanism — keep them. State counting and formatting stay synchronous TS.
+  `pi.on(...)` and extension-local state. State counting and formatting stay
+  synchronous TS.
 - If `model-info` has a periodic "live update" tick, the §5 polling pattern applies; but a
   plain timer here is also acceptable since there's no resource to tear down.
 

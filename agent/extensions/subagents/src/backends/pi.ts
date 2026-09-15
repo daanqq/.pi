@@ -1,8 +1,8 @@
 /**
  * pi backend — real implementation over the pi SDK.
  *
- * Each subagent is an in-process `AgentSession` (a port of v1
- * subagents/manager.ts + shared/child-session.ts):
+ * Each subagent is an in-process `AgentSession` (a port of the v1
+ * subagent manager and child-session helpers):
  * - real session files stored outside the main /resume and Pond session tree,
  *   child resources loaded per-cwd with trust gating, and the child tool
  *   denylist;
@@ -95,7 +95,7 @@ function resolvePiModel(
   throw new Error(`Unknown model "${hint}".`);
 }
 
-// --- Child session helpers (ported from v1 shared/child-session.ts) -----------
+// --- Child session helpers ported from v1 ------------------------------------
 
 /** Load normal global/package resources and trust-gated project resources. */
 async function createChildResources(cwd: string, projectTrusted: boolean) {
