@@ -25,7 +25,7 @@
   ],
   "hideThinkingBlock": false,
   "theme": "alabaster",
-  "quietStartup": false,
+  "quietStartup": true,
   "compaction": {
     "enabled": false
   },
@@ -71,5 +71,8 @@
   "markdown": {
     "mermaid": "final"
   },
-  "fullscreenCopyOnSelect": true
+  "fullscreenCopyOnSelect": true,
+  "extensions": [
+    "+extensions/00-ui-header.ts"
+  ]
 }
