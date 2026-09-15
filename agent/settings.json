@@ -2,7 +2,7 @@
   "lastChangelogVersion": "0.85.1",
   "defaultThinkingLevel": "medium",
   "defaultProvider": "openai-codex",
-  "defaultModel": "openai-codex/gpt-5.6-sol",
+  "defaultModel": "gpt-5.6-sol",
   "packages": [
     "npm:@ff-labs/pi-fff",
     {
