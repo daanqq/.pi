@@ -72,20 +72,49 @@ TITLE: <commit title>`;
 // Instructions appended to the current pi session for MR description generation
 // ---------------------------------------------------------------------------
 
+const MR_DESCRIPTION_STYLE_RULES = `
+Style and content rules:
+- Write natural, clear Russian for a human reviewer, without bureaucratic language.
+- Start with 1–2 sentences describing the user-visible result.
+- For a bug fix, explain the cause and why the change removes the symptom.
+- Then list the key implementation changes in 2–6 concise bullet points.
+- Start each change bullet with an action: "Исправлено", "Добавлено", "Изменено" or "Сохранено".
+- Mention affected modules or files only when this helps the reviewer understand the change.
+- Describe behavior and purpose, not a line-by-line summary of the diff.
+- Do not write vague phrases such as "изменён код", "добавлена логика" or "обновлены файлы" without explaining the result.
+- Do not present a plan, hypothesis, abandoned approach or unverified assumption as completed work.
+- Include only checks that were actually run. Name the command or scenario and its result.
+- If browser, device or manual verification was not performed, say so explicitly.
+- Do not duplicate the same fact across sections.
+
+The change summary should follow this shape:
+### Краткое описание изменений
+
+<user-visible result and, for a bug fix, its cause>
+
+- <action, behavior and purpose; affected module/file when useful>
+- <action, behavior and purpose; affected module/file when useful>
+`;
+
 const UPDATE_MR_DESC_PROMPT = `Update an existing GitLab MR description for an EChat project.
 Use the preceding session as context about the task, its intent, implementation decisions, and verification.
 Given the current MR description and a git diff with new changes, output the full updated MR description in Russian.
 
 Rules:
-- Keep the existing useful content and structure
-- Add only information from the new diff
-- Treat the git diff as the source of truth for implemented changes
-- Do not include planned, abandoned, or unverified work from the session
-- Use session context to explain intent and verification, but do not quote the conversation
-- Do not duplicate existing items
-- Keep Russian text
-- Remove HTML/markdown comments if present
-- Do not call tools
+- Keep existing useful facts, section names and order.
+- Do not rewrite existing text merely for style.
+- Add only information from the new diff.
+- Treat the git diff as the source of truth for implemented changes.
+- Use session context only to explain intent and checks that actually happened.
+- Do not include planned, abandoned, or unverified work from the session.
+- Do not duplicate existing items.
+- If the description has no "### Краткое описание изменений", create it in place of "На что обратить внимание при ревью и тестировании".
+- If that section already exists, preserve its useful items and add only new non-duplicate items.
+- Preserve mandatory sections and remove HTML/markdown comments.
+- Keep Russian text.
+- Do not call tools.
+
+${MR_DESCRIPTION_STYLE_RULES}
 
 Output format (strict):
 DESC:
@@ -96,16 +125,20 @@ Use the preceding session as context about the task, its intent, implementation 
 Given a git diff and an MR template, output exactly the filled MR description in Russian.
 
 MR description rules:
-- Take the template and fill in the sections
-- Treat the git diff as the source of truth for implemented changes
-- Do not include planned, abandoned, or unverified work from the session
-- Use session context to explain intent and verification, but do not quote the conversation
-- Replace "На что обратить внимание при ревью и тестировании" with only this subsection:
-  ### Краткое описание изменений — each item: one change/fix/feature, affected files/modules
-- Remove any HTML/markdown comments from the template
-- Keep Russian text
-- If no migrations — keep "Нет."
-- Do not call tools
+- Preserve the template's section names and order, and fill only its placeholders.
+- Treat the git diff as the source of truth for implemented changes.
+- Use session context only to explain intent and checks that actually happened; do not quote the conversation.
+- Do not include planned, abandoned, or unverified work from the session.
+- Replace "На что обратить внимание при ревью и тестировании" with the change summary described below.
+- Remove HTML/markdown comments from the template.
+- Keep Russian text.
+- If no migrations — keep "Нет.".
+- Do not call tools.
+
+${MR_DESCRIPTION_STYLE_RULES}
+
+Verified work context:
+Use the preceding session only for the user-visible result, confirmed implementation decisions and checks that actually passed. If a detail is not supported by the diff or a completed check, omit it.
 
 Output format (strict):
 DESC:
