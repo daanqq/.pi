@@ -244,8 +244,6 @@ function isGptLikeModel(model: ModelLike | undefined): boolean {
 	const provider = (model.provider ?? "").toLowerCase();
 	const id = (model.id ?? "").toLowerCase();
 	const name = (model.name ?? "").toLowerCase();
-	// CLIProxy aliases hide the upstream GPT model name.
-	if (provider === "cliproxy" && ["astra", "luna", "sol"].includes(id)) return true;
 	return provider.includes("openai") || provider.includes("codex") || id.includes("gpt") || id.includes("codex") || name.includes("gpt") || name.includes("codex");
 }
 
