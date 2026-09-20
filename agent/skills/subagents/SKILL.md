@@ -5,11 +5,14 @@ description: Use whenever deciding to delegate to, spawning, prompting, selectin
 
 # Subagents
 
-Each subagent is headless, has its own context window, cannot see the parent conversation, cannot ask the user, and cannot spawn subagents or workflows. Give every child a self-contained prompt with paths, constraints, and the expected report.
+Each subagent is headless, has its own context window, cannot see the parent conversation,
+cannot ask the user, and cannot spawn subagents or workflows. Give every child a self-contained
+prompt with paths, constraints, and the expected report.
 
 ## Delegation policy
 
 - Use the `pi` harness unless the user requests another harness.
+- Do not use more than 2 subagents simultaneously.
 
 ## Model selection
 
