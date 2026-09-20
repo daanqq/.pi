@@ -5,33 +5,25 @@
   "defaultModel": "gpt-5.6-sol",
   "packages": [
     "npm:@ff-labs/pi-fff",
-    {
-      "source": "npm:@plannotator/pi-extension",
-      "skills": [
-        "-skills/plannotator/SKILL.md"
-      ]
-    },
-    {
-      "source": "npm:pi-mcp-adapter",
-      "extensions": [
-        "-index.ts"
-      ],
-      "skills": [
-        "-skills/mcp-scripting/SKILL.md"
-      ]
-    },
+    "npm:@plannotator/pi-extension",
+    "npm:pi-mcp-adapter",
     "npm:pi-context-view",
     "npm:@ogulcancelik/pi-codex-compaction"
   ],
+  "skills": [
+    "!skills/web-search/**",
+    "!skills/firecrawl-fetch/**"
+  ],
   "hideThinkingBlock": false,
-  "theme": "alabaster",
+  "theme": "light",
   "quietStartup": true,
   "compaction": {
     "enabled": false
   },
   "enabledModels": [
     "openai-codex/gpt-5.6-sol",
-    "openai-codex/gpt-5.6-luna"
+    "openai-codex/gpt-5.6-luna",
+    "openai-codex/gpt-6-astra"
   ],
   "externalEditor": "code --wait",
   "transport": "websocket-cached",
@@ -61,18 +53,13 @@
   "showCacheMissNotices": true,
   "fullscreenExitOutput": "resume-hint",
   "modelThinkingLevels": {
+    "openai-codex/gpt-6-astra": "low",
     "openai-codex/gpt-5.6-sol": "medium",
     "openai-codex/gpt-5.6-luna": "high",
     "openrouter/z-ai/glm-5.3-flash": "high"
   },
-  "warnings": {
-    "anthropicExtraUsage": false
-  },
   "markdown": {
     "mermaid": "final"
   },
-  "fullscreenCopyOnSelect": true,
-  "extensions": [
-    "+extensions/00-ui-header.ts"
-  ]
+  "fullscreenCopyOnSelect": true
 }

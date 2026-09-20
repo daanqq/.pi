@@ -10,6 +10,7 @@ const MODEL_ALIASES: Readonly<Record<string, string>> = {
   "gpt-5.6-sol": "sol",
   "gpt-5.6-terra": "terra",
   "gpt-5.6-luna": "luna",
+  "gpt-6-astra": "astra"
 };
 
 type ThemeColor =
