@@ -2,9 +2,9 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { lookup } from "node:dns/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
+import { getMarkdownTheme, keyHint } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Markdown, Text } from "@earendil-works/pi-tui";
+import { Markdown, Text, truncateToWidth, type Component } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 
 const CODEX_MODEL = "gpt-5.6-luna";
@@ -12,6 +12,7 @@ const CODEX_BASE_URL = "http://127.0.0.1:8317/backend-api";
 const FIRECRAWL_ENDPOINT = "https://api.firecrawl.dev/v2/scrape";
 const MAX_OUTPUT_BYTES = 50 * 1024;
 const MAX_OUTPUT_LINES = 2_000;
+const COLLAPSED_RENDER_LINES = 10;
 
 type SearchInput = { query: string; purpose?: string };
 type FetchInput = { url: string };
@@ -43,6 +44,23 @@ function textContent(result: { content: Array<{ type: string; text?: string }> }
 
 function sourceCount(text: string): number {
 	return new Set(text.match(/https:\/\/[^\s)]+/g) ?? []).size;
+}
+
+function renderCollapsibleMarkdown(text: string, expanded: boolean, muted: (text: string) => string): Component {
+	const markdown = new Markdown(text, 0, 0, getMarkdownTheme());
+	return {
+		render(width) {
+			const lines = markdown.render(width);
+			if (expanded || lines.length <= COLLAPSED_RENDER_LINES) return lines;
+
+			const hiddenLines = lines.length - COLLAPSED_RENDER_LINES + 1;
+			const hint = muted(`... (${hiddenLines} more lines; ${keyHint("app.tools.expand", "to expand")})`);
+			return [...lines.slice(0, COLLAPSED_RENDER_LINES - 1), truncateToWidth(hint, width)];
+		},
+		invalidate() {
+			markdown.invalidate();
+		},
+	};
 }
 
 async function saveFullOutput(text: string): Promise<string> {
@@ -211,15 +229,14 @@ export default function (pi: ExtensionAPI) {
 				0,
 			);
 		},
-		renderResult(result, { isPartial }, theme, context) {
+		renderResult(result, { expanded, isPartial }, theme, context) {
 			if (isPartial) return new Text(theme.fg("warning", "Searching..."), 0, 0);
 			const details = context.state as { sources?: number };
 			const sources = typeof result.details?.sources === "number" ? result.details.sources : sourceCount(textContent(result));
 			if (details.sources !== sources) {
 				details.sources = sources;
-				context.invalidate();
 			}
-			return new Markdown(textContent(result), 0, 0, getMarkdownTheme());
+			return renderCollapsibleMarkdown(textContent(result), expanded, (text) => theme.fg("muted", text));
 		},
 	});
 
@@ -243,9 +260,9 @@ export default function (pi: ExtensionAPI) {
 				0,
 			);
 		},
-		renderResult(result, { isPartial }, theme) {
+		renderResult(result, { expanded, isPartial }, theme) {
 			if (isPartial) return new Text(theme.fg("warning", "Fetching..."), 0, 0);
-			return new Markdown(textContent(result), 0, 0, getMarkdownTheme());
+			return renderCollapsibleMarkdown(textContent(result), expanded, (text) => theme.fg("muted", text));
 		},
 	});
 }
