@@ -17,8 +17,10 @@ function deferred<T>() {
 
 function createHarness() {
   const handlers = new Map<string, Handler>();
+  const commands = new Map<string, (args: string, ctx: any) => Promise<void>>();
   const notifications: Array<{ message: string; type: string }> = [];
   const completion = deferred<any>();
+  const queuedCompletions: Array<Promise<any>> = [];
   let completionRequest: any;
   let completionCalls = 0;
   let name: string | undefined;
@@ -30,6 +32,9 @@ function createHarness() {
     on(event: string, handler: Handler) {
       handlers.set(event, handler);
     },
+    registerCommand(name: string, options: { handler: (args: string, ctx: any) => Promise<void> }) {
+      commands.set(name, options.handler);
+    },
     setSessionName(nextName: string) {
       name = nextName;
     },
@@ -37,6 +42,7 @@ function createHarness() {
 
   const ctx = {
     mode: "tui",
+    waitForIdle: async () => {},
     ui: {
       notify(message: string, type: string) {
         notifications.push({ message, type });
@@ -49,11 +55,15 @@ function createHarness() {
       getSessionName: () => name,
     },
     modelRegistry: {
-      find: () => ({ provider: "cliproxy", id: "luna" }),
+      find: (provider: string, id: string) => {
+        assert.equal(provider, "openai-codex");
+        assert.equal(id, "gpt-5.6-luna");
+        return { provider, id };
+      },
       complete: (...args: any[]) => {
         completionCalls += 1;
         completionRequest = args;
-        return completion.promise;
+        return queuedCompletions.shift() ?? completion.promise;
       },
     },
   };
@@ -66,7 +76,13 @@ function createHarness() {
     ctx,
     notifications,
     completion,
+    queueCompletion(promise: Promise<any>) {
+      queuedCompletions.push(promise);
+    },
     emit,
+    runCommand(name: string, args = "") {
+      return commands.get(name)?.(args, ctx) ?? Promise.reject(new Error(`Unknown command: ${name}`));
+    },
     getCompletionCalls: () => completionCalls,
     getCompletionRequest: () => completionRequest,
     getName: () => name,
@@ -109,13 +125,15 @@ test("requests an English name for a Russian conversation once after the first s
   const harness = createHarness();
   await startNaming(harness);
 
+  assert.deepEqual(harness.notifications, [{ message: "Generating session name...", type: "info" }]);
+
   harness.completion.resolve({ content: [{ type: "text", text: "Authentication token refresh" }] });
   await setImmediate();
 
   assert.equal(harness.getName(), "Authentication token refresh");
   assert.equal(harness.getCompletionCalls(), 1);
   const [model, context, options] = harness.getCompletionRequest();
-  assert.deepEqual(model, { provider: "cliproxy", id: "luna" });
+  assert.deepEqual(model, { provider: "openai-codex", id: "gpt-5.6-luna" });
   assert.match(context.systemPrompt, /Always use English, regardless of the language of the user's request/);
   assert.doesNotMatch(context.systemPrompt, /Use the same language/);
   assert.match(context.messages[0].content[0].text, /Исправь обновление токена авторизации/);
@@ -126,7 +144,10 @@ test("requests an English name for a Russian conversation once after the first s
   assert.equal(options.timeoutMs, 15_000);
   assert.equal(options.maxRetries, 0);
   assert.ok(options.signal instanceof AbortSignal);
-  assert.deepEqual(harness.notifications, [{ message: "Session name: Authentication token refresh", type: "info" }]);
+  assert.deepEqual(harness.notifications, [
+    { message: "Generating session name...", type: "info" },
+    { message: "Session name: Authentication token refresh", type: "info" },
+  ]);
 
   harness.emit("agent_settled");
   assert.equal(harness.getCompletionCalls(), 1);
@@ -141,8 +162,34 @@ test("uses an English fallback for a Russian request when generation fails", asy
 
   assert.equal(harness.getName(), "New session");
   assert.deepEqual(harness.notifications, [
+    { message: "Generating session name...", type: "info" },
     { message: "Session naming failed; using fallback.", type: "warning" },
     { message: "Session name: New session", type: "info" },
+  ]);
+});
+
+test("regenerates a fallback name with /namegen", async () => {
+  const harness = createHarness();
+  await startNaming(harness);
+
+  harness.completion.reject(new Error("provider unavailable"));
+  await setImmediate();
+  assert.equal(harness.getName(), "New session");
+
+  const retry = deferred<any>();
+  harness.queueCompletion(retry.promise);
+  const command = harness.runCommand("namegen");
+  await setImmediate();
+
+  assert.equal(harness.getCompletionCalls(), 2);
+  assert.match(harness.getCompletionRequest()[1].messages[0].content[0].text, /Исправь обновление токена авторизации/);
+  retry.resolve({ content: [{ type: "text", text: "Authentication Token Refresh" }] });
+  await command;
+
+  assert.equal(harness.getName(), "Authentication Token Refresh");
+  assert.deepEqual(harness.notifications.slice(-2), [
+    { message: "Generating session name...", type: "info" },
+    { message: "Session name: Authentication Token Refresh", type: "info" },
   ]);
 });
 
@@ -155,7 +202,7 @@ test("preserves a manual name set while generation is pending", async () => {
   await setImmediate();
 
   assert.equal(harness.getName(), "Ручное имя");
-  assert.deepEqual(harness.notifications, []);
+  assert.deepEqual(harness.notifications, [{ message: "Generating session name...", type: "info" }]);
 });
 
 test("does not show a fallback warning after a manual rename", async () => {
@@ -167,7 +214,7 @@ test("does not show a fallback warning after a manual rename", async () => {
   await setImmediate();
 
   assert.equal(harness.getName(), "Ручное имя");
-  assert.deepEqual(harness.notifications, []);
+  assert.deepEqual(harness.notifications, [{ message: "Generating session name...", type: "info" }]);
 });
 
 test("does not restore an automatic name after the user clears a manual name", async () => {
@@ -180,7 +227,7 @@ test("does not restore an automatic name after the user clears a manual name", a
   await setImmediate();
 
   assert.equal(harness.getName(), undefined);
-  assert.deepEqual(harness.notifications, []);
+  assert.deepEqual(harness.notifications, [{ message: "Generating session name...", type: "info" }]);
 });
 
 test("does not write a generated name after the session changes", async () => {
@@ -192,7 +239,7 @@ test("does not write a generated name after the session changes", async () => {
   await setImmediate();
 
   assert.equal(harness.getName(), undefined);
-  assert.deepEqual(harness.notifications, []);
+  assert.deepEqual(harness.notifications, [{ message: "Generating session name...", type: "info" }]);
 });
 
 for (const reason of ["quit", "reload", "new", "resume", "fork"]) {
@@ -208,7 +255,7 @@ for (const reason of ["quit", "reload", "new", "resume", "fork"]) {
     harness.completion.resolve({ content: [{ type: "text", text: "Late name" }] });
     await setImmediate();
     assert.equal(harness.getName(), undefined);
-    assert.deepEqual(harness.notifications, []);
+    assert.deepEqual(harness.notifications, [{ message: "Generating session name...", type: "info" }]);
   });
 }
 
@@ -221,7 +268,7 @@ test("a naming deadline still uses fallback while the session stays open", async
   t.mock.timers.tick(15_000);
   await setImmediate();
   assert.equal(harness.getName(), "New session");
-  assert.equal(harness.notifications.length, 2);
+  assert.equal(harness.notifications.length, 3);
 });
 
 test("a cancelled request cannot name a replacement session", async () => {
@@ -232,7 +279,7 @@ test("a cancelled request cannot name a replacement session", async () => {
   harness.completion.reject(new Error("aborted"));
   await setImmediate();
   assert.equal(harness.getName(), undefined);
-  assert.deepEqual(harness.notifications, []);
+  assert.deepEqual(harness.notifications, [{ message: "Generating session name...", type: "info" }]);
 });
 
 test("ignores resumed sessions and sessions with message history", () => {

@@ -1,8 +1,8 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { existsSync } from "node:fs";
 
-const MODEL_PROVIDER = "cliproxy";
-const MODEL_ID = "luna";
+const MODEL_PROVIDER = "openai-codex";
+const MODEL_ID = "gpt-5.6-luna";
 const MAX_CONTEXT_CHARS = 4_000;
 const MAX_TITLE_CHARS = 60;
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -25,10 +25,17 @@ type SessionSnapshot = {
 type NamingState = {
   eligible: boolean;
   attempted: boolean;
+  closed: boolean;
   firstPrompt: string;
   lastAssistantResponse: string;
   pending?: Promise<void>;
   controller?: AbortController;
+};
+
+type GenerationOptions = {
+  requireEligibility: boolean;
+  allowExistingName: boolean;
+  preserveNameOnFailure: boolean;
 };
 
 function firstNonEmptyLine(text: string): string {
@@ -111,6 +118,31 @@ function lastAssistantText(messages: readonly unknown[]): string {
   }
 
   return "";
+}
+
+function firstUserText(messages: readonly unknown[]): string {
+  for (const message of messages) {
+    if (!message || typeof message !== "object") continue;
+
+    const candidate = message as { role?: unknown; content?: unknown };
+    if (candidate.role !== "user") continue;
+
+    const text = contentText(candidate.content).trim();
+    if (text) return text;
+  }
+
+  return "";
+}
+
+function sessionMessages(ctx: ExtensionContext): unknown[] {
+  const messages: unknown[] = [];
+  for (const entry of ctx.sessionManager.getBranch()) {
+    if (!entry || typeof entry !== "object") continue;
+
+    const candidate = entry as { type?: unknown; message?: unknown };
+    if (candidate.type === "message" && candidate.message) messages.push(candidate.message);
+  }
+  return messages;
 }
 
 function hasMessageHistory(ctx: ExtensionContext): boolean {
@@ -196,8 +228,84 @@ export default function autoSessionNameExtension(pi: ExtensionAPI) {
   let state: NamingState = {
     eligible: false,
     attempted: false,
+    closed: false,
     firstPrompt: "",
     lastAssistantResponse: "",
+  };
+
+  const getNamingContext = (ctx: ExtensionContext) => {
+    const messages = sessionMessages(ctx);
+    return {
+      firstPrompt: state.firstPrompt || firstUserText(messages),
+      lastAssistantResponse: state.lastAssistantResponse || lastAssistantText(messages),
+    };
+  };
+
+  const startNameGeneration = (
+    ctx: ExtensionContext,
+    firstPrompt: string,
+    assistantResponse: string,
+    options: GenerationOptions,
+  ): Promise<void> | undefined => {
+    if (state.pending) {
+      ctx.ui.notify("Session name generation is already in progress.", "warning");
+      return undefined;
+    }
+
+    const snapshot = currentSnapshot(ctx);
+    if (!snapshot) {
+      ctx.ui.notify("Session name generation is unavailable for this session.", "error");
+      return undefined;
+    }
+
+    const initialName = ctx.sessionManager.getSessionName();
+    const controller = new AbortController();
+    state.controller = controller;
+    ctx.ui.notify("Generating session name...", "info");
+
+    let pending: Promise<void>;
+    pending = (async () => {
+      let title: string;
+      let usedFallback = false;
+      try {
+        title = await generateSessionName(ctx, firstPrompt, assistantResponse, controller);
+      } catch {
+        if (
+          state.controller !== controller
+          || state.closed
+          || (options.requireEligibility && !state.eligible)
+        ) return;
+
+        // Copying the request would make the fallback depend on the user's language.
+        title = options.preserveNameOnFailure ? initialName ?? "New session" : "New session";
+        usedFallback = true;
+      }
+
+      // The model call runs in the background, so the user may rename or replace the session meanwhile.
+      if (
+        state.controller !== controller
+        || state.closed
+        || (options.requireEligibility && !state.eligible)
+        || !isCurrentSession(ctx, snapshot)
+      ) return;
+
+      const currentName = ctx.sessionManager.getSessionName();
+      if (
+        (!options.allowExistingName && currentName)
+        || (options.allowExistingName && currentName !== initialName)
+      ) return;
+
+      pi.setSessionName(title);
+      if (usedFallback) ctx.ui.notify("Session naming failed; using fallback.", "warning");
+      ctx.ui.notify(`Session name: ${title}`, "info");
+    })().finally(() => {
+      if (state.pending === pending) {
+        state.pending = undefined;
+        state.controller = undefined;
+      }
+    });
+    state.pending = pending;
+    return pending;
   };
 
   pi.on("session_start", (event, ctx) => {
@@ -209,6 +317,7 @@ export default function autoSessionNameExtension(pi: ExtensionAPI) {
         && !hasMessageHistory(ctx)
         && !((event.reason === "startup" || event.reason === "reload") && isExistingPersistedSession(ctx)),
       attempted: false,
+      closed: false,
       firstPrompt: "",
       lastAssistantResponse: "",
     };
@@ -223,58 +332,46 @@ export default function autoSessionNameExtension(pi: ExtensionAPI) {
   });
 
   pi.on("agent_end", (event) => {
-    if (!state.eligible) return;
     const text = lastAssistantText(event.messages);
     if (text) state.lastAssistantResponse = text;
   });
 
   pi.on("agent_settled", (_event, ctx) => {
     if (!state.eligible || state.attempted || state.pending) return;
-    if (!state.firstPrompt || !state.lastAssistantResponse) return;
-
-    const snapshot = currentSnapshot(ctx);
-    if (!snapshot) {
-      state.eligible = false;
-      return;
-    }
+    const { firstPrompt, lastAssistantResponse } = getNamingContext(ctx);
+    if (!firstPrompt || !lastAssistantResponse) return;
 
     state.attempted = true;
-    const prompt = state.firstPrompt;
-    const assistantResponse = state.lastAssistantResponse;
-    const controller = new AbortController();
-    state.controller = controller;
-
-    let pending: Promise<void>;
-    pending = (async () => {
-      let title: string;
-      let usedFallback = false;
-      try {
-        title = await generateSessionName(ctx, prompt, assistantResponse, controller);
-      } catch {
-        if (!state.eligible) return;
-        // Copying the request would make the fallback depend on the user's language.
-        title = "New session";
-        usedFallback = true;
-      }
-
-      // The model call runs in the background, so the user may rename or replace the session meanwhile.
-      if (state.controller !== controller || !state.eligible || !isCurrentSession(ctx, snapshot) || ctx.sessionManager.getSessionName()) return;
-
-      pi.setSessionName(title);
-      if (usedFallback) ctx.ui.notify("Session naming failed; using fallback.", "warning");
-      ctx.ui.notify(`Session name: ${title}`, "info");
-    })().finally(() => {
-      if (state.pending === pending) {
-        state.pending = undefined;
-        state.controller = undefined;
-      }
+    void startNameGeneration(ctx, firstPrompt, lastAssistantResponse, {
+      requireEligibility: true,
+      allowExistingName: false,
+      preserveNameOnFailure: false,
     });
-    state.pending = pending;
+  });
+
+  pi.registerCommand("namegen", {
+    description: "Generate a name for the current session",
+    handler: async (_args, ctx) => {
+      await ctx.waitForIdle();
+
+      const { firstPrompt, lastAssistantResponse } = getNamingContext(ctx);
+      if (!firstPrompt || !lastAssistantResponse) {
+        ctx.ui.notify("Not enough conversation to generate a session name.", "warning");
+        return;
+      }
+
+      await startNameGeneration(ctx, firstPrompt, lastAssistantResponse, {
+        requireEligibility: false,
+        allowExistingName: true,
+        preserveNameOnFailure: true,
+      });
+    },
   });
 
   pi.on("session_shutdown", () => {
     // Naming is cosmetic: a slow provider must not delay session replacement or exit.
     state.eligible = false;
+    state.closed = true;
     state.controller?.abort();
   });
 }
