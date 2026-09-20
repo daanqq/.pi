@@ -4,6 +4,7 @@ import argparse
 import json
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlparse
 
@@ -19,7 +20,24 @@ def glab_api(host: str, endpoint: str) -> Any:
         print(result.stderr.strip() or "glab api failed", file=sys.stderr)
         raise SystemExit(result.returncode)
 
-    return json.loads(result.stdout)
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise SystemExit(f"glab api returned invalid JSON for {endpoint}: {error}") from error
+
+
+def expect_dict(value: Any, context: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise SystemExit(f"Unexpected GitLab API schema: {context} must be an object")
+    return value
+
+
+def expect_non_empty_string(value: Any, context: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise SystemExit(
+            f"Unexpected GitLab API schema: {context} must be a non-empty string"
+        )
+    return value
 
 
 def parse_mr_url(url: str) -> tuple[str, str, int]:
@@ -47,6 +65,12 @@ def fetch_discussions(host: str, project_id: str, iid: int) -> list[dict[str, An
             f"projects/{project_id}/merge_requests/{iid}/discussions"
             f"?per_page=100&page={page}",
         )
+        if not isinstance(batch, list) or not all(
+            isinstance(discussion, dict) for discussion in batch
+        ):
+            raise SystemExit(
+                "Unexpected GitLab API schema: discussions page must be a list of objects"
+            )
         discussions.extend(batch)
         if len(batch) < 100:
             return discussions
@@ -93,16 +117,36 @@ def main() -> None:
         description="Fetch GitLab MR metadata and unresolved review discussions"
     )
     parser.add_argument("mr_url")
+    parser.add_argument(
+        "--output",
+        type=Path,
+        help="write validated JSON to this file and print a concise summary",
+    )
     args = parser.parse_args()
 
     host, project_path, iid = parse_mr_url(args.mr_url)
     project_id = quote(project_path, safe="")
-    mr = glab_api(host, f"projects/{project_id}/merge_requests/{iid}")
+    mr = expect_dict(
+        glab_api(host, f"projects/{project_id}/merge_requests/{iid}"),
+        "merge request",
+    )
+    web_url = expect_non_empty_string(mr.get("web_url"), "merge request web_url")
+    source_branch = expect_non_empty_string(
+        mr.get("source_branch"), "merge request source_branch"
+    )
+    target_branch = expect_non_empty_string(
+        mr.get("target_branch"), "merge request target_branch"
+    )
+    sha = expect_non_empty_string(mr.get("sha"), "merge request sha")
+    diff_refs = expect_dict(mr.get("diff_refs"), "merge request diff_refs")
+    for field in ("base_sha", "head_sha", "start_sha"):
+        expect_non_empty_string(diff_refs.get(field), f"merge request diff_refs.{field}")
+
     discussions = fetch_discussions(host, project_id, iid)
 
     unresolved = []
     for discussion in discussions:
-        normalized = normalize_discussion(discussion, mr["web_url"])
+        normalized = normalize_discussion(discussion, web_url)
         if normalized:
             unresolved.append(normalized)
 
@@ -113,15 +157,22 @@ def main() -> None:
         "iid": iid,
         "title": mr.get("title"),
         "state": mr.get("state"),
-        "source_branch": mr.get("source_branch"),
-        "target_branch": mr.get("target_branch"),
-        "web_url": mr.get("web_url"),
-        "sha": mr.get("sha"),
-        "diff_refs": mr.get("diff_refs"),
+        "source_branch": source_branch,
+        "target_branch": target_branch,
+        "web_url": web_url,
+        "sha": sha,
+        "diff_refs": diff_refs,
         "unresolved_discussions": unresolved,
     }
-    json.dump(output, sys.stdout, ensure_ascii=False, indent=2)
-    print()
+    serialized = json.dumps(output, ensure_ascii=False, indent=2) + "\n"
+    if args.output:
+        args.output.write_text(serialized, encoding="utf-8")
+        print(
+            f"MR !{iid}: {source_branch} -> {target_branch} @ {sha}; "
+            f"unresolved discussions: {len(unresolved)}; output: {args.output}"
+        )
+    else:
+        sys.stdout.write(serialized)
 
 
 if __name__ == "__main__":
