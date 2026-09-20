@@ -59,8 +59,8 @@
   },
   "fullscreenCopyOnSelect": true,
   "skills": [
-    "!skills/web-search/**",
-    "!skills/firecrawl-fetch/**",
+    "-skills/web-search/**",
+    "-skills/firecrawl-fetch/**",
     "-skills/analyze-eutp/SKILL.md",
     "-skills/dnd-kit-implementation/SKILL.md",
     "-skills/eutp-worktree/SKILL.md",
@@ -74,8 +74,5 @@
     "-skills/vercel-react-best-practices/SKILL.md",
     "-skills/typescript-best-practices/SKILL.md",
     "-skills/update-skills/SKILL.md"
-  ],
-  "prompts": [
-    "+prompts/update-proxies.md"
   ]
 }
