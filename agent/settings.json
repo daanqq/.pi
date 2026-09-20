@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.85.1",
+  "lastChangelogVersion": "0.86.0",
   "defaultThinkingLevel": "medium",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.6-sol",
@@ -9,10 +9,6 @@
     "npm:pi-mcp-adapter",
     "npm:pi-context-view",
     "npm:@ogulcancelik/pi-codex-compaction"
-  ],
-  "skills": [
-    "!skills/web-search/**",
-    "!skills/firecrawl-fetch/**"
   ],
   "hideThinkingBlock": false,
   "theme": "light",
@@ -61,5 +57,25 @@
   "markdown": {
     "mermaid": "final"
   },
-  "fullscreenCopyOnSelect": true
+  "fullscreenCopyOnSelect": true,
+  "skills": [
+    "!skills/web-search/**",
+    "!skills/firecrawl-fetch/**",
+    "-skills/analyze-eutp/SKILL.md",
+    "-skills/dnd-kit-implementation/SKILL.md",
+    "-skills/eutp-worktree/SKILL.md",
+    "-skills/eutp-worktree-transfer/SKILL.md",
+    "-skills/fix-gitlab-mr-conflicts/SKILL.md",
+    "-skills/fix-gitlab-mr-review/SKILL.md",
+    "-skills/fix-merge-conflicts/SKILL.md",
+    "-skills/mr-review/SKILL.md",
+    "-skills/optimize-images/SKILL.md",
+    "-skills/herdr-build/SKILL.md",
+    "-skills/vercel-react-best-practices/SKILL.md",
+    "-skills/typescript-best-practices/SKILL.md",
+    "-skills/update-skills/SKILL.md"
+  ],
+  "prompts": [
+    "+prompts/update-proxies.md"
+  ]
 }
