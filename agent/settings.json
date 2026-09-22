@@ -60,19 +60,6 @@
   "fullscreenCopyOnSelect": true,
   "skills": [
     "-skills/web-search/**",
-    "-skills/firecrawl-fetch/**",
-    "-skills/analyze-eutp/SKILL.md",
-    "-skills/dnd-kit-implementation/SKILL.md",
-    "-skills/eutp-worktree/SKILL.md",
-    "-skills/eutp-worktree-transfer/SKILL.md",
-    "-skills/fix-gitlab-mr-conflicts/SKILL.md",
-    "-skills/fix-gitlab-mr-review/SKILL.md",
-    "-skills/fix-merge-conflicts/SKILL.md",
-    "-skills/mr-review/SKILL.md",
-    "-skills/optimize-images/SKILL.md",
-    "-skills/herdr-build/SKILL.md",
-    "-skills/vercel-react-best-practices/SKILL.md",
-    "-skills/typescript-best-practices/SKILL.md",
-    "-skills/update-skills/SKILL.md"
+    "-skills/firecrawl-fetch/**"
   ]
 }
