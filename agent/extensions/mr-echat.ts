@@ -98,13 +98,16 @@ The change summary should follow this shape:
 
 const UPDATE_MR_DESC_PROMPT = `Update an existing GitLab MR description for an EChat project.
 Use the preceding session as context about the task, its intent, implementation decisions, and verification.
-Given the current MR description and a git diff with new changes, output the full updated MR description in Russian.
+Given the current MR description and the complete diff of the MR branch against its target branch, output the full updated MR description in Russian.
 
 Rules:
 - Keep existing useful facts, section names and order.
 - Do not rewrite existing text merely for style.
-- Add only information from the new diff.
-- Treat the git diff as the source of truth for implemented changes.
+- Treat the MR as one final change set, not as a sequence of commits or intermediate edits.
+- Describe only the net result visible in the complete MR diff against the target branch.
+- Do not describe an intermediate change as added and later removed. If a function, file or behavior is absent from the final diff, do not mention its temporary existence or removal.
+- When updating an existing description, reconcile it with the final MR diff: remove or rewrite facts that are no longer true instead of preserving a stale history of intermediate changes.
+- Add only information supported by the complete MR diff.
 - Use session context only to explain intent and checks that actually happened.
 - Do not include planned, abandoned, or unverified work from the session.
 - Do not duplicate existing items.
@@ -122,11 +125,14 @@ DESC:
 
 const MR_DESC_PROMPT = `Generate an MR description for an EChat project.
 Use the preceding session as context about the task, its intent, implementation decisions, and verification.
-Given a git diff and an MR template, output exactly the filled MR description in Russian.
+Given the complete diff of an MR branch against its target branch and an MR template, output exactly the filled MR description in Russian.
 
 MR description rules:
 - Preserve the template's section names and order, and fill only its placeholders.
-- Treat the git diff as the source of truth for implemented changes.
+- Treat the MR as one final change set, not as a sequence of commits or intermediate edits.
+- Describe only the net result visible in the complete MR diff against the target branch.
+- Do not describe an intermediate change as added and later removed. If a function, file or behavior is absent from the final diff, do not mention its temporary existence or removal.
+- Treat the complete MR diff as the source of truth for implemented changes.
 - Use session context only to explain intent and checks that actually happened; do not quote the conversation.
 - Do not include planned, abandoned, or unverified work from the session.
 - Replace "На что обратить внимание при ревью и тестировании" with the change summary described below.
@@ -576,7 +582,7 @@ async function generateDescription(
   return descMatch[1].trim();
 }
 
-/** Составить новое описание существующего MR из текущего описания и новых изменений. */
+/** Составить описание существующего MR по его текущему описанию и итоговому diff ветки. */
 async function generateUpdatedDescription(
   ctx: any,
   taskId: string,
@@ -590,7 +596,7 @@ async function generateUpdatedDescription(
     `Task: ${taskId}`,
     "Current MR description:",
     currentDescription,
-    "New git diff:",
+    "Complete MR diff against target branch:",
     diff,
   ].join("\n\n");
 
