@@ -196,12 +196,43 @@ class FormattingTests(unittest.TestCase):
             self.sample_payload(), "EUTP-99", extra_context="Контекст пользователя"
         )
 
-        self.assertEqual(context["schema_version"], 1)
+        self.assertEqual(context["schema_version"], 2)
         self.assertEqual(context["issue"]["assignee"], "Иван Иванов")
         self.assertEqual(context["issue"]["sprints"], ["Sprint 12"])
         self.assertEqual(context["issue"]["teams"], ["Platform"])
         self.assertEqual(context["issue"]["links"], {"parent": [{"id": "EUTP-1"}]})
         self.assertEqual(context["user_context"], "Контекст пользователя")
+
+    def test_summarizes_large_link_lists_by_default(self) -> None:
+        payload = self.sample_payload()
+        payload["links"] = {
+            "parent": [{"id": "EUTP-1"}],
+            "childrens": [{"id": f"EUTP-{index}"} for index in range(25)],
+        }
+
+        context = analyze_eutp.normalize_issue(payload, "EUTP-99")
+
+        self.assertEqual(
+            context["issue"]["links"]["childrens"],
+            {
+                "count": 25,
+                "sample": [f"EUTP-{index}" for index in range(20)],
+                "truncated": True,
+            },
+        )
+        self.assertEqual(context["issue"]["links"]["parent"], [{"id": "EUTP-1"}])
+        markdown = analyze_eutp.render_markdown(context)
+        self.assertIn('"count":25', markdown)
+        self.assertNotIn("EUTP-24", markdown)
+
+    def test_can_include_full_link_lists_explicitly(self) -> None:
+        payload = self.sample_payload()
+        children = [f"EUTP-{index}" for index in range(25)]
+        payload["links"] = {"childrens": children}
+
+        context = analyze_eutp.normalize_issue(payload, "EUTP-99", links_mode="full")
+
+        self.assertEqual(context["issue"]["links"]["childrens"], children)
 
     def test_markdown_contains_summary_description_and_user_context(self) -> None:
         context = analyze_eutp.normalize_issue(

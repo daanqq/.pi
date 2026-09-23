@@ -18,6 +18,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 API_BASE = "https://urs.esoft.tech/api/user/youtrack/v1/issues"
 EUTP_ID_RE = re.compile(r"(?<![A-Z0-9])EUTP-\d+(?![A-Z0-9])", re.IGNORECASE)
 MAX_RESPONSE_BYTES = 10 * 1024 * 1024
+LINK_SAMPLE_LIMIT = 20
 LINK_KEYS = ("parent", "childrens", "related", "epics", "works", "stages")
 
 
@@ -228,27 +229,54 @@ def _named_list(value: Any) -> list[str]:
     return [item for item in (_display_value(entry) for entry in value) if item is not None]
 
 
+def _link_sample_item(value: Any) -> Any:
+    if not isinstance(value, dict):
+        return value
+    for key in ("idReadable", "id", "name", "presentation"):
+        if value.get(key) not in (None, ""):
+            return value[key]
+    return _display_value(value)
+
+
+def _summarize_link_value(value: Any, *, mode: str) -> Any:
+    if mode == "full" or not isinstance(value, list) or len(value) <= LINK_SAMPLE_LIMIT:
+        return value
+
+    return {
+        "count": len(value),
+        "sample": [_link_sample_item(item) for item in value[:LINK_SAMPLE_LIMIT]],
+        "truncated": True,
+    }
+
+
+def _normalize_links(links: Any, *, mode: str) -> dict[str, Any]:
+    if not isinstance(links, dict):
+        return {}
+    return {
+        key: _summarize_link_value(value, mode=mode)
+        for key, value in sorted(links.items())
+        if isinstance(key, str) and value not in (None, "", [])
+    }
+
+
 def normalize_issue(
     payload: dict[str, Any],
     issue_id: str,
     *,
     extra_context: str = "",
     api_base: str = API_BASE,
+    links_mode: str = "summary",
 ) -> dict[str, Any]:
     """Map the API payload to a stable, JSON-serializable context schema."""
     assignee = payload.get("assignee")
     links = payload.get("links") or {}
-    normalized_links = {
-        key: links[key]
-        for key in sorted(links)
-        if isinstance(key, str) and links[key] not in (None, "", [])
-    }
+    normalized_links = _normalize_links(links, mode=links_mode)
     description = payload.get("textMd")
     if description in (None, ""):
         description = payload.get("description")
 
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "source": {
             "kind": "esoft-youtrack",
             "issue_id": issue_id,
@@ -355,6 +383,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="markdown",
         help="stdout format (default: markdown)",
     )
+    parser.add_argument(
+        "--links",
+        choices=("summary", "full"),
+        default="summary",
+        help="linked-issue metadata detail (default: summary)",
+    )
     parser.add_argument("--json-out", metavar="PATH", help="also write normalized JSON to PATH")
     parser.add_argument("--markdown-out", metavar="PATH", help="also write Markdown context to PATH")
     parser.add_argument("--timeout", type=_positive_timeout, default=15.0, help="request timeout in seconds (default: 15)")
@@ -378,7 +412,7 @@ def run(args: argparse.Namespace) -> tuple[str, str]:
         from_stdin=args.pora_session_stdin,
     )
     payload = fetch_issue(issue_id, session, timeout=args.timeout)
-    context = normalize_issue(payload, issue_id, extra_context=args.extra)
+    context = normalize_issue(payload, issue_id, extra_context=args.extra, links_mode=args.links)
     normalized_json = json.dumps(context, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
     markdown = render_markdown(context)
     return normalized_json, markdown
