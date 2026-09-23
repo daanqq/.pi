@@ -14,6 +14,11 @@ For every affected repository:
 5. Preserve ignored artifacts before removing only the matching task worktree. Switch the original checkout to the original task branch and fast-forward to the recorded task HEAD if needed. Apply the tracked patch and restore untracked files without overwriting existing files. Preserve changes as uncommitted unless the user requested commits. If the task worktree was already removed, perform only the remaining branch-transfer steps.
 6. Run `git diff --check` and report the branch and `git status --short` for every original checkout. Delete only temporary backups created by this run after successful verification. Retain preserved artifacts that have not been restored and report their location.
 
+After a successful transfer, the original checkout on the task branch becomes
+the active workspace for that ticket. A later implementation request for the
+same ticket must continue there unless the user explicitly requests a new
+worktree or the checkout now contains unrelated user changes.
+
 If switching, applying, or restoring cannot finish without conflicts, preserve the backup, stop this workflow, and explicitly propose continuing with the [`fix-merge-conflicts`](../fix-merge-conflicts/SKILL.md) skill. Do not resolve conflicts ad hoc.
 
 Complete only when every affected original checkout is on the original task branch and contains all tracked and untracked task changes.
