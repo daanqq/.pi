@@ -1,8 +1,8 @@
 {
-  "lastChangelogVersion": "0.86.0",
+  "lastChangelogVersion": "0.87.1",
   "defaultThinkingLevel": "medium",
   "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-5.6-sol",
+  "defaultModel": "gpt-6-sol",
   "packages": [
     "npm:@ff-labs/pi-fff",
     "npm:@plannotator/pi-extension",
@@ -17,8 +17,9 @@
     "enabled": false
   },
   "enabledModels": [
-    "openai-codex/gpt-5.6-sol",
-    "openai-codex/gpt-5.6-luna",
+    "openai-codex/gpt-6-sol",
+    "openai-codex/gpt-6-luna",
+    "openrouter/z-ai/glm-5.3-flash",
     "openai-codex/gpt-6-astra"
   ],
   "externalEditor": "code --wait",
@@ -50,8 +51,8 @@
   "fullscreenExitOutput": "resume-hint",
   "modelThinkingLevels": {
     "openai-codex/gpt-6-astra": "low",
-    "openai-codex/gpt-5.6-sol": "medium",
-    "openai-codex/gpt-5.6-luna": "high",
+    "openai-codex/gpt-6-sol": "medium",
+    "openai-codex/gpt-6-luna": "high",
     "openrouter/z-ai/glm-5.3-flash": "high"
   },
   "markdown": {

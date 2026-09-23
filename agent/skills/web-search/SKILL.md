@@ -17,7 +17,7 @@ node search.mjs "<query>"
 Additional options:
 - `--purpose "<why you need this>"` - default `general research support` - explain
   how the research will be used.
-- `--model <model-id>` - default `gpt-5.6-luna` - override the model, only when
+- `--model <model-id>` - default `gpt-6-luna` - override the model, only when
   user explicitly asks.
 - `--timeout <milliseconds>` - default `120000ms` - set the maximum request time.
 - `--json` - return a JSON object containing the provider, model, query, purpose,

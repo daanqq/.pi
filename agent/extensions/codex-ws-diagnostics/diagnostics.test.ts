@@ -14,7 +14,7 @@ const baseMessage = {
 	role: "assistant",
 	api: "openai-codex-responses",
 	provider: "openai-codex",
-	model: "gpt-5.6-sol",
+	model: "gpt-6-sol",
 	timestamp: 123,
 	stopReason: "stop",
 };

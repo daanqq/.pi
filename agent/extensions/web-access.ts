@@ -7,7 +7,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Markdown, Text, truncateToWidth, type Component } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 
-const CODEX_MODEL = "gpt-5.6-luna";
+const CODEX_MODEL = "gpt-6-luna";
 const CODEX_BASE_URL = "http://127.0.0.1:8317/backend-api";
 const FIRECRAWL_ENDPOINT = "https://api.firecrawl.dev/v2/scrape";
 const MAX_OUTPUT_BYTES = 50 * 1024;

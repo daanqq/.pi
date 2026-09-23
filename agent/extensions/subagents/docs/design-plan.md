@@ -184,7 +184,7 @@ interface SpawnTask {
 
 interface SubagentMeta {
   backend: BackendName;
-  modelLabel?: string;         // "openai-codex/gpt-5.6-sol", "gpt-5-codex", ...
+  modelLabel?: string;         // "openai-codex/gpt-6-sol", "gpt-5-codex", ...
   contextWindow?: number;      // for utilization %, when known
   sessionFilePath?: string;    // pi session file / codex rollout path
   nativeSessionId?: string;    // pi session id / codex conversation id

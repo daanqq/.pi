@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const DEFAULT_MODEL = "gpt-5.6-luna";
+const DEFAULT_MODEL = "gpt-6-luna";
 const DEFAULT_TIMEOUT_MS = 120000;
 const DEFAULT_CLIPROXY_BASE_URL = "http://127.0.0.1:8317/backend-api";
 

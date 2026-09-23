@@ -57,7 +57,7 @@ function createHarness() {
     modelRegistry: {
       find: (provider: string, id: string) => {
         assert.equal(provider, "openai-codex");
-        assert.equal(id, "gpt-5.6-luna");
+        assert.equal(id, "gpt-6-luna");
         return { provider, id };
       },
       complete: (...args: any[]) => {
@@ -133,7 +133,7 @@ test("requests an English name for a Russian conversation once after the first s
   assert.equal(harness.getName(), "gen: Authentication token refresh");
   assert.equal(harness.getCompletionCalls(), 1);
   const [model, context, options] = harness.getCompletionRequest();
-  assert.deepEqual(model, { provider: "openai-codex", id: "gpt-5.6-luna" });
+  assert.deepEqual(model, { provider: "openai-codex", id: "gpt-6-luna" });
   assert.match(context.systemPrompt, /Always use English, regardless of the language of the user's request/);
   assert.doesNotMatch(context.systemPrompt, /Use the same language/);
   assert.match(context.messages[0].content[0].text, /Исправь обновление токена авторизации/);
