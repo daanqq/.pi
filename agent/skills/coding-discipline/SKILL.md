@@ -20,6 +20,7 @@ Before writing code, stop at the first rung that works:
 5. Already-installed dependency: use it; do not add a dependency for what a few clear lines can do.
 6. One line: make it one line.
 7. Only then write the minimum code that works.
+8. No tautological tests
 
 If a simpler approach exists, push back before implementing the larger one.
 
