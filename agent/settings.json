@@ -51,7 +51,7 @@
   "fullscreenExitOutput": "resume-hint",
   "modelThinkingLevels": {
     "openai-codex/gpt-6-astra": "low",
-    "openai-codex/gpt-6-sol": "medium",
+    "openai-codex/gpt-6-sol": "high",
     "openai-codex/gpt-6-luna": "high",
     "openrouter/z-ai/glm-5.3-flash": "high"
   },
