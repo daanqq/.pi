@@ -202,7 +202,7 @@ const deepSeekConfig: ProviderConfig<DeepSeekBalanceResponse> = {
   command: "deepseek:balance",
   commandDescription: "Check DeepSeek API balance using ~/.pi/agent/auth.json",
   isContext(ctx) {
-    return ctx.model?.provider === "deepseek" || ctx.model?.id?.startsWith("deepseek/") === true;
+    return ctx.model?.provider === "deepseek";
   },
   formatBalance(data) {
     if (data.error?.message) {
@@ -248,7 +248,7 @@ const openRouterConfig: ProviderConfig<OpenRouterBalanceResponse> = {
   command: "openrouter:balance",
   commandDescription: "Check OpenRouter API balance using ~/.pi/agent/auth.json",
   isContext(ctx) {
-    return ctx.model?.provider === "openrouter" || ctx.model?.id?.startsWith("openrouter/") === true;
+    return ctx.model?.provider === "openrouter";
   },
   formatBalance(data) {
     if (data.error?.message) {
