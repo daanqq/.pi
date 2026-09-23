@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildReplacementPreview, buildUpdatePreview, formatNumberedDiffLines, formatPatchSummaryCounts, numberUpdateDiffLines, visualizeIndentationOnlyChanges } from "./diff-lines.ts";
+import { buildReplacementPreview, buildUpdatePreview, formatNumberedDiffLines, formatPatchSummaryCounts, numberUpdateDiffLines, visualizeWhitespaceOnlyChanges } from "./diff-lines.ts";
 
 test("colors only trailing patch counts in a summary", () => {
 	const rendered = formatPatchSummaryCounts(
@@ -37,8 +37,8 @@ test("keeps the diff body aligned across line-number digit boundaries", () => {
 	assert.deepEqual(bodyColumns, [6, 6, 6, 6]);
 });
 
-test("shows spaces and tabs when only indentation changed", () => {
-	const rendered = visualizeIndentationOnlyChanges([
+test("shows spaces and tabs when only whitespace changed", () => {
+	const rendered = visualizeWhitespaceOnlyChanges([
 		"-182 \t  old",
 		"+182     old",
 	].join("\n"));
@@ -48,30 +48,41 @@ test("shows spaces and tabs when only indentation changed", () => {
 	].join("\n"));
 });
 
-test("marks only the added indentation characters", () => {
-	const rendered = visualizeIndentationOnlyChanges([
+test("shows whitespace changes inside a line", () => {
+	const rendered = visualizeWhitespaceOnlyChanges([
+		"-368 return ` ${value}`;",
+		"+368 return `  ${value}`;",
+	].join("\n"));
+	assert.equal(rendered, [
+		"-368 return `·${value}`;",
+		"+368 return `··${value}`;",
+	].join("\n"));
+});
+
+test("marks only the added whitespace characters", () => {
+	const rendered = visualizeWhitespaceOnlyChanges([
 		"-182 \told",
 		"+182 \t old",
 	].join("\n"));
 	assert.equal(rendered, [
-		"-182 \u2800\u2800\u2800old",
-		"+182 \u2800\u2800\u2800·old",
+		"-182 →old",
+		"+182 →·old",
 	].join("\n"));
 });
 
-test("marks only the removed indentation characters", () => {
-	const rendered = visualizeIndentationOnlyChanges([
+test("marks only the removed whitespace characters", () => {
+	const rendered = visualizeWhitespaceOnlyChanges([
 		"-182      old",
 		"+182     old",
 	].join("\n"));
 	assert.equal(rendered, [
-		"-182 \u2800\u2800\u2800\u2800·old",
-		"+182 \u2800\u2800\u2800\u2800old",
+		"-182 ·····old",
+		"+182 ····old",
 	].join("\n"));
 });
 
 test("keeps whitespace invisible for code changes and standalone additions", () => {
-	const rendered = visualizeIndentationOnlyChanges([
+	const rendered = visualizeWhitespaceOnlyChanges([
 		"-182     old",
 		"+182     new",
 		" 183 context",
@@ -85,8 +96,8 @@ test("keeps whitespace invisible for code changes and standalone additions", () 
 	].join("\n"));
 });
 
-test("shows indentation-only changes across a line group", () => {
-	const rendered = visualizeIndentationOnlyChanges([
+test("shows whitespace-only changes across a line group", () => {
+	const rendered = visualizeWhitespaceOnlyChanges([
 		"-10 \tone",
 		"-11 \ttwo",
 		"+10   one",

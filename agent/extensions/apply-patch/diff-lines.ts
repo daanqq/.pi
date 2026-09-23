@@ -30,7 +30,7 @@ export function formatNumberedDiffLines(lines: NumberedDiffLine[]): string[] {
 	});
 }
 
-export function visualizeIndentationOnlyChanges(diffText: string): string {
+export function visualizeWhitespaceOnlyChanges(diffText: string): string {
 	const lines = diffText.split("\n");
 	const result: string[] = [];
 	let index = 0;
@@ -58,16 +58,22 @@ export function visualizeIndentationOnlyChanges(diffText: string): string {
 			index += 1;
 		}
 
-		const indentationOnly = removed.length === added.length && removed.every((oldLine, pairIndex) => {
-			const newLine = added[pairIndex]!;
-			return oldLine.content.slice(oldLine.indentation.length) === newLine.content.slice(newLine.indentation.length)
-				&& oldLine.indentation !== newLine.indentation;
-		});
-		if (indentationOnly) {
-			result.push(
-				...removed.map((line, pairIndex) => formatIndentationDifference(line, added[pairIndex]!)),
-				...added.map((line, pairIndex) => formatIndentationDifference(line, removed[pairIndex]!)),
-			);
+		if (removed.length === added.length) {
+			const renderedRemoved: string[] = [];
+			const renderedAdded: string[] = [];
+			for (let pairIndex = 0; pairIndex < removed.length; pairIndex++) {
+				const oldLine = removed[pairIndex]!;
+				const newLine = added[pairIndex]!;
+				const visualized = visualizeWhitespacePair(oldLine.content, newLine.content);
+				if (visualized) {
+					renderedRemoved.push(withContent(oldLine, visualized.oldText));
+					renderedAdded.push(withContent(newLine, visualized.newText));
+				} else {
+					renderedRemoved.push(oldLine.raw);
+					renderedAdded.push(newLine.raw);
+				}
+			}
+			result.push(...renderedRemoved, ...renderedAdded);
 		} else {
 			result.push(...removed.map((line) => line.raw), ...added.map((line) => line.raw));
 		}
@@ -76,7 +82,7 @@ export function visualizeIndentationOnlyChanges(diffText: string): string {
 	return result.join("\n");
 }
 
-type ParsedChangedLine = { marker: "+" | "-"; gutter: string; content: string; indentation: string; raw: string };
+type ParsedChangedLine = { marker: "+" | "-"; gutter: string; content: string; raw: string };
 
 function parseChangedLine(line: string): ParsedChangedLine | undefined {
 	const parsed = line.match(/^([+-])(\s*\d*) (.*)$/);
@@ -86,22 +92,59 @@ function parseChangedLine(line: string): ParsedChangedLine | undefined {
 		marker: parsed[1] as "+" | "-",
 		gutter: parsed[2]!,
 		content,
-		indentation: content.match(/^[ \t]+/)?.[0] ?? "",
 		raw: line,
 	};
 }
 
-function formatIndentationDifference(line: ParsedChangedLine, counterpart: ParsedChangedLine): string {
-	let commonLength = 0;
-	while (line.indentation[commonLength] === counterpart.indentation[commonLength] && commonLength < line.indentation.length) {
-		commonLength += 1;
+function withContent(line: ParsedChangedLine, content: string): string {
+	return `${line.raw.slice(0, line.raw.length - line.content.length)}${content}`;
+}
+
+function isWhitespace(char: string | undefined): boolean {
+	return char === " " || char === "\t";
+}
+
+function visibleWhitespace(text: string): string {
+	return text.replace(/ /g, "·").replace(/\t/g, "→");
+}
+
+function visualizeWhitespacePair(
+	oldText: string,
+	newText: string,
+): { oldText: string; newText: string } | undefined {
+	if (oldText === newText) return undefined;
+	if (oldText.replace(/[ \t]/g, "") !== newText.replace(/[ \t]/g, "")) return undefined;
+
+	let oldIndex = 0;
+	let newIndex = 0;
+	let visualizedOld = "";
+	let visualizedNew = "";
+
+	while (oldIndex < oldText.length || newIndex < newText.length) {
+		const oldWhitespaceStart = oldIndex;
+		while (isWhitespace(oldText[oldIndex])) oldIndex++;
+		const newWhitespaceStart = newIndex;
+		while (isWhitespace(newText[newIndex])) newIndex++;
+
+		const oldWhitespace = oldText.slice(oldWhitespaceStart, oldIndex);
+		const newWhitespace = newText.slice(newWhitespaceStart, newIndex);
+		if (oldWhitespace === newWhitespace) {
+			visualizedOld += oldWhitespace;
+			visualizedNew += newWhitespace;
+		} else {
+			visualizedOld += visibleWhitespace(oldWhitespace);
+			visualizedNew += visibleWhitespace(newWhitespace);
+		}
+
+		if (oldIndex === oldText.length || newIndex === newText.length) break;
+		if (oldText[oldIndex] !== newText[newIndex]) return undefined;
+		visualizedOld += oldText[oldIndex];
+		visualizedNew += newText[newIndex];
+		oldIndex++;
+		newIndex++;
 	}
-	const unchangedIndentation = line.indentation
-		.slice(0, commonLength)
-		.replace(/ /g, "\u2800")
-		.replace(/\t/g, "\u2800\u2800\u2800");
-	const changedIndentation = line.indentation.slice(commonLength).replace(/ /g, "·").replace(/\t/g, "→");
-	return `${line.marker}${line.gutter} ${unchangedIndentation}${changedIndentation}${line.content.slice(line.indentation.length)}`;
+
+	return { oldText: visualizedOld, newText: visualizedNew };
 }
 
 export function buildUpdatePreview(numbered: NumberedDiffLine[], hasMovePath: boolean): { added: number; removed: number; lines: string[]; pureMove: boolean } {
