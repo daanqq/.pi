@@ -61,6 +61,8 @@ function filterSkills(skills: SkillInfo[], query: string): AutocompleteItem[] {
 
 function createSkillAutocompleteProvider(pi: ExtensionAPI, current: AutocompleteProvider): AutocompleteProvider {
 	return {
+		triggerCharacters: ["$"],
+
 		async getSuggestions(lines, cursorLine, cursorCol, options): Promise<AutocompleteSuggestions | null> {
 			const currentLine = lines[cursorLine] ?? "";
 			const beforeCursor = currentLine.slice(0, cursorCol);
