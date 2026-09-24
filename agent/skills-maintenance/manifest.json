@@ -35,7 +35,7 @@
   "skills": {
     "analyze-eutp": {
       "tracking": "local",
-      "installed_hash": "ef6ba84b42c57f3273f7ebc3d1a15051011a31626f03a0f9316fc161d44b7004"
+      "installed_hash": "726e4bba512c7e4e805e17f8b4a0757bd0e00ed05f52dd1775cda5d55118c5c8"
     },
     "blast-radius": {
       "tracking": "overlay",
@@ -65,7 +65,7 @@
     },
     "coding-discipline": {
       "tracking": "local",
-      "installed_hash": "b1cddb99ac453f69f81fc55607b105b6ca677fb6f6ea99b3c4fa8c88f7edda65"
+      "installed_hash": "a51330a74dd17c2271a853a25adf2f8f6ca52a9a9e3d19ac88c7fa43c81045a5"
     },
     "diagnosing-bugs": {
       "tracking": "overlay",
@@ -82,11 +82,11 @@
     },
     "eutp-worktree": {
       "tracking": "local",
-      "installed_hash": "53c73284afa335cc13bdce8fa62a253e26111d1ffa4ea9491a86009f788c821d"
+      "installed_hash": "114e785b7ddbc7244fd6a3b5f282c729d73a7f202ec6d49bdeb3a2877d1e6f57"
     },
     "eutp-worktree-transfer": {
       "tracking": "local",
-      "installed_hash": "3c7095fe91a616d5fcade9cb8a853d62406461326d481565247a7e49864d86ea"
+      "installed_hash": "fd02448807001b71580220b546dfd6d7fb5d3f7e680b48eba57bedc7e7533181"
     },
     "fix-gitlab-mr-conflicts": {
       "tracking": "local",
@@ -94,7 +94,7 @@
     },
     "fix-gitlab-mr-review": {
       "tracking": "local",
-      "installed_hash": "5161703d2021669507d4c074faab5f7c4f9c4b54b6c69c097a9dbea909ccaff3"
+      "installed_hash": "ec0a7e691bbc39fa0e26bacd37a0b7286582f53f754e5a8847aa70586760ac1c"
     },
     "fix-merge-conflicts": {
       "tracking": "overlay",
@@ -181,6 +181,10 @@
       "overlay": "overlays/retro.md",
       "installed_hash": "783ab894501588405ac2a8f8ea456f239eda1b198e8275a42a6b07f163f0b433"
     },
+    "review-deepseek": {
+      "tracking": "local",
+      "installed_hash": "f8269a3a8652c6fffbed4d80f3a1f37055349a53c905ce99a6eac44831931a74"
+    },
     "show-me": {
       "tracking": "overlay",
       "repository": "humanlayer-skills",
@@ -197,7 +201,7 @@
     },
     "subagents": {
       "tracking": "local",
-      "installed_hash": "57dd92e7c04292cea20594591a63b7382ca5801ef87395e6637f3675ad79f9ac"
+      "installed_hash": "0c3e8f1e5a74a01acd82c1677189adfe42375541bef769a669ac94ed67397762"
     },
     "tdd": {
       "tracking": "overlay",
@@ -229,16 +233,16 @@
       "tracking": "local",
       "installed_hash": "cdb2e40407e6f626e22a6ff28a0c6d16e0e859d88b13601e3a2b2beb1b66bef8"
     },
+    "unslop": {
+      "tracking": "local",
+      "installed_hash": "033c200388f2086d7def2a50139710a345599da81a384488350aacb5cfc402ee"
+    },
     "vercel-react-best-practices": {
       "tracking": "overlay",
       "repository": "vercel-agent-skills",
       "path": "skills/react-best-practices",
       "overlay": "overlays/vercel-react-best-practices.md",
       "installed_hash": "0ed8f65177710c0940629bba378ae8eecdf2c17c84fbe3377d753235bda811a6"
-    },
-    "web-search": {
-      "tracking": "local",
-      "installed_hash": "2c773e67ad1aac596878d0bf2bc5d5c9c93a2027c1bfb83ee61a4d636d56b351"
     },
     "why": {
       "tracking": "overlay",
