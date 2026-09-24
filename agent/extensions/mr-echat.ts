@@ -5,8 +5,8 @@
  * Заменяет agent/prompts/mr-echat.md: все механические шаги (git, glab,
  * файловый I/O, цикл подтверждения title) выполняются детерминированно
  * в коде. Commit title генерируется отдельным complete() по diff. MR description
- * генерируется дополнительным turn текущей pi-сессии, чтобы переиспользовать
- * её модель, system prompt, tools и provider cache affinity.
+ * генерируется отдельным запросом к gpt-6-luna с полным текстовым snapshot
+ * текущей сессии на момент запуска команды.
  *
  * Использование:
  *   /mr-echat [task-branch] [--name=<task-branch>] [--cwd <repo-path>]
@@ -19,7 +19,14 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { complete, type Message } from "@earendil-works/pi-ai/compat";
+import {
+  complete,
+  type Api,
+  type AssistantMessage,
+  type Message,
+  type Model,
+  type ProviderHeaders,
+} from "@earendil-works/pi-ai/compat";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -31,9 +38,12 @@ import * as path from "node:path";
 const EUTP_ID_RE = /EUTP-\d+/i;
 const TITLE_MAX_ATTEMPTS = 3;
 const MR_DESC_TMP = "/tmp/mr_description.md";
-const GENERATION_PROVIDER = "openai-codex";
-const GENERATION_MODEL = "gpt-6-luna";
+const GENERATION_MODELS = [
+  { provider: "openai-codex", id: "gpt-6-luna" },
+  { provider: "openrouter", id: "openai/gpt-6-luna" },
+] as const;
 const GENERATION_THINKING = "high";
+const LARGE_READ_RESULT_CHARS = 12_000;
 const BASE_BRANCHES = new Set(["main", "master", "develop", "dev", "stage", "staging"]);
 const GENERATED_DIFF_EXCLUDES = [
   "**/package-lock.json",
@@ -69,7 +79,7 @@ Output format (strict):
 TITLE: <commit title>`;
 
 // ---------------------------------------------------------------------------
-// Instructions appended to the current pi session for MR description generation
+// Instructions for the dedicated MR description request
 // ---------------------------------------------------------------------------
 
 const MR_DESCRIPTION_STYLE_RULES = `
@@ -162,21 +172,84 @@ type CommandArgs = {
   cwd?: string;
 };
 
-type SessionGenerationFn = (
-  ctx: any,
-  prompt: string,
-  event: string,
-  details: Record<string, unknown>,
-  log: LogFn,
-) => Promise<string | null>;
+type SessionSnapshot = {
+  sessionId: string;
+  text: string;
+};
 
-function assistantMessageText(message: any): string {
-  if (message?.role !== "assistant" || !Array.isArray(message.content)) return "";
-  return message.content
-    .filter((part: any) => part?.type === "text" && typeof part.text === "string")
-    .map((part: any) => part.text)
+type SessionGenerationState = {
+  active: boolean;
+};
+
+type GenerationAuth = {
+  apiKey: string;
+  headers?: ProviderHeaders;
+};
+
+function textContent(content: any): string {
+  const parts = Array.isArray(content) ? content : [content];
+  return parts
+    .map((part: any) => typeof part === "string" ? part : part?.type === "text" ? part.text : "")
+    .filter((text: unknown): text is string => typeof text === "string")
     .join("\n")
     .trim();
+}
+
+function assistantMessageText(message: any): string {
+  return message?.role === "assistant" ? textContent(message.content) : "";
+}
+
+/**
+ * Подготовить текстовый snapshot сессии для отдельной модели.
+ * Thinking, tool calls и изображения не нужны для описания MR. Большие read
+ * results намеренно пропускаются, чтобы контекст не превращался в дамп файлов.
+ */
+function captureSessionSnapshot(ctx: any): SessionSnapshot {
+  const sections: string[] = [];
+  const entries = ctx.sessionManager?.getBranch?.() ?? [];
+
+  for (const entry of entries) {
+    if (entry?.type === "compaction" || entry?.type === "branch_summary") {
+      const summary = typeof entry.summary === "string" ? entry.summary.trim() : "";
+      if (summary) sections.push(`[SESSION SUMMARY]\n${summary}`);
+      continue;
+    }
+
+    if (entry?.type === "custom_message") {
+      const content = textContent(entry.content);
+      if (content) sections.push(`[SESSION MESSAGE]\n${content}`);
+      continue;
+    }
+
+    if (entry?.type !== "message") continue;
+    const message = entry.message;
+    const role = message?.role;
+    if (role === "user") {
+      const content = textContent(message.content);
+      if (content) sections.push(`[USER]\n${content}`);
+    } else if (role === "assistant") {
+      const content = assistantMessageText(message);
+      if (content) sections.push(`[ASSISTANT]\n${content}`);
+    } else if (role === "toolResult") {
+      const content = textContent(message.content);
+      if (!content) continue;
+      if (message.toolName === "read" && content.length > LARGE_READ_RESULT_CHARS) {
+        sections.push("[TOOL RESULT: read]\n[large read output omitted]");
+      } else {
+        sections.push(`[TOOL RESULT: ${message.toolName || "unknown"}]\n${content}`);
+      }
+    } else if (role === "bashExecution") {
+      const command = typeof message.command === "string" ? message.command : "";
+      const output = typeof message.output === "string" ? message.output : "";
+      const content = [command && `Command: ${command}`, output && `Output:\n${output}`].filter(Boolean).join("\n");
+      if (content) sections.push(`[BASH EXECUTION]\n${content}`);
+    }
+  }
+
+  return {
+    sessionId: String(ctx.sessionManager?.getSessionId?.() ?? ""),
+    text: sections.join("\n\n") || "[empty session]",
+  };
 }
 
 /** Разобрать позиционную ветку, --name и опциональную рабочую директорию. */
@@ -242,6 +315,59 @@ async function withTiming<T>(
     log(`${event}:error`, { durationMs: Date.now() - startedAt, error: error?.message ?? String(error) });
     throw error;
   }
+}
+
+/** Выполнить запрос основной моделью или той же моделью через OpenRouter. */
+async function completeWithFallback(
+  ctx: any,
+  event: string,
+  log: LogFn,
+  request: (model: Model<Api>, auth: GenerationAuth) => Promise<AssistantMessage>,
+): Promise<AssistantMessage | null> {
+  const failures: string[] = [];
+
+  for (let index = 0; index < GENERATION_MODELS.length; index++) {
+    const candidate = GENERATION_MODELS[index];
+    const label = `${candidate.provider}/${candidate.id}`;
+    const model = ctx.modelRegistry.find(candidate.provider, candidate.id);
+
+    if (!model) {
+      failures.push(`${label}: модель не найдена`);
+    } else {
+      try {
+        const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+        if (!auth.ok || !auth.apiKey) {
+          failures.push(`${label}: нет авторизации`);
+        } else {
+          const response = await withTiming(log, event, { model: label }, () => request(model, auth));
+          if (response.stopReason === "aborted") return null;
+          if (response.stopReason !== "error") return response;
+
+          failures.push(`${label}: ${response.errorMessage || "ошибка запроса"}`);
+        }
+      } catch (error: any) {
+        failures.push(`${label}: ${error?.message ?? String(error)}`);
+      }
+    }
+
+    const fallback = GENERATION_MODELS[index + 1];
+    if (fallback) {
+      const fallbackLabel = `${fallback.provider}/${fallback.id}`;
+      log(`${event}:fallback`, {
+        failedModel: label,
+        fallbackModel: fallbackLabel,
+        reason: failures[failures.length - 1],
+      });
+      ctx.ui.notify(
+        `Модель ${label} недоступна, пробую ${fallbackLabel}`,
+        "warning",
+      );
+    }
+  }
+
+  log(`${event}:all-providers-failed`, { failures });
+  ctx.ui.notify(`Все модели генерации недоступны: ${failures.join("; ")}`, "error");
+  return null;
 }
 
 /** Вытащить EUTP-ID из названия ветки. */
@@ -501,18 +627,6 @@ async function ensureGitRepo(
 
 /** Вызвать LLM для генерации commit title. */
 async function generateTitle(ctx: any, taskId: string, diff: string, lastAgentResponse: string | null, log: LogFn): Promise<string | null> {
-  const model = ctx.modelRegistry.find(GENERATION_PROVIDER, GENERATION_MODEL);
-  if (!model) {
-    ctx.ui.notify(`Модель не найдена: ${GENERATION_PROVIDER}/${GENERATION_MODEL}`, "error");
-    return null;
-  }
-
-  const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-  if (!auth.ok || !auth.apiKey) {
-    ctx.ui.notify(`Нет API-ключа для ${GENERATION_PROVIDER}`, "error");
-    return null;
-  }
-
   const diffBlock = diff;
   // ponytail: diff без ограничения, проблема — если модель не влезает в контекст
   if (diffBlock.length > 80_000) {
@@ -527,13 +641,14 @@ async function generateTitle(ctx: any, taskId: string, diff: string, lastAgentRe
 
   ctx.ui.notify("Генерирую заголовок коммита...", "info");
 
-  const response = await withTiming(log, "llm:title", { diffChars: diff.length }, () =>
+  const response = await completeWithFallback(ctx, "llm:title", log, (model, auth) =>
     complete(
       model,
       { systemPrompt: TITLE_SYSTEM_PROMPT, messages: [userMessage] },
       { apiKey: auth.apiKey, headers: auth.headers, reasoningEffort: GENERATION_THINKING },
     ),
   );
+  if (!response) return null;
 
   const text = response.content
     .filter((c: any): c is { type: "text"; text: string } => c.type === "text")
@@ -549,29 +664,86 @@ async function generateTitle(ctx: any, taskId: string, diff: string, lastAgentRe
   return titleMatch[1].trim();
 }
 
+/** Вызвать отдельную модель, не добавляя prompt и ответ генератора в основную сессию. */
+async function generateDescriptionWithModel(
+  ctx: any,
+  prompt: string,
+  sessionSnapshot: SessionSnapshot,
+  generationState: SessionGenerationState,
+  event: string,
+  log: LogFn,
+): Promise<string | null> {
+  if (generationState.active) {
+    ctx.ui.notify("Генерация описания MR уже выполняется", "error");
+    return null;
+  }
+
+  const userMessage: Message = {
+    role: "user",
+    content: [{ type: "text", text: prompt }],
+    timestamp: Date.now(),
+  };
+
+  try {
+    generationState.active = true;
+    const response = await completeWithFallback(ctx, event, log, (model, auth) =>
+      ctx.modelRegistry.streamSimple(
+        model,
+        {
+          systemPrompt: "You generate precise GitLab merge request descriptions. Do not call tools.",
+          messages: [userMessage],
+        },
+        {
+          apiKey: auth.apiKey,
+          headers: auth.headers,
+          reasoning: GENERATION_THINKING,
+          sessionId: sessionSnapshot.sessionId,
+          cacheRetention: "short",
+        },
+      ).result(),
+    );
+    if (!response) return null;
+
+    const text = response.content
+      .filter((part: any): part is { type: "text"; text: string } => part.type === "text")
+      .map((part: { type: "text"; text: string }) => part.text)
+      .join("\n")
+      .trim();
+
+    if (!text) ctx.ui.notify("Модель не вернула текст описания MR", "error");
+    return text || null;
+  } finally {
+    generationState.active = false;
+  }
+}
+
 /** Вызвать LLM для генерации MR description после выбора commit title. */
 async function generateDescription(
   ctx: any,
   taskId: string,
   diff: string,
   template: string,
+  sessionSnapshot: SessionSnapshot,
+  generationState: SessionGenerationState,
   log: LogFn,
-  generateInSession: SessionGenerationFn,
 ): Promise<string | null> {
   if (diff.length > 80_000) {
     ctx.ui.notify(`Diff большой (${diff.length} символов). Модель может не справиться.`, "warning");
   }
 
-  const prompt = [MR_DESC_PROMPT, `Task: ${taskId}`, "Template:", template, "Git diff:", diff].join("\n\n");
+  const prompt = [
+    MR_DESC_PROMPT,
+    "Session snapshot at the moment /mr-echat started:",
+    sessionSnapshot.text,
+    `Task: ${taskId}`,
+    "Template:",
+    template,
+    "Git diff:",
+    diff,
+  ].join("\n\n");
 
   ctx.ui.notify("Генерирую описание MR...", "info");
-  const text = await generateInSession(
-    ctx,
-    prompt,
-    "llm:description",
-    { diffChars: diff.length, templateChars: template.length },
-    log,
-  );
+  const text = await generateDescriptionWithModel(ctx, prompt, sessionSnapshot, generationState, "llm:description", log);
   if (!text) return null;
 
   const descMatch = text.match(/^DESC:\s*([\s\S]*)$/m);
@@ -588,11 +760,14 @@ async function generateUpdatedDescription(
   taskId: string,
   currentDescription: string,
   diff: string,
+  sessionSnapshot: SessionSnapshot,
+  generationState: SessionGenerationState,
   log: LogFn,
-  generateInSession: SessionGenerationFn,
 ): Promise<string | null> {
   const prompt = [
     UPDATE_MR_DESC_PROMPT,
+    "Session snapshot at the moment /mr-echat started:",
+    sessionSnapshot.text,
     `Task: ${taskId}`,
     "Current MR description:",
     currentDescription,
@@ -601,13 +776,7 @@ async function generateUpdatedDescription(
   ].join("\n\n");
 
   ctx.ui.notify("Обновляю описание существующего MR...", "info");
-  const text = await generateInSession(
-    ctx,
-    prompt,
-    "llm:description-update",
-    { diffChars: diff.length, currentDescriptionChars: currentDescription.length },
-    log,
-  );
+  const text = await generateDescriptionWithModel(ctx, prompt, sessionSnapshot, generationState, "llm:description-update", log);
   if (!text) return null;
 
   const descMatch = text.match(/^DESC:\s*([\s\S]*)$/m);
@@ -680,80 +849,18 @@ async function confirmTitle(
 // ---------------------------------------------------------------------------
 
 export default function (pi: ExtensionAPI) {
-  let sessionGenerationActive = false;
+  const generationState: SessionGenerationState = { active: false };
 
   pi.on("tool_call", () => {
-    if (!sessionGenerationActive) return;
+    if (!generationState.active) return;
     return { block: true, reason: "MR description generation must not call tools" };
   });
 
   pi.on("input", (_event, ctx) => {
-    if (!sessionGenerationActive) return;
+    if (!generationState.active) return;
     ctx.ui.notify("Дождись завершения генерации описания MR", "warning");
     return { action: "handled" };
   });
-
-  const generateInSession: SessionGenerationFn = async (ctx, prompt, event, details, log) => {
-    if (sessionGenerationActive) {
-      ctx.ui.notify("Генерация описания MR уже выполняется", "error");
-      return null;
-    }
-    if (!ctx.model) {
-      ctx.ui.notify("В текущей сессии не выбрана модель", "error");
-      return null;
-    }
-
-    const auth = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model);
-    if (!auth.ok) {
-      ctx.ui.notify(`Нет авторизации для ${ctx.model.provider}/${ctx.model.id}`, "error");
-      return null;
-    }
-
-    const previousLeafId = ctx.sessionManager.getLeafId();
-    const startedAt = Date.now();
-    try {
-      sessionGenerationActive = true;
-      log(`${event}:start`, {
-        ...details,
-        model: `${ctx.model.provider}/${ctx.model.id}`,
-        thinking: pi.getThinkingLevel(),
-      });
-      pi.sendMessage({
-        customType: "mr-echat-generation",
-        content: prompt,
-        display: false,
-        details: { purpose: "mr-description" },
-      }, { triggerTurn: true });
-      await ctx.waitForIdle();
-
-      const branch = ctx.sessionManager.getBranch();
-      const previousLeafIndex = previousLeafId ? branch.findIndex((entry: any) => entry.id === previousLeafId) : -1;
-      const generatedEntries = branch.slice(previousLeafIndex + 1);
-      const response = [...generatedEntries]
-        .reverse()
-        .map((entry: any) => entry.type === "message" ? entry.message : null)
-        .find((message: any) => assistantMessageText(message));
-      const text = assistantMessageText(response);
-
-      log(`${event}:end`, {
-        ...details,
-        durationMs: Date.now() - startedAt,
-        usage: response?.usage,
-        responseChars: text.length,
-      });
-      if (!text) ctx.ui.notify("Модель не вернула текст описания MR", "error");
-      return text || null;
-    } catch (error: any) {
-      log(`${event}:error`, {
-        ...details,
-        durationMs: Date.now() - startedAt,
-        error: error?.message ?? String(error),
-      });
-      throw error;
-    } finally {
-      sessionGenerationActive = false;
-    }
-  };
 
   pi.registerCommand("mr-echat", {
     description: "Commit + push + создать MR через glab; [ветка] [--name=ветка] [--cwd путь]",
@@ -761,7 +868,7 @@ export default function (pi: ExtensionAPI) {
       const log: LogFn = () => {};
       log("run:start", { cwd: ctx.cwd || process.cwd(), args: args.trim() });
       try {
-        if (sessionGenerationActive) {
+        if (generationState.active) {
           ctx.ui.notify("Предыдущая генерация описания MR ещё выполняется", "warning");
           return;
         }
@@ -769,6 +876,7 @@ export default function (pi: ExtensionAPI) {
 
         const { taskBranch, name, cwd: requestedCwd } = parseCommandArgs(args);
         const lastAgentResponse = getLastAgentResponse(ctx);
+        const sessionSnapshot = captureSessionSnapshot(ctx);
 
         // 0. Определить рабочую директорию (git-репозиторий)
         const repoDir = await ensureGitRepo(pi, ctx, requestedCwd);
@@ -894,7 +1002,15 @@ export default function (pi: ExtensionAPI) {
             return;
           }
 
-          const updatedDescription = await generateUpdatedDescription(ctx, taskId, currentDescription, branchDiff, log, generateInSession);
+          const updatedDescription = await generateUpdatedDescription(
+            ctx,
+            taskId,
+            currentDescription,
+            branchDiff,
+            sessionSnapshot,
+            generationState,
+            log,
+          );
           if (!updatedDescription) return;
           const updateResult = await exec("glab", ["mr", "update", existingMr.ref, "--description", updatedDescription]);
           if (updateResult.code !== 0) {
@@ -951,7 +1067,15 @@ export default function (pi: ExtensionAPI) {
         if (existingMr) {
           updateExistingMrDescription = await ctx.ui.confirm("MR уже существует", "Дополнить описание MR новыми изменениями?");
         } else {
-          description = await generateDescription(ctx, taskId, diff, template!, log, generateInSession);
+          description = await generateDescription(
+            ctx,
+            taskId,
+            diff,
+            template!,
+            sessionSnapshot,
+            generationState,
+            log,
+          );
           if (!description) return;
           fs.writeFileSync(MR_DESC_TMP, description, "utf-8");
         }
@@ -1015,7 +1139,15 @@ export default function (pi: ExtensionAPI) {
               ctx.ui.notify("Не удалось прочитать текущее описание MR", "error");
               return;
             }
-            const updatedDescription = await generateUpdatedDescription(ctx, taskId, currentDescription, diff, log, generateInSession);
+            const updatedDescription = await generateUpdatedDescription(
+              ctx,
+              taskId,
+              currentDescription,
+              diff,
+              sessionSnapshot,
+              generationState,
+              log,
+            );
             if (!updatedDescription) return;
             const updateResult = await exec("glab", ["mr", "update", existingMr.ref, "--description", updatedDescription]);
             if (updateResult.code !== 0) {
