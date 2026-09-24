@@ -84,7 +84,7 @@ function promptSources(
     summaries: 0,
     extensions: 0,
   };
-  const sections = [...systemPrompt.matchAll(/<([a-z][a-z0-9_-]*)>\n([\s\S]*?)\n<\/\1>/g)];
+  const sections = [...systemPrompt.matchAll(/<([a-z][a-z0-9_-]*)>([\s\S]*?)<\/\1>/g)];
   let sectionChars = 0;
   for (const match of sections) {
     const name = match[1];
