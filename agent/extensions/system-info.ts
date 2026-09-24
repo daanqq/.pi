@@ -11,15 +11,19 @@ function safe<T>(fn: () => T): T | undefined {
 }
 
 function systemInfo() {
-  const user = safe(() => os.userInfo().username) ?? "unknown";
-
-  return [
-    "Runtime system info:",
+  const compact = [
+    "Runtime:",
     `- OS: ${os.type()} ${os.release()} (${os.platform()} ${os.arch()})`,
+    `- Shell: ${process.env.SHELL ?? process.env.ComSpec ?? "unknown"}`,
+  ];
+  if (process.env.PI_VERBOSE_SYSTEM_INFO !== "1") return compact.join("\n");
+
+  const user = safe(() => os.userInfo().username) ?? "unknown";
+  return [
+    ...compact,
     `- Hostname: ${os.hostname()}`,
     `- User: ${user}`,
     `- Home: ${os.homedir()}`,
-    `- Shell: ${process.env.SHELL ?? process.env.ComSpec ?? "unknown"}`,
     `- Node: ${process.version}`,
   ].join("\n");
 }
