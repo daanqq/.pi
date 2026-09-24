@@ -30,6 +30,7 @@ Personal configuration for the `pi` coding agent.
 | `skill-dollar.ts` | Expands `$skill-name` references. | `$<skill-name>` |
 | `subagents/` | Runs background agents. | `/subagents`, `/btw` |
 | `system-info.ts` | Adds runtime system information to the agent system prompt. | — |
+| `token-efficiency.ts` | Records per-request usage, estimated context sources, active tool loadout, and tool errors outside the model context. | — |
 | `zsh.ts` | Runs user shell commands through zsh. | — |
 
 ## Local commands
