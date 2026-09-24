@@ -16,8 +16,6 @@ function formatTokens(tokens: number): string {
 }
 
 export default function (pi: ExtensionAPI) {
-  let wasAboveThreshold = false;
-
   pi.on("agent_end", async (_event, ctx) => {
     if (!ctx.hasUI) return;
 
@@ -26,16 +24,10 @@ export default function (pi: ExtensionAPI) {
 
     const threshold = getThreshold(usage.contextWindow ?? ctx.model?.contextWindow);
     const isAboveThreshold = usage.tokens > threshold;
-    if (!isAboveThreshold) {
-      wasAboveThreshold = false;
-      return;
-    }
-
-    if (wasAboveThreshold) return;
-    wasAboveThreshold = true;
+    if (!isAboveThreshold) return;
 
     ctx.ui.notify(
-      `Context usage crossed ${formatTokens(threshold)}. Consider /shake, /compact or /new.`,
+      `Context usage is above ${formatTokens(threshold)}. Consider /shake, /compact or /new.`,
       "warning",
     );
   });
