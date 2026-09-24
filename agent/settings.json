@@ -19,8 +19,8 @@
   "enabledModels": [
     "openai-codex/gpt-6-sol",
     "openai-codex/gpt-6-luna",
-    "openrouter/z-ai/glm-5.3-flash",
-    "openai-codex/gpt-6-astra"
+    "openai-codex/gpt-6-astra",
+    "openrouter/xiaomi/mimo-v2.6-pro"
   ],
   "externalEditor": "code --wait",
   "transport": "websocket-cached",
