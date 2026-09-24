@@ -3,7 +3,7 @@ name: prove-it-works
 description: Verifies completed work against the real artifact and behavior rather than a build, cached representation, tool summary, or agent self-report. Use before declaring an implementation, fix, migration, generated artifact, configuration change, or delegated task complete.
 license: LICENSE
 metadata:
-  source: https://github.com/cursor/plugins/tree/c1c0a32802223f4be824112dd83d33ad29a8b26c/pstack/skills/principle-prove-it-works
+  source: https://github.com/cursor/plugins/tree/57fc467a229cf2853329f19c9e6a9fd83ddc2ea2/pstack/skills/principle-prove-it-works
   adapted-for: pi
 ---
 

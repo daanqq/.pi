@@ -6,7 +6,8 @@
 - Use evidence pointers and concrete result states; log decisions, pivots, blockers, and checkpoints rather than routine actions.
 - Keep logs local by default and commit them only when reviewability requires it.
 - Preserve safe cell handling in `scripts/log.sh`, the bundled license, and Pi metadata.
-- Audit the trail against available task evidence without reading unrelated private transcripts.
+- Separate rows from different runs with `start` markers and audit only the current run's ranges against available task evidence without reading unrelated private transcripts.
+- Keep corrections append-only: preserve an inaccurate prior row and supersede it with a new row and resolvable evidence.
 
 ## Replace or omit from upstream
 
@@ -15,4 +16,4 @@
 
 ## Acceptance
 
-Every retained row maps to a real decision and resolvable evidence; invented, aspirational, or padded rows are absent.
+Do not create invented, aspirational, or padded rows. If one already exists, retain it as history and append a correction with resolvable evidence.

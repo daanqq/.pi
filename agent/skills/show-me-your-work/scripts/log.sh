@@ -14,8 +14,10 @@ if [ "$logdir" != "." ]; then
 	mkdir -p "$logdir"
 fi
 
-if [ ! -f "$logfile" ]; then
-	printf 'ts\tphase\tdecision\twhy\tevidence\tresult\n' > "$logfile"
+# Append even when a network mount reports a stale existence check. A duplicate
+# header is safer than truncating an existing trail.
+if [ ! -s "$logfile" ]; then
+	printf 'ts\tphase\tdecision\twhy\tevidence\tresult\n' >> "$logfile"
 fi
 
 clean_cell() {

@@ -3,7 +3,7 @@ name: show-me-your-work
 description: Keeps a compact, reviewable TSV decision trail for long-running, multi-phase, delegated, or unattended work. Use when the user will review the work after a pause, when hypotheses or pivots must remain auditable, or when another skill needs a canonical evidence log.
 license: LICENSE
 metadata:
-  source: https://github.com/cursor/plugins/tree/c1c0a32802223f4be824112dd83d33ad29a8b26c/pstack/skills/show-me-your-work
+  source: https://github.com/cursor/plugins/tree/57fc467a229cf2853329f19c9e6a9fd83ddc2ea2/pstack/skills/show-me-your-work
   adapted-for: pi
 ---
 
@@ -46,6 +46,8 @@ Evidence is a pointer, not a paragraph: a command and captured output path, comm
 
 Use plain results such as `VERIFIED`, `NOT VERIFIED`, `INCONCLUSIVE`, `reverted`, `tests green`, or `open`. Never record an intended future action as if it happened.
 
+A run is one agent conversation, including later turns and summaries. A pickup, replacement agent, or new chat starts a new run. When a run appends to a log that already has rows, its first row uses phase `start`; if another run has written since, use another `start` row before resuming. The row identifies the earlier timestamp range that this run did not write, and its evidence identifies the current run, such as an agent or session id. Reserve phase `start` for this purpose.
+
 ## Rules
 
 - One row records one decision or checkpoint.
@@ -58,10 +60,11 @@ Use plain results such as `VERIFIED`, `NOT VERIFIED`, `INCONCLUSIVE`, `reverted`
 ## Audit before handoff
 
 1. Read the active Pi transcript from `PI_SESSION_FILE` when available. For a past session, use Pond narrowly by session or topic and read the end where conclusions may have changed.
-2. Check every row maps to a real action and every evidence pointer resolves.
-3. Add missing pivots or retractions that shaped the result.
-4. Append a correction or superseding row when the log disagrees with the work. Do not delete earlier canonical rows to improve the story.
-5. For high-stakes unattended work, use one fresh reviewer if the current subagent budget allows it. The reviewer audits the trail and evidence, not the implementation from scratch.
+2. Identify this run's row ranges. They begin at this run's `start` rows, or at the first row when this run created the log, and end at another run's next `start` row.
+3. Check each row in those ranges maps to a real action and every evidence pointer resolves.
+4. Add missing pivots or retractions that shaped the result.
+5. Append a correction or superseding row when the log disagrees with the work. Do not delete earlier canonical rows to improve the story. Do not audit another run's rows unless this run's own evidence proves one wrong.
+6. For high-stakes unattended work, use one fresh reviewer if the current subagent budget allows it. The reviewer audits the trail and evidence, not the implementation from scratch.
 
 ## Handoff
 

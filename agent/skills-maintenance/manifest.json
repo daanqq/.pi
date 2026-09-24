@@ -9,22 +9,22 @@
     "cursor-plugins": {
       "url": "https://github.com/cursor/plugins.git",
       "cache": "github.com/cursor/plugins",
-      "revision": "c1c0a32802223f4be824112dd83d33ad29a8b26c"
+      "revision": "57fc467a229cf2853329f19c9e6a9fd83ddc2ea2"
     },
     "humanlayer-skills": {
       "url": "https://github.com/humanlayer/skills.git",
       "cache": "github.com/humanlayer/skills",
-      "revision": "3c2629142c5d437428269b1b722b08c0b87f574d"
+      "revision": "ca7c8088db69e315a8b2deea43820270457f8f3c"
     },
     "mattpocock-skills": {
       "url": "https://github.com/mattpocock/skills.git",
       "cache": "github.com/mattpocock/skills",
-      "revision": "959a8e9f1edc3adbe2f7e3054bb6fbefa6696260"
+      "revision": "c55ee46073ed923f86ce59a5eb3b6d895095d1b7"
     },
     "react-doctor": {
       "url": "https://github.com/aidenybai/react-doctor.git",
       "cache": "github.com/aidenybai/react-doctor",
-      "revision": "922616f08db7d48463b1495e4dbdb699fc3d7c34"
+      "revision": "95db911e3c9aa5a0c64ded8d94e810fea9a6bf52"
     },
     "vercel-agent-skills": {
       "url": "https://github.com/vercel-labs/agent-skills.git",
@@ -42,7 +42,7 @@
       "repository": "cursor-plugins",
       "path": "pstack/skills/blast-radius",
       "overlay": "overlays/blast-radius.md",
-      "installed_hash": "f337cc4bcf1343aa1d895ae6049fe20bd380a0fbef86be85a751fcf3f53cc15f"
+      "installed_hash": "6b9543f43b5e47ffe6552157bc82e3fdc6e8acf0d7c593c779d4ba5371b73cb4"
     },
     "bro": {
       "tracking": "exact",
@@ -133,7 +133,7 @@
       "repository": "cursor-plugins",
       "path": "pstack/skills/how",
       "overlay": "overlays/how.md",
-      "installed_hash": "acca39c26c3f95e3ceab7c7d48b395f6e272c27872f95d934e338529dd8f5675"
+      "installed_hash": "0a45c0284aaf5b6df60b56dccd0852fa1d03e3567b9b0e0622431183a1817666"
     },
     "improve-codebase-architecture": {
       "tracking": "overlay",
@@ -166,7 +166,7 @@
       "repository": "cursor-plugins",
       "path": "pstack/skills/principle-prove-it-works",
       "overlay": "overlays/prove-it-works.md",
-      "installed_hash": "c14690447b49265c6e63c0ed77288923196781cc96b4b44475830717bf4ea60a"
+      "installed_hash": "baa6ea7ce76cc73898aa89dee0eb359d987a4b9fc5ca1be21f560493f21f9326"
     },
     "prototype": {
       "tracking": "exact",
@@ -190,14 +190,14 @@
       "repository": "humanlayer-skills",
       "path": "plugins/show-me/skills/show-me",
       "overlay": "overlays/show-me.md",
-      "installed_hash": "e8029f26b4fd7a25826158bf96b015d44f436d6ce1f94b7586c01950af98d982"
+      "installed_hash": "2594df7cd092e4f50b9eb171ced244f20f0aff6fa097e3c7e055f0651d861067"
     },
     "show-me-your-work": {
       "tracking": "overlay",
       "repository": "cursor-plugins",
       "path": "pstack/skills/show-me-your-work",
       "overlay": "overlays/show-me-your-work.md",
-      "installed_hash": "1b02f0972854400de141fac3547be7bbc994593e5688e43d287457163ced5c3b"
+      "installed_hash": "1198dd430b0e2be1a96652be2e9cb3393acb2e857c1476076b47795347f9412d"
     },
     "subagents": {
       "tracking": "local",
@@ -227,7 +227,7 @@
       "repository": "cursor-plugins",
       "path": "pstack/skills/typescript-best-practices",
       "overlay": "overlays/typescript-best-practices.md",
-      "installed_hash": "133d01ce054404c9977208bd96da79af56851b99466c364b08fd4b5f224d4ba4"
+      "installed_hash": "8ca38ee7e0b5b43f947170016a3fdb90193d692af7738f30f308f253e0d514af"
     },
     "update-skills": {
       "tracking": "local",
@@ -249,7 +249,7 @@
       "repository": "cursor-plugins",
       "path": "pstack/skills/why",
       "overlay": "overlays/why.md",
-      "installed_hash": "b0bbefc280c157d0b8efc80bee0c235ebdce11f4213be7ca6347a46c8630ec28"
+      "installed_hash": "4e9f11091772f38b3d082b23838a635f0b3be1c355d111316f850881b49be14b"
     },
     "writing-for-agents": {
       "tracking": "overlay",
