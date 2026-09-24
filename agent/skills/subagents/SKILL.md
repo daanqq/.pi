@@ -17,7 +17,7 @@ prompt with paths, constraints, and the expected report.
 ## Model selection
 
 For Pi and Codex subagents, choose between
-`openai-codex/gpt-6-luna` (Luna) and `openai-codex/gpt-6-sol` (Sol).
+`openai-codex/gpt-6-luna` (Luna) and `openai-codex/gpt-5.6-sol` (Sol).
 
 | Model | Speed | Intellect | Price efficiency |
 |:------|:-----:|:---------:|:----------------:|

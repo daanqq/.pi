@@ -63,7 +63,7 @@ export interface SpawnTask {
 
 export interface SubagentMeta {
   readonly backend: BackendName;
-  /** Display label, e.g. "openai-codex/gpt-6-sol" or "gpt-5-codex". */
+  /** Display label, e.g. "openai-codex/gpt-5.6-sol" or "gpt-5-codex". */
   readonly modelLabel?: string;
   /** Effective shared reasoning level; omitted when the backend default is unknown. */
   readonly reasoningEffort?: ReasoningEffort;
